@@ -62,24 +62,38 @@ export class PalletManager {
     return Math.abs(dx) <= b.hw && Math.abs(dz) <= b.hd;
   }
 
-  drop(p) {
+  // dx, dz: scivolamento orizzontale durante la caduta (via dalle forche)
+  drop(p, dx = 0, dz = 0) {
     p.state = 'falling';
     p.vy = 0;
     p.dropped = true;
+    p.slide = { x: p.x + dx, z: p.z + dz };
     p.tiltX = (Math.random() - 0.5) * 0.3;
     p.tiltZ = (Math.random() - 0.5) * 0.3;
-    p.yaw += (Math.random() - 0.5) * 0.6;
+    // Rotazione contenuta: il pallet resta riprendibile allineando il muletto
+    p.yaw += (Math.random() - 0.5) * 0.3;
   }
 
   update(dt) {
     for (const p of this.list) {
       if (p.state !== 'falling') continue;
+      if (p.slide) {
+        const dx = p.slide.x - p.x, dz = p.slide.z - p.z;
+        const dist = Math.hypot(dx, dz);
+        const step = Math.min(dist, 3 * dt);
+        if (dist > 1e-3) {
+          p.x += (dx / dist) * step;
+          p.z += (dz / dist) * step;
+          if (p.bottom < 0.4 && dist > 0.05) p.vy = Math.max(p.vy, 0); // finisce di scivolare prima di toccare terra
+        } else p.slide = null;
+      }
       p.vy -= 9.81 * dt;
       p.bottom += p.vy * dt;
       const s = this.supportAt(p, p.bottom + 0.5);
       if (p.bottom <= s) {
         p.bottom = s;
         p.state = 'rest';
+        p.slide = null;
         p.tiltX *= 0.3;
         p.tiltZ *= 0.3;
       }

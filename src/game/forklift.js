@@ -109,21 +109,59 @@ export class Forklift {
       if (cRect && verticalOverlap(carried.bottom + 0.01, cTop, c.y0, c.y1) && rectsOverlap(cRect, r, 0.0)) return true;
     }
     for (const p of env.pallets.list) {
-      if (p.state !== 'rest' || (this.carried && this.carried.p === p)) continue;
-      const pr = env.pallets.rect(p);
-      const top = env.pallets.top(p);
-      if (verticalOverlap(0.05, BODY.height, p.bottom, top) && rectsOverlap(body, pr)) return true;
-      if (cRect && verticalOverlap(carried.bottom + 0.01, cTop, p.bottom, top) && rectsOverlap(cRect, pr, -0.02)) return true;
-      if (verticalOverlap(forkY, forkY + FORK.thickness, p.bottom, top) && forks.some((f) => rectsOverlap(f, pr))) {
-        const ins = this.insertion(p, env.pallets, x, z, yaw, forkY, spread);
-        if (!ins || !ins.valid) return true;
-      }
+      const hit = this.palletHit(p, env, x, z, yaw, forkY, spread, body, forks, cRect, carried, cTop);
+      if (!hit) continue;
+      // Gia' incastrato in questo pallet (es. appena caduto): permesso solo allontanarsi
+      const stuck = this.stuck?.get(p);
+      if (stuck && this.palletDistance(p, stuck.via, x, z, yaw) >= stuck.d - 1e-4) continue;
+      return true;
     }
     return false;
   }
 
+  // Tipo di contatto con un pallet fermo: 'body', 'fork', 'carried' oppure null.
+  palletHit(p, env, x, z, yaw, forkY, spread, body, forks, cRect, carried, cTop) {
+    if (p.state !== 'rest' || (this.carried && this.carried.p === p)) return null;
+    const pr = env.pallets.rect(p);
+    const top = env.pallets.top(p);
+    if (verticalOverlap(0.05, BODY.height, p.bottom, top) && rectsOverlap(body, pr)) return 'body';
+    if (cRect && verticalOverlap(carried.bottom + 0.01, cTop, p.bottom, top) && rectsOverlap(cRect, pr, -0.02)) return 'carried';
+    if (verticalOverlap(forkY, forkY + FORK.thickness, p.bottom, top) && forks.some((f) => rectsOverlap(f, pr))) {
+      const ins = this.insertion(p, env.pallets, x, z, yaw, forkY, spread);
+      if (!ins || !ins.valid) return 'fork';
+    }
+    return null;
+  }
+
+  // Distanza tra il pallet e la parte del muletto che lo tocca (forche o corpo).
+  palletDistance(p, via, x, z, yaw) {
+    const [rx, rz] = via === 'fork'
+      ? toWorld({ x, z, yaw }, 0, FORK.baseZ + FORK.length / 2)
+      : toWorld({ x, z, yaw }, 0, (BODY.z0 + BODY.z1) / 2);
+    return Math.hypot(p.x - rx, p.z - rz);
+  }
+
+  // Pallet in cui il muletto e' gia' incastrato nella posa attuale.
+  findStuck(env) {
+    const map = new Map();
+    const body = this.bodyRect();
+    const forks = this.forkRects();
+    const carried = this.carried ? this.carriedPose() : null;
+    const cRect = carried && { x: carried.x, z: carried.z, hw: PALLET.size / 2, hd: PALLET.size / 2, yaw: carried.yaw };
+    const cTop = carried && carried.bottom + PALLET.height + this.carried.p.loadH;
+    for (const p of env.pallets.list) {
+      const hit = this.palletHit(p, env, this.x, this.z, this.yaw, this.forkY, this.spread, body, forks, cRect, carried, cTop);
+      if (hit) {
+        const via = hit === 'fork' ? 'fork' : 'body';
+        map.set(p, { via, d: this.palletDistance(p, via, this.x, this.z, this.yaw) });
+      }
+    }
+    return map.size ? map : null;
+  }
+
   update(dt, input, env) {
     const veh = this.vehicle;
+    this.stuck = this.findStuck(env);
     const loadRatio = this.carried ? this.carried.p.weight / veh.capacity : 0;
 
     // --- Sterzo ---
@@ -303,10 +341,20 @@ export class Forklift {
 
   dropCarried(env) {
     if (!this.carried) return;
-    const p = this.carried.p;
+    const c = this.carried;
+    const p = c.p;
     this.carried = null;
     this.unstable = 0;
-    env.pallets.drop(p);
+    // Il pallet scivola in avanti oltre le punte delle forche (se c'e' spazio)
+    const clear = FORK.baseZ + FORK.length - (c.lz - PALLET.size / 2) + 0.15;
+    const dir = [Math.sin(this.yaw), Math.cos(this.yaw)];
+    let slide = 0;
+    for (const d of [clear, clear * 0.6, clear * 0.3]) {
+      const r = { x: p.x + dir[0] * d, z: p.z + dir[1] * d, hw: PALLET.size / 2, hd: PALLET.size / 2, yaw: p.yaw };
+      const blocked = env.colliders.some((col) => col.y1 > 0 && col.y0 < 1 && rectsOverlap(r, aabbToRect(col)));
+      if (!blocked) { slide = d; break; }
+    }
+    env.pallets.drop(p, dir[0] * slide, dir[1] * slide);
     this.emit('dropped');
   }
 
