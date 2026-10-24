@@ -82,7 +82,7 @@ export class Game {
   applyQuality(q) {
     const dpr = window.devicePixelRatio || 1;
     // Sui telefoni con densita' di pixel alta non serve disegnare ogni pixel fisico
-    this.engine.setHardwareScalingLevel(q === 'high' ? 1 / Math.min(dpr, 1.25) : 1);
+    this.engine.setHardwareScalingLevel(q === 'high' ? 1 / Math.min(dpr, 1.5) : 1);
     if (q === 'high' && !this.shadowGen) {
       this.shadowGen = new ShadowGenerator(1024, this.sun);
       this.shadowGen.usePercentageCloserFiltering = true;
@@ -102,6 +102,7 @@ export class Game {
     this.settings = settings;
     this.applyQuality(settings.quality);
     this.controls?.setSettings(settings);
+    this.forklift?.mirrors?.setEnabled(settings.mirrors !== false);
   }
 
   setOwnedWarehouses(ids) {
@@ -136,6 +137,7 @@ export class Game {
     this.mode = 'loading';
     const vehicle = vehicleById(vehicleId);
     this.forklift = new Forklift(this.scene, this.mats, vehicle);
+    this.forklift.mirrorsOn = this.settings.mirrors !== false;
     await this.forklift.build(this.settings.quality === 'high' ? this.shadowGen : null);
     const start = await this.mission.start(contract);
     this.forklift.place(start.x, start.z, start.yaw);

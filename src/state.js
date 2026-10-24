@@ -15,7 +15,7 @@ const defaults = () => ({
   vehicles: ['e12'],
   activeVehicle: 'e12',
   warehouses: [0],
-  settings: { lang: detectLang(), view: 'third', sensitivity: 1, steering: 'arrows', invertGyro: false, quality: 'high' },
+  settings: { lang: detectLang(), view: 'third', sensitivity: 1, steering: 'arrows', invertGyro: false, quality: 'high', mirrors: true },
   savedAt: 0,
 });
 

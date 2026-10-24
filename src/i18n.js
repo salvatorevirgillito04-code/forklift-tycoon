@@ -1,6 +1,6 @@
 const STRINGS = {
   it: {
-    installApp: 'Installa app',
+    installApp: 'Installa app', mirrors: 'Specchietti',
     tasks: 'Compiti', taskLoad: 'Carica {n} pallet sul camion ({d}/{n})', taskUnload: 'Scarica {n} pallet nella zona gialla ({d}/{n})',
     taskNoDrop: 'Non far cadere pallet', taskTime: 'Finisci entro il tempo',
     title1: 'FORKLIFT', title2: 'TYCOON',
@@ -42,7 +42,7 @@ const STRINGS = {
     starter: 'Mezzo iniziale', rewardMult: 'Paga x{n}',
   },
   es: {
-    installApp: 'Instalar app',
+    installApp: 'Instalar app', mirrors: 'Retrovisores',
     tasks: 'Tareas', taskLoad: 'Carga {n} palés en el camión ({d}/{n})', taskUnload: 'Descarga {n} palés en la zona amarilla ({d}/{n})',
     taskNoDrop: 'No dejes caer palés', taskTime: 'Termina a tiempo',
     title1: 'FORKLIFT', title2: 'TYCOON',
@@ -84,7 +84,7 @@ const STRINGS = {
     starter: 'Vehículo inicial', rewardMult: 'Pago x{n}',
   },
   en: {
-    installApp: 'Install app',
+    installApp: 'Install app', mirrors: 'Mirrors',
     tasks: 'Tasks', taskLoad: 'Load {n} pallets onto the truck ({d}/{n})', taskUnload: 'Unload {n} pallets into the yellow zone ({d}/{n})',
     taskNoDrop: 'Do not drop any pallet', taskTime: 'Finish before time runs out',
     title1: 'FORKLIFT', title2: 'TYCOON',

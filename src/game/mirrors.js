@@ -57,13 +57,25 @@ export function createMirrors(scene, root, mats) {
     glass.material = mat;
     for (const m of [arm, frame, glass]) m.metadata = { mirror: true };
 
-    return { side, head, glass, rtt, cam, mat };
+    return { side, mount, head, glass, rtt, cam, mat };
   });
 
   const tmp = new Vector3();
+  let enabled = true;
   return {
+    // Spenti: spariscono dal muletto e la scena non viene piu' ridisegnata per loro
+    setEnabled(on) {
+      enabled = on;
+      for (const it of items) {
+        it.mount.setEnabled(on);
+        const i = scene.customRenderTargets.indexOf(it.rtt);
+        if (on && i < 0) scene.customRenderTargets.push(it.rtt);
+        if (!on && i >= 0) scene.customRenderTargets.splice(i, 1);
+      }
+    },
     // Telecamere allineate allo specchio: guardano dietro al muletto, leggermente verso l'esterno
     update() {
+      if (!enabled) return;
       for (const it of items) {
         it.head.computeWorldMatrix(true);
         const wm = it.head.getWorldMatrix();

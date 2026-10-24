@@ -293,6 +293,8 @@ export function openSettings(app, { inGame = false, onClose } = {}) {
     <div class="setting"><span>${t('sensitivity')} <b data-sens-val>${s.sensitivity.toFixed(1)}</b></span>
       <input type="range" min="0.4" max="2" step="0.1" value="${s.sensitivity}" data-sens></div>
     <div class="setting"><span>${t('graphics')}</span>${seg('quality', [['low', t('low')], ['high', t('high')]])}</div>
+    <label class="setting check" data-mirrors><span>${t('mirrors')}</span>
+      <input type="checkbox" ${s.mirrors !== false ? 'checked' : ''}></label>
     ${inGame
     ? `<div class="row-btns"><button class="pill-btn red" data-exit>${t('exitMission')}</button><button class="pill-btn green" data-resume>${t('resume')}</button></div>`
     : `<button class="link-btn" data-reset>${t('resetProgress')}</button>`}
@@ -313,6 +315,10 @@ export function openSettings(app, { inGame = false, onClose } = {}) {
     el.querySelector('[data-invert]').classList.toggle('hidden', s.steering !== 'gyro');
     apply();
   })));
+  el.querySelector('[data-mirrors] input').addEventListener('change', (e) => {
+    s.mirrors = e.target.checked;
+    apply();
+  });
   el.querySelector('[data-invert] input').addEventListener('change', (e) => {
     s.invertGyro = e.target.checked;
     apply();

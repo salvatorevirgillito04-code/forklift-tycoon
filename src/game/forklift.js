@@ -34,6 +34,7 @@ export class Forklift {
   async build(shadowGen) {
     this.model = await createForkliftModel(this.scene, this.mats, this.vehicle);
     this.mirrors = createMirrors(this.scene, this.model.root, this.mats);
+    this.mirrors.setEnabled(this.mirrorsOn !== false);
     this.model.root.getChildMeshes().forEach((m) => {
       shadowGen?.addShadowCaster(m);
       m.receiveShadows = true;
