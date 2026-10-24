@@ -653,7 +653,8 @@ body.playing #hud, body.playing #controls { display: block; }
 
 .task-panel {
   position: absolute;
-  top: calc(8px + var(--safe-t));
+  /* scende sotto lo specchietto retrovisore quando e' acceso */
+  top: calc(8px + var(--rearview-h, 0px) + 6px + var(--safe-t));
   left: 50%;
   transform: translateX(-50%);
   display: flex;

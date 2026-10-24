@@ -11,6 +11,7 @@ import { Mission } from './mission.js';
 import { Controls } from './controls.js';
 import { Hud } from './hud.js';
 import { TRUCK } from './models.js';
+import { createRearview } from './rearview.js';
 import { vehicleById } from '../data.js';
 import { t } from '../i18n.js';
 
@@ -102,7 +103,7 @@ export class Game {
     this.settings = settings;
     this.applyQuality(settings.quality);
     this.controls?.setSettings(settings);
-    this.forklift?.mirrors?.setEnabled(settings.mirrors !== false);
+    this.rearview?.setEnabled(settings.mirrors !== false);
   }
 
   setOwnedWarehouses(ids) {
@@ -137,11 +138,12 @@ export class Game {
     this.mode = 'loading';
     const vehicle = vehicleById(vehicleId);
     this.forklift = new Forklift(this.scene, this.mats, vehicle);
-    this.forklift.mirrorsOn = this.settings.mirrors !== false;
     await this.forklift.build(this.settings.quality === 'high' ? this.shadowGen : null);
     const start = await this.mission.start(contract);
     this.forklift.place(start.x, start.z, start.yaw);
     this.hud = new Hud(hudRoot, { onSettings, onMap, onCamera, coins });
+    this.rearview = createRearview(this.scene, this.camera);
+    this.rearview.setEnabled(this.settings.mirrors !== false);
     this.hud.setOwned(owned);
     this.hud.setObjective(contract);
     this.controls = new Controls(controlsRoot, this.settings);
@@ -161,6 +163,8 @@ export class Game {
 
   stopMission() {
     this.clearFadedWalls();
+    this.rearview?.dispose();
+    this.rearview = null;
     this.mission.cleanup();
     this.forklift?.dispose();
     this.forklift = null;
@@ -266,5 +270,7 @@ export class Game {
     }
     cam.setTarget(target);
     this.sun.position = base.subtract(SUN_DIR.scale(100));
+    f.model?.root.computeWorldMatrix(true);
+    this.rearview?.update(f.model?.root);
   }
 }
