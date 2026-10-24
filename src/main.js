@@ -141,7 +141,7 @@ window.addEventListener('error', (e) => {
 // PWA: service worker (solo build pubblicata) e prompt di installazione Android
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch((err) => Sentry.captureException(err));
+    navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch((err) => Sentry.captureException(err));
   });
 }
 window.addEventListener('beforeinstallprompt', (e) => {

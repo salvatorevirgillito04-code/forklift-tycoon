@@ -47,7 +47,7 @@ export async function initAuth() {
 // Ospite -> collega l'email all'utente anonimo (i progressi restano).
 // Gia' collegato altrove -> magic link per entrare con quell'account.
 export async function linkEmail(email) {
-  const redirectTo = window.location.origin;
+  const redirectTo = window.location.origin + import.meta.env.BASE_URL;
   if (user && user.is_anonymous) {
     const { error } = await supabase.auth.updateUser({ email }, { emailRedirectTo: redirectTo });
     if (error) throw error;

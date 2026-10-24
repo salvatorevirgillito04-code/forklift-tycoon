@@ -44,10 +44,10 @@ export async function tryLoadGLB(scene, file) {
   if (glbCache.has(file)) return glbCache.get(file);
   let container = null;
   try {
-    const res = await fetch(`/models/${file}`, { method: 'HEAD' });
+    const res = await fetch(`${import.meta.env.BASE_URL}models/${file}`, { method: 'HEAD' });
     const type = res.headers.get('content-type') || '';
     if (res.ok && !type.includes('html')) {
-      container = await LoadAssetContainerAsync(`/models/${file}`, scene);
+      container = await LoadAssetContainerAsync(`${import.meta.env.BASE_URL}models/${file}`, scene);
     }
   } catch {
     container = null;
