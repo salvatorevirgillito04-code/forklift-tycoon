@@ -5,10 +5,9 @@ import {
 // Specchietto retrovisore mostrato in alto al centro dello schermo (prima e terza persona).
 // Leggero: una sola immagine 256x96 aggiornata a fotogrammi alterni, che disegna solo
 // gli oggetti vicini dietro al muletto (escluso il muletto stesso).
-const TEX_W = 256;
-const TEX_H = 96;
+const TEX_W = 96; // verticale: piu' alto che largo
+const TEX_H = 144;
 const RANGE = 45; // metri disegnati nello specchietto
-const SCREEN_FRACTION = 0.24; // larghezza sullo schermo rispetto alla larghezza totale
 const GAP_PX = 10; // distanza dalla minimappa
 const TOP_PX = 8;
 const DIST = 0.5; // distanza del pannello davanti alla camera principale
@@ -24,7 +23,7 @@ export function createRearview(scene, mainCam) {
   const cam = new FreeCamera('rearviewCam', Vector3.Zero(), scene, false);
   cam.minZ = 0.2;
   cam.maxZ = RANGE + 10;
-  cam.fov = 0.55;
+  cam.fov = 0.95; // immagine stretta: angolo verticale piu' ampio per vedere abbastanza dietro
   rtt.activeCamera = cam;
 
   let root = null; // muletto da escludere
@@ -75,6 +74,7 @@ export function createRearview(scene, mainCam) {
   let pushPx = 0; // quanto deve scendere il pannello compiti (0 se lo specchietto non lo tocca)
   let layoutKey = '';
   let leftPx = 0;
+  let miniH = 0;
   const api = {
     setEnabled(on) {
       enabled = on;
@@ -93,14 +93,17 @@ export function createRearview(scene, mainCam) {
       const sw = engine.getRenderWidth() * engine.getHardwareScalingLevel();
       const sh = engine.getRenderHeight() * engine.getHardwareScalingLevel();
       // Dimensioni e posizione in pixel CSS -> mondo, alla distanza DIST dalla camera
-      const wPx = sw * SCREEN_FRACTION;
-      const hPx = wPx * (TEX_H / TEX_W);
+      // Alto come la minimappa (bordo compreso)
+      if (!miniH) miniH = document.querySelector('.minimap')?.getBoundingClientRect().height || 110;
+      const hPx = miniH - 8;
+      const wPx = hPx * (TEX_W / TEX_H);
       const worldPerPx = (2 * Math.tan(mainCam.fov / 2) * DIST) / sh;
       // Posizione accanto alla minimappa: ricalcolata solo quando cambia lo schermo
       const key = `${sw}x${sh}`;
       if (key !== layoutKey) {
         layoutKey = key;
         const mini = document.querySelector('.minimap')?.getBoundingClientRect();
+        miniH = mini ? mini.height : miniH;
         leftPx = (mini ? mini.right : 0) + GAP_PX + 4;
         heightPx = hPx;
         // Il pannello compiti scende solo se lo specchietto arriva fino a lui (schermi stretti)
