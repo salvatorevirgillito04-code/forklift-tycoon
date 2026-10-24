@@ -25,7 +25,8 @@ export function zoneRect(wh) {
 }
 
 export class World {
-  constructor(scene, mats, shadowGen) {
+  constructor(scene, mats, shadowGen, saleLabel = 'SALE') {
+    this.saleLabel = saleLabel;
     this.scene = scene;
     this.mats = mats;
     this.shadowGen = shadowGen;
@@ -171,7 +172,9 @@ export class World {
     board.parent = saleNode;
     board.position.y = 2.6;
     board.rotation.y = wh.side > 0 ? 0 : Math.PI; // testo leggibile dalla strada
-    board.material = mats.sign(`SALE\n${wh.price.toLocaleString('it-IT')}`, '#c0392b', '#ffffff');
+    board.material = mats.sign(`${this.saleLabel}\n${wh.price.toLocaleString('it-IT')}`, '#c0392b', '#ffffff');
+    this.saleBoardMeshes = this.saleBoardMeshes || [];
+    this.saleBoardMeshes.push({ board, wh });
     const salePost = { minX: sx - 0.15, maxX: sx + 0.15, minZ: sz - 0.15, maxZ: sz + 0.15, y0: 0, y1: 3.4, tag: 'post' };
     this.colliders.push(salePost);
     // Cartello: anche le forche alzate ci sbattono contro
@@ -224,6 +227,15 @@ export class World {
     crown.isPickable = false;
     this.statics.push(trunk, crown);
     this.colliders.push({ minX: x - 0.3, maxX: x + 0.3, minZ: z - 0.3, maxZ: z + 0.3, y0: 0, y1: 3, tag: 'tree' });
+  }
+
+  // Testo del cartello vendita nella lingua del gioco
+  setSaleLabel(label) {
+    if (label === this.saleLabel) return;
+    this.saleLabel = label;
+    for (const { board, wh } of this.saleBoardMeshes || []) {
+      board.material = this.mats.sign(`${label}\n${wh.price.toLocaleString('it-IT')}`, '#c0392b', '#ffffff');
+    }
   }
 
   setOwned(ids) {

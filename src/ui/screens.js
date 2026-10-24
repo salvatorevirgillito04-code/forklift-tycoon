@@ -355,6 +355,7 @@ export function openLanguage(app) {
   el.querySelectorAll('[data-lang]').forEach((b) => b.addEventListener('click', () => {
     save.settings.lang = b.dataset.lang;
     setLang(b.dataset.lang);
+    app.game.world?.setSaleLabel(t('saleSign'));
     persist();
     close();
     app.go('home');

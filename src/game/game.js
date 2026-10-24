@@ -69,7 +69,7 @@ export class Game {
 
     this.applyQuality(settings.quality);
     this.mats = createMaterials(scene);
-    this.world = new World(scene, this.mats, this.shadowGen);
+    this.world = new World(scene, this.mats, this.shadowGen, t('saleSign'));
     this.pallets = new PalletManager(scene, this.mats, this.shadowGen);
     this.env = { colliders: this.world.colliders, pallets: this.pallets, truckBedHeight: TRUCK.bedHeight };
     this.mission = new Mission(scene, this.mats, this.env, this.shadowGen);

@@ -127,6 +127,7 @@ async function boot() {
     if (!user) return;
     await syncFromCloud();
     setLang(save.settings.lang);
+    game.world?.setSaleLabel(t('saleSign'));
     game.setOwnedWarehouses(save.warehouses);
     if (game.mode !== 'play' && !document.querySelector('.modal-backdrop')) app.go(app.current);
   });

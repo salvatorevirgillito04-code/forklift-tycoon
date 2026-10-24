@@ -153,8 +153,15 @@ export function createMaterials(scene) {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         const lines = String(text).split('\n');
-        ctx.font = `bold ${lines.length > 1 ? 110 : 200}px Arial`;
-        lines.forEach((l, i) => ctx.fillText(l, s / 2, s / 2 + (i - (lines.length - 1) / 2) * 130));
+        // Carattere grande ma ridotto se una riga non ci sta nella larghezza
+        let size = lines.length > 1 ? 110 : 200;
+        ctx.font = `bold ${size}px Arial`;
+        const widest = Math.max(...lines.map((l) => ctx.measureText(l).width));
+        if (widest > s * 0.92) {
+          size = Math.floor(size * (s * 0.92) / widest);
+          ctx.font = `bold ${size}px Arial`;
+        }
+        lines.forEach((l, i) => ctx.fillText(l, s / 2, s / 2 + (i - (lines.length - 1) / 2) * size * 1.18));
       });
       tex.hasAlpha = false;
       const m = pbr(scene, 'signMat' + text, { color: '#ffffff', rough: 0.6, tex });

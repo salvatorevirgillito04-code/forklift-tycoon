@@ -171,6 +171,51 @@ export async function createForkliftModel(scene, mats, vehicle) {
     if (st.workLights) {
       for (const x of [-0.56, 0.56]) cyl(scene, 'workLight', 0.14, 0.05, new Vector3(x, 1.75, 0.2), mats.light, body, 12).rotation.x = Math.PI / 2;
     }
+    // --- Dettagli comuni ---
+    // Parafanghi: semicilindri sopra le ruote
+    const fender = (name, x, z, radius, width) => {
+      const node = new TransformNode(name + 'Node', scene);
+      node.parent = body;
+      node.position.set(x, radius * 0.9, z);
+      node.rotation.z = Math.PI / 2; // asse lungo X
+      const f = MeshBuilder.CreateCylinder(name, {
+        diameter: radius * 2 + 0.12, height: width, arc: 0.5, tessellation: 20, enclose: false, sideOrientation: Mesh.DOUBLESIDE,
+      }, scene);
+      f.parent = node;
+      f.rotation.y = -Math.PI / 2; // meta' superiore
+      f.material = paint;
+      parts.push(f);
+    };
+    for (const x of [-0.5, 0.5]) fender('fenderF', x, 0, 0.33, 0.28);
+    for (const x of [-0.47, 0.47]) fender('fenderR', x, -1.55, 0.25, 0.22);
+    // Gradino d'accesso a sinistra e maniglia sul montante
+    parts.push(box(scene, 'sideStep', 0.08, 0.04, 0.38, new Vector3(-0.64, 0.42, -0.25), mats.darkSteel, body));
+    parts.push(box(scene, 'stepTread', 0.12, 0.012, 0.36, new Vector3(-0.66, 0.445, -0.25), mats.steel, body));
+    const grab = cyl(scene, 'grabHandle', 0.035, 0.7, new Vector3(-0.47, 1.55, 0.12), mats.lineYellow, body, 8);
+    parts.push(grab);
+    // Prese d'aria sul cofano e griglia posteriore del contrappeso
+    for (const side of [-1, 1]) {
+      for (let i = 0; i < 4; i++) {
+        parts.push(box(scene, 'vent', 0.012, 0.035, 0.32, new Vector3(side * 0.53, 0.82 + i * 0.06, -1.2), trim, body));
+      }
+    }
+    for (let i = 0; i < 4; i++) {
+      parts.push(box(scene, 'rearGrille', 0.7, 0.035, 0.02, new Vector3(0, 0.62 + i * 0.075, -2.18), trim, body));
+    }
+    // Gancio di traino e fari di lavoro posteriori
+    parts.push(box(scene, 'towPin', 0.14, 0.1, 0.12, new Vector3(0, 0.42, -2.2), mats.darkSteel, body));
+    for (const x of [-0.45, 0.45]) parts.push(box(scene, 'rearLamp', 0.09, 0.07, 0.04, new Vector3(x, 2.25, -1.6), mats.light, body));
+    // Targhetta con la sigla del modello sui fianchi
+    const code = (vehicle.name.split(' ')[1] || vehicle.name).slice(0, 6);
+    for (const side of [-1, 1]) {
+      const plate = MeshBuilder.CreatePlane('badge', { width: 0.36, height: 0.12 }, scene);
+      plate.parent = body;
+      plate.position.set(side * 0.605, 0.98, -0.95);
+      plate.rotation.y = side * Math.PI / 2;
+      plate.material = mats.sign(code, st.trim || '#222222', '#ffffff');
+      parts.push(plate);
+    }
+
     if (st.cab === 'closed') {
       // Cabina chiusa: tetto pieno, pannelli bassi e vetri. Visibile solo da fuori (prima persona pulita).
       const cabMat = trim;
@@ -184,6 +229,17 @@ export async function createForkliftModel(scene, mats, vehicle) {
         box(scene, 'cabGlassB', 1.05, 1.0, 0.02, new Vector3(0, 1.85, -1.56), mats.glass, body),
       ];
       for (const m of shell) m.metadata = { cabShell: true };
+    }
+  }
+
+  // Parti fisse del corpo unite in un'unica mesh (piu' leggera da disegnare)
+  if (parts.length > 1) {
+    root.computeWorldMatrix(true);
+    body.computeWorldMatrix(true);
+    const merged = Mesh.MergeMeshes(parts.filter((m) => !m.isDisposed()), true, true, undefined, false, true);
+    if (merged) {
+      merged.name = 'forkliftBodyMerged';
+      merged.parent = root; // vertici gia' in coordinate del muletto (scala inclusa)
     }
   }
 
