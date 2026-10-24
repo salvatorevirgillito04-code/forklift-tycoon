@@ -40,12 +40,14 @@ export class Forklift {
   }
 
   dispose() {
+    if (this.carried) this.carried.p.node.parent = null;
     this.model?.root.dispose();
   }
 
   place(x, z, yaw) {
     this.x = x; this.z = z; this.yaw = yaw;
     this.v = 0; this.steer = 0;
+    if (this.carried) this.carried.p.node.parent = null;
     this.carried = null;
     this.forkY = 0.05;
     this.sync();
@@ -99,6 +101,12 @@ export class Forklift {
 
   // true se la posa candidata urta qualcosa.
   collides(env, x, z, yaw, forkY = this.forkY, spread = this.spread) {
+    const c = this.contacts(env, x, z, yaw, forkY, spread);
+    return c === null || c.length > 0;
+  }
+
+  // null se la posa urta un ostacolo fisso, altrimenti l'elenco dei pallet urtati.
+  contacts(env, x, z, yaw, forkY = this.forkY, spread = this.spread) {
     const body = this.bodyRect(x, z, yaw);
     const forks = this.forkRects(x, z, yaw, spread);
     const carried = this.carried ? this.carriedPose(x, z, yaw) : null;
@@ -108,19 +116,67 @@ export class Forklift {
     for (const c of env.colliders) {
       if (c.y1 <= 0) continue;
       const r = aabbToRect(c);
-      if (verticalOverlap(0.05, BODY.height, c.y0, c.y1) && rectsOverlap(body, r)) return true;
-      if (verticalOverlap(forkY, forkY + FORK.thickness, c.y0, c.y1) && forks.some((f) => rectsOverlap(f, r))) return true;
-      if (cRect && verticalOverlap(carried.bottom + 0.01, cTop, c.y0, c.y1) && rectsOverlap(cRect, r, 0.0)) return true;
+      if (verticalOverlap(0.05, BODY.height, c.y0, c.y1) && rectsOverlap(body, r)) return null;
+      if (verticalOverlap(forkY, forkY + FORK.thickness, c.y0, c.y1) && forks.some((f) => rectsOverlap(f, r))) return null;
+      if (cRect && verticalOverlap(carried.bottom + 0.01, cTop, c.y0, c.y1) && rectsOverlap(cRect, r, 0.0)) return null;
     }
+    const hits = [];
     for (const p of env.pallets.list) {
       const hit = this.palletHit(p, env, x, z, yaw, forkY, spread, body, forks, cRect, carried, cTop);
       if (!hit) continue;
       // Gia' incastrato in questo pallet (es. appena caduto): permesso solo allontanarsi
       const stuck = this.stuck?.get(p);
       if (stuck && this.palletDistance(p, stuck.via, x, z, yaw) >= stuck.d - 1e-4) continue;
-      return true;
+      hits.push(p);
     }
-    return false;
+    return hits;
+  }
+
+  // Spinge i pallet urtati: si muovono insieme al punto del muletto che li tocca,
+  // ruotando se spinti fuori centro. Ritorna false se non si possono spostare.
+  pushPallets(env, hits, nx, nz, nYaw) {
+    const cur = this.frame;
+    const next = { x: nx, z: nz, yaw: nYaw };
+    const pallets = env.pallets;
+    const saved = hits.map((p) => ({ p, x: p.x, z: p.z, yaw: p.yaw }));
+    const restore = () => saved.forEach((o) => { o.p.x = o.x; o.p.z = o.z; o.p.yaw = o.yaw; });
+    for (const p of hits) {
+      if (p.state !== 'rest' || p.weight > this.vehicle.capacity * 2.5) { restore(); return false; }
+      const [lx, lz] = toLocal(cur, p.x, p.z);
+      const [wx, wz] = toWorld(next, lx, lz);
+      let dx = wx - p.x, dz = wz - p.z;
+      const len = Math.hypot(dx, dz);
+      if (len < 1e-6) { restore(); return false; }
+      // Un pallet spinto non segue rigidamente il muletto: scivola nel verso della spinta
+      // e ruota in base a quanto e' fuori centro rispetto al muletto.
+      const push = Math.max(len * 1.1, 0.004);
+      dx = (dx / len) * push; dz = (dz / len) * push;
+      const fwd = [Math.sin(nYaw), Math.cos(nYaw)];
+      const side = lx * Math.sign(this.v || 1);
+      const along = dx * fwd[0] + dz * fwd[1];
+      p.x += dx; p.z += dz;
+      p.yaw += (nYaw - cur.yaw) * 0.6 + Math.max(-0.02, Math.min(0.02, along * side * 0.35));
+    }
+    // Il pallet spostato non deve entrare in muri, camion o altri pallet
+    for (const p of hits) {
+      const r = pallets.rect(p);
+      const top = pallets.top(p);
+      const blocked = env.colliders.some((c) => c.y1 > 0 && verticalOverlap(p.bottom + 0.01, top, c.y0, c.y1) && rectsOverlap(r, aabbToRect(c)))
+        || pallets.list.some((o) => o !== p && o.state === 'rest' && !hits.includes(o)
+          && verticalOverlap(p.bottom + 0.01, top, o.bottom, pallets.top(o)) && rectsOverlap(r, pallets.rect(o), -0.01));
+      if (blocked) { restore(); return false; }
+    }
+    const still = this.contacts(env, nx, nz, nYaw);
+    if (still === null || still.some((p) => !hits.includes(p))) { restore(); return false; }
+    if (still.length) { restore(); return false; }
+    for (const p of hits) {
+      // Spinto oltre il bordo del pianale: cade
+      if (pallets.supportAt(p, p.bottom + 0.05) < p.bottom - 0.02) {
+        pallets.drop(p);
+        this.emit('dropped');
+      } else pallets.sync(p);
+    }
+    return true;
   }
 
   // Tipo di contatto con un pallet fermo: 'body', 'fork', 'carried' oppure null.
@@ -248,8 +304,15 @@ export class Forklift {
     const nx = this.x + Math.sin(nYaw) * this.v * dt;
     const nz = this.z + Math.cos(nYaw) * this.v * dt;
     let hit = false;
-    if (!this.collides(env, nx, nz, nYaw)) {
+    const touched = this.contacts(env, nx, nz, nYaw);
+    if (touched && touched.length === 0) {
       this.x = nx; this.z = nz; this.yaw = nYaw;
+    } else if (touched && this.pushPallets(env, touched, nx, nz, nYaw)) {
+      // Spingere un pallet frena il muletto in base al peso
+      this.x = nx; this.z = nz; this.yaw = nYaw;
+      const heavy = touched.reduce((m, p) => Math.max(m, p.weight), 0) / veh.capacity;
+      const maxPush = Math.max(0.6, 1.6 - heavy * 0.6);
+      if (Math.abs(this.v) > maxPush) this.v = Math.sign(this.v) * maxPush;
     } else if (!this.collides(env, this.x, this.z, nYaw)) {
       this.yaw = nYaw;
       hit = true;
@@ -318,10 +381,28 @@ export class Forklift {
       if (this.forkY + FORK.thickness >= p.bottom + PALLET.pocketHigh + 0.01) {
         this.carried = { p, lx: ins.lx, lz: ins.lz, relYaw: ins.dy, shallow: ins.depth < 0.55, time: 0 };
         p.state = 'carried';
+        this.attachVisual(p);
         this.emit('pickup');
         return;
       }
     }
+  }
+
+  // Il modello del pallet segue il carrello porta-forche (inclinazione e altezza comprese).
+  attachVisual(p) {
+    const m = this.model;
+    if (!m) return;
+    const c = this.carried;
+    p.node.parent = m.carriage;
+    p.node.position.set(c.lx, FORK.thickness - PALLET.pocketHigh, c.lz - m.mastPivot.position.z);
+    p.node.rotation.set(0, c.relYaw, 0);
+  }
+
+  detachVisual(p, env) {
+    p.node.parent = null;
+    p.tiltX = 0;
+    p.tiltZ = 0;
+    env.pallets.sync(p);
   }
 
   updateCarried(dt, env, { yawRate, decel, loadRatio }) {
@@ -339,7 +420,7 @@ export class Forklift {
       p.bottom = support;
       p.state = 'rest';
       this.carried = null;
-      env.pallets.sync(p, 0);
+      this.detachVisual(p, env);
       this.emit('place');
       return;
     }
@@ -369,7 +450,6 @@ export class Forklift {
       this.dropCarried(env);
       return;
     }
-    env.pallets.sync(p, -this.tilt);
   }
 
   dropCarried(env) {
@@ -378,6 +458,7 @@ export class Forklift {
     const p = c.p;
     this.carried = null;
     this.unstable = 0;
+    this.detachVisual(p, env);
     // Il pallet scivola in avanti oltre le punte delle forche (se c'e' spazio)
     const clear = FORK.baseZ + FORK.length - (c.lz - PALLET.size / 2) + 0.15;
     const dir = [Math.sin(this.yaw), Math.cos(this.yaw)];

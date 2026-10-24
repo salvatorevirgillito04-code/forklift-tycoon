@@ -239,11 +239,20 @@ export class Game {
       const dist = 6.8;
       target = base.add(new Vector3(0, 1.3 + f.forkY * 0.25, 0)).add(fwd.scale(1.6));
       const desired = base.add(fwd.scale(-dist)).add(new Vector3(0, 3.4 + this.lookPitch * 5, 0));
-      // Evita che la camera finisca dietro un muro
-      const dir = desired.subtract(target);
+      // Evita che la camera finisca dietro un muro. Il raggio parte dal centro del muletto
+      // (non dal punto davanti), cosi' la camera non puo' mai finire davanti al muletto.
+      const origin = base.add(new Vector3(0, 2.6, 0));
+      const dir = desired.subtract(origin);
       const len = dir.length();
-      const hit = this.scene.pickWithRay(new Ray(target, dir.scale(1 / len), len), (m) => m.metadata === 'wall');
-      const goal = hit?.hit ? target.add(dir.scale((hit.distance - 0.4) / len)) : desired;
+      const hit = this.scene.pickWithRay(new Ray(origin, dir.scale(1 / len), len), (m) => m.metadata === 'wall');
+      let goal = desired;
+      if (hit?.hit) {
+        const d = hit.distance - 0.35;
+        // Troppo vicino al muro: visuale alta, da sopra il tettuccio
+        goal = d < 1.8
+          ? base.add(fwd.scale(-1.2)).add(new Vector3(0, 5.2, 0))
+          : origin.add(dir.scale(d / len));
+      }
       if (!this.camPos) this.camPos = goal.clone();
       this.camPos = Vector3.Lerp(this.camPos, goal, 1 - Math.exp(-dt * 7));
       cam.position.copyFrom(this.camPos);
