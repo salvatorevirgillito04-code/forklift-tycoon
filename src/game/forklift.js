@@ -127,6 +127,8 @@ export class Forklift {
 
     for (const c of env.colliders) {
       if (c.y1 <= 0) continue;
+      // Scarta subito gli ostacoli lontani (il muletto con forche e carico sta in ~5 m)
+      if (c.maxX < x - 5 || c.minX > x + 5 || c.maxZ < z - 5 || c.minZ > z + 5) continue;
       const r = aabbToRect(c);
       if (verticalOverlap(0.05, BODY.height, c.y0, c.y1) && rectsOverlap(body, r)) return null;
       if (verticalOverlap(fy0, fy1, c.y0, c.y1) && forks.some((f) => rectsOverlap(f, r))) return null;

@@ -44,6 +44,7 @@ export class World {
     m.isPickable = collide && y1 - y0 > 2.5;
     if (m.isPickable) m.metadata = 'wall';
     if (shadow && this.shadowGen) this.shadowGen.addShadowCaster(m);
+    if (shadow && !m.metadata) m.metadata = { caster: true };
     this.statics.push(m);
     let col = null;
     if (collide) {
@@ -218,6 +219,7 @@ export class World {
     crown.scaling.y = 1.2;
     crown.material = this.mats.leaves;
     if (this.shadowGen) this.shadowGen.addShadowCaster(crown);
+    crown.metadata = { caster: true };
     trunk.isPickable = false;
     crown.isPickable = false;
     this.statics.push(trunk, crown);
@@ -234,7 +236,33 @@ export class World {
     }
   }
 
+  // Unisce gli oggetti fissi non interattivi con lo stesso materiale: molte meno chiamate di disegno.
+  // Restano separati muri (trasparenza e camera), portoni e insegne.
   freezeStatics() {
+    const keep = new Set([...this.doors.values()].map((d) => d.mesh));
+    const groups = new Map();
+    for (const m of this.statics) {
+      if (m.isDisposed() || m.isPickable || keep.has(m) || !m.material || m.parent) continue;
+      if (!groups.has(m.material)) groups.set(m.material, []);
+      groups.get(m.material).push(m);
+    }
+    const merged = [];
+    for (const [mat, list] of groups) {
+      if (list.length < 2) continue;
+      const caster = list.some((m) => m.metadata?.caster);
+      const receive = list.some((m) => m.receiveShadows);
+      const out = Mesh.MergeMeshes(list, true, true);
+      if (!out) continue;
+      out.material = mat;
+      out.isPickable = false;
+      out.receiveShadows = receive;
+      if (caster) {
+        out.metadata = { caster: true };
+        this.shadowGen?.addShadowCaster(out);
+      }
+      merged.push(out);
+    }
+    this.statics = this.statics.filter((m) => !m.isDisposed()).concat(merged);
     for (const m of this.statics) m.freezeWorldMatrix();
   }
 }

@@ -145,6 +145,9 @@ export class Hud {
   }
 
   update({ forklift, mission, pallets }) {
+    const now = performance.now();
+    if (now - (this.lastUpdate || 0) < 100) return;
+    this.lastUpdate = now;
     const { els } = this;
     const c = mission.contract;
     if (c && c.type !== 'free') {

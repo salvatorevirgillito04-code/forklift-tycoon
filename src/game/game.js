@@ -81,9 +81,10 @@ export class Game {
 
   applyQuality(q) {
     const dpr = window.devicePixelRatio || 1;
-    this.engine.setHardwareScalingLevel(q === 'high' ? 1 / Math.min(dpr, 2) : 1);
+    // Sui telefoni con densita' di pixel alta non serve disegnare ogni pixel fisico
+    this.engine.setHardwareScalingLevel(q === 'high' ? 1 / Math.min(dpr, 1.25) : 1);
     if (q === 'high' && !this.shadowGen) {
-      this.shadowGen = new ShadowGenerator(2048, this.sun);
+      this.shadowGen = new ShadowGenerator(1024, this.sun);
       this.shadowGen.usePercentageCloserFiltering = true;
       this.shadowGen.bias = 0.0015;
       this.shadowGen.normalBias = 0.02;

@@ -31,15 +31,19 @@ export function createMirrors(scene, root, mats) {
     frame.position.z = 0.016; // dietro al vetro
     frame.material = mats.rubber;
 
-    const rtt = new RenderTargetTexture(`mirrorRTT${side}`, { width: 256, height: 180 }, scene, false);
+    const rtt = new RenderTargetTexture(`mirrorRTT${side}`, { width: 192, height: 128 }, scene, false);
+    rtt.refreshRate = 2; // aggiornato a fotogrammi alterni: dimezza il costo
+    rtt.renderParticles = false;
+    rtt.renderSprites = false;
     rtt.wrapU = Texture.WRAP_ADDRESSMODE;
     rtt.uScale = -1; // effetto specchio
     const cam = new FreeCamera(`mirrorCam${side}`, Vector3.Zero(), scene, false);
     cam.minZ = 0.1;
-    cam.maxZ = 250;
+    cam.maxZ = 90;
     cam.fov = 0.75;
     rtt.activeCamera = cam;
-    rtt.renderListPredicate = (m) => !m.metadata?.mirror && m.isEnabled() && m.isVisible;
+    // Niente muletto (montanti e tettuccio facevano le stanghette nere) e niente oggetti lontani
+    rtt.renderListPredicate = (m) => !m.metadata?.mirror && m.isEnabled() && m.isVisible && !m.isDescendantOf(root);
     scene.customRenderTargets.push(rtt);
 
     const glass = MeshBuilder.CreatePlane('mirrorGlass', { width: 0.27, height: 0.18 }, scene);
