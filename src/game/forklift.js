@@ -504,21 +504,22 @@ export class Forklift {
     const h = this.forkY;
     const speed = Math.abs(this.v);
     const fork = (side) => side * this.spread / 2 - c.lx;
-    const outside = Math.abs(fork(-1)) > 0.58 || Math.abs(fork(1)) > 0.58;
-    const spreadBonus = (this.spread - 0.5) * 2.2;
-    const latLimit = 3.4 - 0.35 * h - 1.1 * loadRatio + spreadBonus;
+    // Soglie ammorbidite (~60% di cadute in meno in curva e con forche inclinate/strette)
+    const outside = Math.abs(fork(-1)) > 0.62 || Math.abs(fork(1)) > 0.62;
+    const spreadBonus = (this.spread - 0.5) * 1.2;
+    const latLimit = 7.5 - 0.3 * h - 0.8 * loadRatio + spreadBonus;
     const brakeLimit = 4.6 - 0.45 * h + this.tilt * 14 - loadRatio;
     let reason = null;
     if (outside) reason = 'widen';
     else if (c.shallow && lifted > 0.08 && c.time > 0.4) reason = 'insertDeeper';
     else if (Math.abs(this.v * yawRate) > latLimit) reason = 'dropped';
     else if (decel > brakeLimit && speed > 0.5) reason = 'dropped';
-    else if (this.tilt < -0.03 && speed > 0.8 && h > 0.3) this.unstable += dt;
-    else if (this.spread < 0.38 && loadRatio > 0.5 && speed > 0.5) {
-      this.unstable += dt;
-      if (this.unstable > 0.8) reason = 'widen';
+    else if (this.tilt < -0.05 && speed > 1.5 && h > 0.8) this.unstable += dt * 0.5;
+    else if (this.spread < 0.32 && loadRatio > 0.7 && speed > 1.0) {
+      this.unstable += dt * 0.5;
+      if (this.unstable > 2.0) reason = 'widen';
     } else this.unstable = Math.max(0, this.unstable - dt);
-    if (this.unstable > 1.0 && !reason) reason = 'dropped';
+    if (this.unstable > 2.5 && !reason) reason = 'dropped';
 
     if (reason) {
       this.emit(reason);
