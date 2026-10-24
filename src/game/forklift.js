@@ -132,6 +132,18 @@ export class Forklift {
     return hits;
   }
 
+  // Attrito di primo distacco: un tocco leggero non sposta il pallet; serve tenere
+  // il gas contro il pallet per un attimo (di piu' se e' pesante).
+  readyToPush(dt, input, hits) {
+    if (input.throttle <= 0) { this.pushTime = 0; this.pushGrace = 0; return false; }
+    if (this.pushGrace > 0) { this.pushGrace = 0.4; return true; }
+    this.pushTime = (this.pushTime || 0) + dt;
+    const heavy = hits.reduce((m, p) => Math.max(m, p.weight), 0) / this.vehicle.capacity;
+    if (this.pushTime < 0.35 + Math.min(1, heavy) * 0.5) return false;
+    this.pushGrace = 0.4;
+    return true;
+  }
+
   // Spinge i pallet urtati: si muovono insieme al punto del muletto che li tocca,
   // ruotando se spinti fuori centro. Ritorna false se non si possono spostare.
   pushPallets(env, hits, nx, nz, nYaw) {
@@ -305,9 +317,14 @@ export class Forklift {
     const nz = this.z + Math.cos(nYaw) * this.v * dt;
     let hit = false;
     const touched = this.contacts(env, nx, nz, nYaw);
+    if (!touched || touched.length === 0) {
+      // Pallet gia' smosso: resta "in movimento" per un attimo anche senza contatto
+      this.pushGrace = (this.pushGrace || 0) - dt;
+      if (this.pushGrace <= 0) this.pushTime = 0;
+    }
     if (touched && touched.length === 0) {
       this.x = nx; this.z = nz; this.yaw = nYaw;
-    } else if (touched && this.pushPallets(env, touched, nx, nz, nYaw)) {
+    } else if (touched && this.readyToPush(dt, input, touched) && this.pushPallets(env, touched, nx, nz, nYaw)) {
       // Spingere un pallet frena il muletto in base al peso
       this.x = nx; this.z = nz; this.yaw = nYaw;
       const heavy = touched.reduce((m, p) => Math.max(m, p.weight), 0) / veh.capacity;
@@ -321,7 +338,8 @@ export class Forklift {
     }
     if (hit) {
       if (Math.abs(this.v) > 1.6 && this.carried) this.dropCarried(env);
-      this.v *= -0.15;
+      // Contro un pallet in attesa di smuoverlo: si ferma senza rimbalzare
+      this.v *= touched && touched.length && (this.pushTime > 0 || this.pushGrace > 0) ? 0 : -0.15;
       env.onImpact?.(Math.abs(prevV));
     }
 

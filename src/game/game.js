@@ -151,7 +151,13 @@ export class Game {
     Sentry.addBreadcrumb({ category: 'mission', message: `start ${contract.type} lv${contract.level}` });
   }
 
+  clearFadedWalls() {
+    for (const m of this.fadedWalls || []) m.visibility = 1;
+    this.fadedWalls = null;
+  }
+
   stopMission() {
+    this.clearFadedWalls();
     this.mission.cleanup();
     this.forklift?.dispose();
     this.forklift = null;
@@ -228,6 +234,7 @@ export class Game {
     const base = new Vector3(f.x, 0, f.z);
     let pos, target;
     if (this.settings.view === 'first') {
+      this.clearFadedWalls();
       const fy = f.yaw;
       // Occhio del guidatore al centro: si guarda attraverso il montante, tra le catene
       const [ex, ez] = [0.05, -0.75];
@@ -239,20 +246,16 @@ export class Game {
       const dist = 6.8;
       target = base.add(new Vector3(0, 1.3 + f.forkY * 0.25, 0)).add(fwd.scale(1.6));
       const desired = base.add(fwd.scale(-dist)).add(new Vector3(0, 3.4 + this.lookPitch * 5, 0));
-      // Evita che la camera finisca dietro un muro. Il raggio parte dal centro del muletto
-      // (non dal punto davanti), cosi' la camera non puo' mai finire davanti al muletto.
-      const origin = base.add(new Vector3(0, 2.6, 0));
+      // Muri tra camera e muletto: diventano semitrasparenti (la camera resta dietro)
+      const origin = base.add(new Vector3(0, 1.6, 0));
       const dir = desired.subtract(origin);
       const len = dir.length();
-      const hit = this.scene.pickWithRay(new Ray(origin, dir.scale(1 / len), len), (m) => m.metadata === 'wall');
-      let goal = desired;
-      if (hit?.hit) {
-        const d = hit.distance - 0.35;
-        // Troppo vicino al muro: visuale alta, da sopra il tettuccio
-        goal = d < 1.8
-          ? base.add(fwd.scale(-1.2)).add(new Vector3(0, 5.2, 0))
-          : origin.add(dir.scale(d / len));
-      }
+      const hits = this.scene.multiPickWithRay(new Ray(origin, dir.scale(1 / len), len + 0.5), (m) => m.metadata === 'wall') || [];
+      const faded = new Set(hits.map((h) => h.pickedMesh));
+      for (const m of this.fadedWalls || []) if (!faded.has(m)) m.visibility = 1;
+      for (const m of faded) m.visibility = 0.25;
+      this.fadedWalls = faded;
+      const goal = desired;
       if (!this.camPos) this.camPos = goal.clone();
       this.camPos = Vector3.Lerp(this.camPos, goal, 1 - Math.exp(-dt * 7));
       cam.position.copyFrom(this.camPos);
