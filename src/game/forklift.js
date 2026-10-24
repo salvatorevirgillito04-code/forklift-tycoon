@@ -7,6 +7,9 @@ const BODY = { hw: 0.6, z0: -2.25, z1: 0.6, height: 2.45 };
 const SPREAD = [0.25, 1.0];
 const TILT = [-0.09, 0.17]; // negativo = in avanti
 const QUARTER = Math.PI / 2;
+const MAST_PIVOT_Z = 0.48;
+const TIP_ARM = FORK.baseZ + FORK.length - MAST_PIVOT_Z; // distanza perno montante -> punta forche
+const WHEEL_TURNS = Math.PI * 1.5; // rotazione del volante a fine corsa
 
 export class Forklift {
   constructor(scene, mats, vehicle) {
@@ -24,6 +27,7 @@ export class Forklift {
     this.unstable = 0;
     this.events = []; // messaggi per l'HUD: 'tooHeavy', 'insertDeeper', 'dropped', 'widen', 'pickup', 'place'
     this.wheelSpin = 0;
+    this.rates = { lift: 0, spread: 0, tilt: 0 }; // velocita' idrauliche (con inerzia)
   }
 
   async build(shadowGen) {
@@ -175,18 +179,23 @@ export class Forklift {
     }
     this.steer = Math.max(-1, Math.min(1, this.steer));
 
-    // --- Marcia, acceleratore, freno ---
-    if (input.gear && input.gear !== this.gear && Math.abs(this.v) < 0.3) this.gear = input.gear;
+    // --- Marcia, acceleratore, freno motore ---
+    // La marcia si puo' cambiare anche in movimento: premendo l'acceleratore
+    // il muletto rallenta e poi riparte nel nuovo senso (inversione come sui veri muletti).
+    if (input.gear && input.gear !== this.gear) this.gear = input.gear;
     const maxV = (this.gear > 0 ? veh.speed : veh.speed * 0.6) * (1 - loadRatio * 0.25);
     const prevV = this.v;
     const dir = this.gear;
     if (input.throttle > 0) {
-      if (Math.sign(this.v || dir) === dir) {
+      if (this.v === 0 || Math.sign(this.v) === dir) {
         this.v += dir * input.throttle * veh.accel * (1 - loadRatio * 0.3) * dt;
       } else {
-        // Acceleratore contro il verso di marcia (es. dopo un rimbalzo): frena fino a fermarsi
-        const dec = input.throttle * 5 * dt;
-        this.v = Math.abs(this.v) <= dec ? 0 : this.v - Math.sign(this.v) * dec;
+        const dec = (2.2 + input.throttle * 1.8) * dt;
+        if (Math.abs(this.v) <= dec) {
+          // supera lo zero e inizia a muoversi nel nuovo senso
+          const left = 1 - Math.abs(this.v) / dec;
+          this.v = dir * input.throttle * veh.accel * dt * left;
+        } else this.v -= Math.sign(this.v) * dec;
       }
     }
     if (input.brake > 0) {
@@ -194,24 +203,43 @@ export class Forklift {
       this.v = Math.abs(this.v) <= dec ? 0 : this.v - Math.sign(this.v) * dec;
     }
     if (input.throttle === 0) {
-      const roll = 1.2 * dt;
-      this.v = Math.abs(this.v) <= roll ? 0 : this.v - Math.sign(this.v) * roll;
+      // freno motore: rilasciando l'acceleratore il muletto rallenta deciso
+      const engine = 1.9 * dt;
+      this.v = Math.abs(this.v) <= engine ? 0 : this.v - Math.sign(this.v) * engine;
     }
     if (Math.abs(this.v) > maxV) this.v = Math.sign(this.v) * maxV;
 
-    // --- Forche ---
-    const minFork = this.minForkHeight(env);
-    let newForkY = this.forkY + input.lift * 0.55 * dt * (1 - loadRatio * 0.3);
+    // --- Forche (idraulica con inerzia) ---
+    const ease = (k, target, accel) => {
+      const r = this.rates[k];
+      this.rates[k] = r + Math.sign(target - r) * Math.min(Math.abs(target - r), accel * dt);
+      return this.rates[k];
+    };
+    const liftRate = ease('lift', input.lift * 0.55 * (1 - loadRatio * 0.3), 2.2);
+    const spreadRate = ease('spread', input.spread * 0.3, 1.5);
+    const tiltRate = ease('tilt', input.tilt * 0.1, 0.5);
+
+    const minFork = Math.max(this.minForkHeight(env), this.tipDrop(this.tilt));
+    let newForkY = this.forkY + liftRate * dt;
     newForkY = Math.max(minFork, Math.min(veh.lift, newForkY));
-    if (input.lift > 0 && this.wouldLiftPallet(env, newForkY)) newForkY = this.forkY;
-    let newSpread = Math.max(SPREAD[0], Math.min(SPREAD[1], this.spread + input.spread * 0.3 * dt));
+    if (newForkY === minFork || newForkY === veh.lift) this.rates.lift = 0;
+    if (liftRate > 0 && this.wouldLiftPallet(env, newForkY)) { newForkY = this.forkY; this.rates.lift = 0; }
+    let newSpread = Math.max(SPREAD[0], Math.min(SPREAD[1], this.spread + spreadRate * dt));
     if (newSpread !== this.spread && !this.carried && this.collides(env, this.x, this.z, this.yaw, this.forkY, newSpread)) {
       newSpread = this.spread;
+      this.rates.spread = 0;
     }
-    if (newForkY !== this.forkY && this.collides(env, this.x, this.z, this.yaw, newForkY, newSpread)) newForkY = this.forkY;
+    if (newForkY !== this.forkY && this.collides(env, this.x, this.z, this.yaw, newForkY, newSpread)) { newForkY = this.forkY; this.rates.lift = 0; }
     this.forkY = newForkY;
     this.spread = newSpread;
-    this.tilt = Math.max(TILT[0], Math.min(TILT[1], this.tilt + input.tilt * 0.12 * dt));
+    // In avanti le punte non possono scendere sotto la superficie su cui poggiano
+    const ground = this.minForkHeight(env);
+    const maxFwd = Math.asin(Math.max(0, Math.min(1, (this.forkY - ground) / TIP_ARM)));
+    const tiltMin = Math.max(TILT[0], -maxFwd);
+    let newTilt = this.tilt + tiltRate * dt;
+    if (newTilt < tiltMin) { newTilt = Math.max(tiltMin, Math.min(this.tilt, newTilt)); this.rates.tilt = Math.max(0, this.rates.tilt); }
+    if (newTilt > TILT[1]) { newTilt = TILT[1]; this.rates.tilt = 0; }
+    this.tilt = newTilt;
 
     // --- Cinematica: modello bicicletta con riferimento sull'asse anteriore ---
     const delta = this.steer * MAX_STEER;
@@ -238,6 +266,11 @@ export class Forklift {
     this.checkPickup(env);
     this.wheelSpin += this.v * dt / 0.33;
     this.sync(delta);
+  }
+
+  // Abbassamento delle punte dovuto all'inclinazione in avanti.
+  tipDrop(tilt) {
+    return tilt < 0 ? Math.sin(-tilt) * TIP_ARM : 0;
   }
 
   // Altezza minima delle forche: non possono attraversare il pianale o un pallet sotto di esse.
@@ -380,6 +413,7 @@ export class Forklift {
     m.forkL.position.x = -this.spread / 2;
     m.forkR.position.x = this.spread / 2;
     m.rearWheels.forEach((w) => { w.rotation.y = -delta; });
+    if (m.steerSpin) m.steerSpin.rotation.y = this.steer * WHEEL_TURNS;
     [...m.frontWheels, ...m.rearWheels].forEach((w) => {
       w.getChildMeshes()[0].rotation.x = this.wheelSpin;
     });

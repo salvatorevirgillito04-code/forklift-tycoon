@@ -67,6 +67,7 @@ export async function createForkliftModel(scene, mats, vehicle) {
   const paint = mats.paint(vehicle.color);
   const parts = [];
 
+  let steerSpin = null;
   const glb = await tryLoadGLB(scene, 'forklift.glb');
   if (glb) {
     instantiateGLB(glb, root, 'forkliftBody');
@@ -90,15 +91,18 @@ export async function createForkliftModel(scene, mats, vehicle) {
     steerNode.parent = root;
     steerNode.position.set(-0.24, 1.42, -0.26);
     steerNode.rotation.x = -0.75;
+    // Parte rotante del volante (gira con lo sterzo)
+    steerSpin = new TransformNode('steerSpin', scene);
+    steerSpin.parent = steerNode;
     const rim = MeshBuilder.CreateTorus('steerRim', { diameter: 0.4, thickness: 0.04, tessellation: 32 }, scene);
-    rim.parent = steerNode;
+    rim.parent = steerSpin;
     rim.material = mats.rubber;
     for (const a of [Math.PI / 2, Math.PI * 7 / 6, Math.PI * 11 / 6]) {
-      const spoke = box(scene, 'spoke', 0.18, 0.02, 0.03, new Vector3(Math.cos(a) * 0.09, 0, Math.sin(a) * 0.09), mats.rubber, steerNode);
+      const spoke = box(scene, 'spoke', 0.18, 0.02, 0.03, new Vector3(Math.cos(a) * 0.09, 0, Math.sin(a) * 0.09), mats.rubber, steerSpin);
       spoke.rotation.y = -a;
     }
-    cyl(scene, 'steerHub', 0.08, 0.04, Vector3.Zero(), mats.darkSteel, steerNode, 16);
-    cyl(scene, 'steerKnob', 0.045, 0.07, new Vector3(0.14, 0.04, -0.14), mats.seat, steerNode, 12);
+    cyl(scene, 'steerHub', 0.08, 0.04, Vector3.Zero(), mats.darkSteel, steerSpin, 16);
+    cyl(scene, 'steerKnob', 0.045, 0.07, new Vector3(0.14, 0.04, -0.14), mats.seat, steerSpin, 12);
     const col = cyl(scene, 'steerCol', 0.07, 0.55, new Vector3(-0.24, 1.2, -0.09), mats.darkSteel, root);
     col.rotation.x = 0.8;
     parts.push(col);
@@ -145,7 +149,7 @@ export async function createForkliftModel(scene, mats, vehicle) {
     cyl(scene, 'liftRod', 0.04, 0.6, new Vector3(side * 0.42, 2.0, -0.12), mats.chrome, mastPivot, 10);
   }
   box(scene, 'mastTop', 0.78, 0.1, 0.1, new Vector3(0, 2.15, 0), mats.darkSteel, mastPivot);
-  box(scene, 'mastCross', 0.78, 0.12, 0.08, new Vector3(0, 0.25, -0.02), mats.darkSteel, mastPivot);
+  box(scene, 'mastCross', 0.78, 0.06, 0.06, new Vector3(0, 0.22, -0.02), mats.darkSteel, mastPivot);
   const inner = new TransformNode('innerMast', scene);
   inner.parent = mastPivot;
   box(scene, 'innerL', 0.07, 2.2, 0.1, new Vector3(-0.24, 1.15, 0.06), mats.steel, inner);
@@ -161,25 +165,31 @@ export async function createForkliftModel(scene, mats, vehicle) {
   });
   const carriage = new TransformNode('carriage', scene);
   carriage.parent = mastPivot;
-  box(scene, 'carriagePlate', 1.0, 0.45, 0.06, new Vector3(0, 0.3, 0.12), mats.darkSteel, carriage);
-  box(scene, 'backrestTop', 1.0, 0.05, 0.04, new Vector3(0, 1.21, 0.12), mats.darkSteel, carriage);
-  box(scene, 'backrestMid', 1.0, 0.04, 0.03, new Vector3(0, 0.88, 0.12), mats.darkSteel, carriage);
-  for (let i = -2; i <= 2; i++) box(scene, 'backrestBar', 0.03, 0.7, 0.03, new Vector3(i * 0.22, 0.88, 0.12), mats.darkSteel, carriage);
-
+  // Piastra porta-forche: due traverse (non un blocco pieno)
+  box(scene, 'forkBarTop', 1.0, 0.09, 0.05, new Vector3(0, 0.5, 0.12), mats.darkSteel, carriage);
+  box(scene, 'forkBarLow', 1.0, 0.07, 0.05, new Vector3(0, 0.1, 0.12), mats.darkSteel, carriage);
+  for (const x of [-0.46, 0.46]) box(scene, 'carriageSide', 0.05, 0.47, 0.05, new Vector3(x, 0.3, 0.12), mats.darkSteel, carriage);
+  // Griglia di protezione del carico, come sui muletti veri
+  box(scene, 'backrestFrameTop', 1.0, 0.04, 0.04, new Vector3(0, 1.3, 0.12), mats.darkSteel, carriage);
+  for (const x of [-0.48, 0.48]) box(scene, 'backrestFrameSide', 0.04, 0.78, 0.04, new Vector3(x, 0.92, 0.12), mats.darkSteel, carriage);
+  for (const y of [0.8, 1.05]) box(scene, 'backrestRail', 0.96, 0.02, 0.02, new Vector3(0, y, 0.12), mats.darkSteel, carriage);
+  for (let i = -4; i <= 4; i++) box(scene, 'backrestBar', 0.018, 0.76, 0.018, new Vector3(i * 0.105, 0.92, 0.12), mats.darkSteel, carriage);
   const makeFork = (name) => {
     const f = new TransformNode(name, scene);
     f.parent = carriage;
     // Forca a "L": gambo verticale + lama orizzontale (la lama parte dal carrello in avanti)
     box(scene, name + 'Shank', FORK.width, 0.55, 0.05, new Vector3(0, 0.27, 0.16), mats.steel, f);
-    box(scene, name + 'Blade', FORK.width, FORK.thickness, FORK.length,
-      new Vector3(0, FORK.thickness / 2, 0.14 + FORK.length / 2), mats.steel, f);
+    box(scene, name + 'Blade', FORK.width, FORK.thickness, FORK.length - 0.12,
+      new Vector3(0, FORK.thickness / 2, 0.14 + (FORK.length - 0.12) / 2), mats.steel, f);
+    box(scene, name + 'Tip', FORK.width, FORK.thickness, 0.12,
+      new Vector3(0, FORK.thickness / 2, 0.14 + FORK.length - 0.06), mats.lineYellow, f);
     return f;
   };
   const forkL = makeFork('forkL');
   const forkR = makeFork('forkR');
 
   const all = root.getChildMeshes();
-  return { root, mastPivot, inner, carriage, chains, forkL, forkR, frontWheels, rearWheels, meshes: all };
+  return { root, mastPivot, inner, carriage, chains, steerSpin, forkL, forkR, frontWheels, rearWheels, meshes: all };
 }
 
 export async function createTruckModel(scene, mats, color = '#d63a2f') {

@@ -42,9 +42,9 @@ function rng(seed) {
 }
 
 const DIFF = {
-  easy: { mult: 1, pallets: 2, perLvl: 0.2, secPerPallet: 80, weight: 0.45, fragile: false },
-  normal: { mult: 1.6, pallets: 3, perLvl: 0.28, secPerPallet: 60, weight: 0.65, fragile: false },
-  hard: { mult: 2.5, pallets: 4, perLvl: 0.36, secPerPallet: 46, weight: 0.85, fragile: true },
+  easy: { mult: 1, pallets: 2, perLvl: 0.2, secPerPallet: 110, minSec: 70, maxTime: 300, weight: 0.45, fragile: false },
+  normal: { mult: 1.6, pallets: 3, perLvl: 0.28, secPerPallet: 95, minSec: 60, maxTime: 360, weight: 0.65, fragile: false },
+  hard: { mult: 2.5, pallets: 4, perLvl: 0.36, secPerPallet: 85, minSec: 50, maxTime: 420, weight: 0.85, fragile: true },
 };
 
 export const DIFFICULTIES = Object.keys(DIFF);
@@ -58,7 +58,9 @@ export function makeContract(level, difficulty, warehouseId) {
   // Il peso cresce con il livello: ai livelli alti servono muletti piu' potenti.
   const baseWeight = 350 + level * 55;
   const weight = Math.round((baseWeight * (0.8 + d.weight * 0.6 + r() * 0.2)) / 10) * 10;
-  const timeLimit = Math.round(pallets * Math.max(28, d.secPerPallet - level * 0.6) + 30);
+  // Tempo: piu' secondi per pallet, fino a 5/6/7 minuti (facile/normale/difficile)
+  const perPallet = Math.max(d.minSec, d.secPerPallet - level * 0.5);
+  const timeLimit = Math.round(Math.min(d.maxTime, pallets * perPallet + 60) / 5) * 5;
   const reward = Math.round(90 * Math.pow(1.13, level - 1) * d.mult * wh.rewardMult * (0.95 + r() * 0.1));
   const xp = Math.round((40 + level * 12) * d.mult);
   return {
