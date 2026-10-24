@@ -1,12 +1,20 @@
 // Mezzi del garage, dal piu' debole al piu' potente.
 // speed in m/s, capacity in kg, lift = altezza massima forche in m.
+// Ispirati a modelli reali (senza marchi): portata, alzata e velocita' restano quelle di gioco.
+// scale = taglia del mezzo (l'ultimo e' ~1,5 volte il primo); style = dettagli del modello 3D.
 export const VEHICLES = [
-  { id: 'e12', name: 'Compact E12', price: 0, capacity: 1200, lift: 3.0, speed: 4.0, accel: 2.2, color: '#f2b705' },
-  { id: 'd18', name: 'Worker D18', price: 2500, capacity: 1800, lift: 3.8, speed: 4.8, accel: 2.6, color: '#e8701a' },
-  { id: 'd25', name: 'Heavy D25', price: 8000, capacity: 2500, lift: 4.5, speed: 5.5, accel: 3.0, color: '#c8312b' },
-  { id: 'd35', name: 'Pro D35', price: 20000, capacity: 3500, lift: 5.2, speed: 6.0, accel: 3.3, color: '#2d6cdf' },
-  { id: 'd50', name: 'Titan D50', price: 50000, capacity: 5000, lift: 5.8, speed: 6.6, accel: 3.6, color: '#2f9e44' },
-  { id: 'd80', name: 'Mega D80', price: 120000, capacity: 8000, lift: 6.5, speed: 7.2, accel: 4.0, color: '#2b2b2b' },
+  { id: 'e12', name: 'Compact 18', price: 0, capacity: 1200, lift: 3.0, speed: 4.0, accel: 2.2, color: '#e2561c', scale: 1.0,
+    photo: 'forklift-1.jpg', style: { trim: '#3a3d42', rim: '#2b2b2b', lpg: true } },
+  { id: 'd18', name: 'Worker 35D', price: 2500, capacity: 1800, lift: 3.8, speed: 4.8, accel: 2.6, color: '#d71920', scale: 1.1,
+    photo: 'forklift-2.jpg', style: { trim: '#3b3e43', rim: '#c9cdd2', exhaust: true } },
+  { id: 'd25', name: 'Heavy 60D', price: 8000, capacity: 2500, lift: 4.5, speed: 5.5, accel: 3.0, color: '#d8161b', scale: 1.2,
+    photo: 'forklift-3.jpg', style: { trim: '#1e1f22', rim: '#1e1f22', exhaust: true, roundRear: true, dualFront: true, workLights: true } },
+  { id: 'd35', name: 'Titan XF100', price: 20000, capacity: 3500, lift: 5.2, speed: 6.0, accel: 3.3, color: '#e0321d', scale: 1.3,
+    photo: 'forklift-4.jpg', style: { trim: '#141414', rim: '#e0321d', fork: '#e0321d' } },
+  { id: 'd50', name: 'Mega H120', price: 50000, capacity: 5000, lift: 5.8, speed: 6.6, accel: 3.6, color: '#d9202a', scale: 1.4,
+    photo: 'forklift-5.jpg', style: { trim: '#151515', rim: '#d9202a', exhaust: true, roundRear: true, cab: 'closed' } },
+  { id: 'd80', name: 'Colossus 160', price: 120000, capacity: 8000, lift: 6.5, speed: 7.2, accel: 4.0, color: '#d9b23a', scale: 1.5,
+    photo: 'forklift-6.jpg', style: { trim: '#1a1a1a', rim: '#e8e2c8', exhaust: true, cab: 'closed' } },
 ];
 
 export const vehicleById = (id) => VEHICLES.find((v) => v.id === id) || VEHICLES[0];

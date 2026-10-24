@@ -152,7 +152,9 @@ export function renderGarage(app) {
         ? `<button class="pill-btn blue" data-equip="${v.id}">${t('equip')}</button>`
         : `<button class="pill-btn ${save.coins >= v.price ? 'green' : 'grey'}" data-buy="${v.id}">${ICONS.coin}${fmt(v.price)}</button>`;
     return `<div class="vehicle-card ${active ? 'active' : ''}">
-        <div class="vehicle-swatch" style="--c:${v.color}">${ICONS.forklift}</div>
+        <div class="vehicle-photo" style="--c:${v.color}">
+          <img src="${import.meta.env.BASE_URL}garage/${v.photo}" alt="${esc(v.name)}" loading="lazy">
+        </div>
         <div class="vehicle-info">
           <h3>${esc(v.name)} ${v.price === 0 ? `<small>${t('starter')}</small>` : ''}</h3>
           ${bar(t('capacity'), v.capacity, maxOf('capacity'), `${fmt(v.capacity)} kg`)}

@@ -27,15 +27,35 @@ function cyl(scene, name, diameter, height, pos, mat, parent, tess = 20) {
   return m;
 }
 
-function wheel(scene, name, radius, width, pos, mats, parent) {
+function wheel(scene, name, radius, width, pos, mats, parent, rimMat = mats.steel) {
   const node = new TransformNode(name, scene);
   node.parent = parent;
   node.position.copyFrom(pos);
   const tyre = cyl(scene, name + 'Tyre', radius * 2, width, Vector3.Zero(), mats.rubber, node, 24);
   tyre.rotation.z = Math.PI / 2;
-  const rim = cyl(scene, name + 'Rim', radius * 1.15, width + 0.02, Vector3.Zero(), mats.steel, node, 16);
+  const rim = cyl(scene, name + 'Rim', radius * 1.15, width + 0.02, Vector3.Zero(), rimMat, node, 16);
   rim.rotation.z = Math.PI / 2;
   return node;
+}
+
+// Misure del muletto in base alla taglia (scale): il corpo cresce in proporzione,
+// forche e carrello restano delle misure dei pallet.
+export function vehicleGeometry(vehicle) {
+  const s = vehicle.scale || 1;
+  const dz = 0.6 * (s - 1); // il montante si sposta in avanti col muso del corpo
+  return {
+    s,
+    dz,
+    wheelbase: 1.55 * s,
+    body: { hw: 0.6 * s, z0: -2.25 * s, z1: 0.6 * s, height: 2.45 * s },
+    mastZ: 0.48 + dz,
+    forkBase: FORK.baseZ + dz,
+    tipArm: FORK.baseZ + FORK.length - 0.48,
+    mastHeight: 2.41 * s,
+    freeLift: 1.6 * s,
+    innerLen: 2.2 * s,
+    eye: [0.05 * s, 2.0 * s, -0.75 * s],
+  };
 }
 
 // File .glb opzionali in /public/models: se presenti sostituiscono i modelli procedurali.
@@ -64,31 +84,43 @@ function instantiateGLB(container, parent, name) {
 
 export async function createForkliftModel(scene, mats, vehicle) {
   const root = new TransformNode('forklift', scene);
+  const st = vehicle.style || {};
+  const geo = vehicleGeometry(vehicle);
   const paint = mats.paint(vehicle.color);
+  const trim = st.trim ? mats.paint(st.trim) : mats.darkSteel;
+  const rimMat = st.rim ? mats.paint(st.rim) : mats.steel;
+  // Corpo, ruote e cabina in un gruppo che si ingrandisce con la taglia del mezzo
+  const body = new TransformNode('forkliftBody', scene);
+  body.parent = root;
+  body.scaling.setAll(geo.s);
   const parts = [];
 
   let steerSpin = null;
   const glb = await tryLoadGLB(scene, 'forklift.glb');
   if (glb) {
-    instantiateGLB(glb, root, 'forkliftBody');
+    instantiateGLB(glb, body, 'forkliftBody');
   } else {
     // Telaio e contrappeso
-    parts.push(box(scene, 'chassis', 1.15, 0.5, 1.8, new Vector3(0, 0.45, -1.15), paint, root));
-    const cw = box(scene, 'counterweight', 1.18, 0.75, 0.55, new Vector3(0, 0.75, -1.9), paint, root);
+    parts.push(box(scene, 'chassis', 1.15, 0.5, 1.8, new Vector3(0, 0.45, -1.15), paint, body));
+    const cw = box(scene, 'counterweight', 1.18, 0.75, 0.55, new Vector3(0, 0.75, -1.9), paint, body);
     parts.push(cw);
-    parts.push(box(scene, 'cwTop', 1.1, 0.12, 0.5, new Vector3(0, 1.17, -1.88), mats.darkSteel, root));
-    parts.push(box(scene, 'hood', 1.05, 0.3, 1.0, new Vector3(0, 0.85, -1.15), paint, root));
-    parts.push(box(scene, 'step', 1.2, 0.08, 0.5, new Vector3(0, 0.25, 0.05), mats.darkSteel, root));
-    parts.push(box(scene, 'dash', 0.42, 0.16, 0.22, new Vector3(-0.24, 0.9, 0.0), mats.darkSteel, root));
+    if (st.roundRear) {
+      // Contrappeso arrotondato (mezzi pesanti)
+      const r = cyl(scene, 'cwRound', 0.7, 1.18, new Vector3(0, 0.95, -2.02), paint, body, 20);
+      r.rotation.z = Math.PI / 2;
+    }
+    parts.push(box(scene, 'cwTop', 1.1, 0.12, 0.5, new Vector3(0, 1.17, -1.88), trim, body));
+    parts.push(box(scene, 'hood', 1.05, 0.3, 1.0, new Vector3(0, 0.85, -1.15), trim, body));
+    parts.push(box(scene, 'step', 1.2, 0.08, 0.5, new Vector3(0, 0.25, 0.05), mats.darkSteel, body));
+    parts.push(box(scene, 'dash', 0.42, 0.16, 0.22, new Vector3(-0.24, 0.9, 0.0), trim, body));
     // Sedile
-    parts.push(box(scene, 'seat', 0.5, 0.12, 0.5, new Vector3(0, 1.08, -0.75), mats.seat, root));
-    const back = box(scene, 'seatBack', 0.5, 0.55, 0.1, new Vector3(0, 1.38, -1.0), mats.seat, root);
+    parts.push(box(scene, 'seat', 0.5, 0.12, 0.5, new Vector3(0, 1.08, -0.75), mats.seat, body));
+    const back = box(scene, 'seatBack', 0.5, 0.55, 0.1, new Vector3(0, 1.38, -1.0), mats.seat, body);
     back.rotation.x = -0.15;
     parts.push(back);
-    // Volante
     // Volante scuro con pomello e piantone con display
     const steerNode = new TransformNode('steerNode', scene);
-    steerNode.parent = root;
+    steerNode.parent = body;
     steerNode.position.set(-0.24, 1.42, -0.26);
     steerNode.rotation.x = -0.75;
     // Parte rotante del volante (gira con lo sterzo)
@@ -103,58 +135,100 @@ export async function createForkliftModel(scene, mats, vehicle) {
     }
     cyl(scene, 'steerHub', 0.08, 0.04, Vector3.Zero(), mats.darkSteel, steerSpin, 16);
     cyl(scene, 'steerKnob', 0.045, 0.07, new Vector3(0.14, 0.04, -0.14), mats.seat, steerSpin, 12);
-    const col = cyl(scene, 'steerCol', 0.07, 0.55, new Vector3(-0.24, 1.2, -0.09), mats.darkSteel, root);
+    const col = cyl(scene, 'steerCol', 0.07, 0.55, new Vector3(-0.24, 1.2, -0.09), mats.darkSteel, body);
     col.rotation.x = 0.8;
     parts.push(col);
-    const display = box(scene, 'display', 0.14, 0.08, 0.01, new Vector3(-0.24, 1.38, -0.02), mats.display, root);
+    const display = box(scene, 'display', 0.14, 0.08, 0.01, new Vector3(-0.24, 1.38, -0.02), mats.display, body);
     display.rotation.x = -0.6;
     parts.push(display);
     // Tettuccio di protezione
     for (const [x, z, h] of [[-0.52, 0.15, 2.0], [0.52, 0.15, 2.0], [-0.52, -1.55, 1.25], [0.52, -1.55, 1.25]]) {
-      parts.push(box(scene, 'post', 0.085, h, 0.085, new Vector3(x, z > 0 ? 1.15 + h / 2 - 0.15 : 1.2 + h / 2, z), mats.darkSteel, root));
+      parts.push(box(scene, 'post', 0.085, h, 0.085, new Vector3(x, z > 0 ? 1.15 + h / 2 - 0.15 : 1.2 + h / 2, z), mats.darkSteel, body));
     }
-    parts.push(box(scene, 'guardRoof', 1.12, 0.06, 1.85, new Vector3(0, 2.32, -0.7), mats.darkSteel, root));
+    parts.push(box(scene, 'guardRoof', 1.12, 0.06, 1.85, new Vector3(0, 2.32, -0.7), mats.darkSteel, body));
     for (let i = 0; i < 5; i++) {
-      parts.push(box(scene, 'guardBar', 1.1, 0.04, 0.05, new Vector3(0, 2.36, -1.5 + i * 0.4), mats.darkSteel, root));
+      parts.push(box(scene, 'guardBar', 1.1, 0.04, 0.05, new Vector3(0, 2.36, -1.5 + i * 0.4), mats.darkSteel, body));
     }
     // Fari e lampeggiante
-    parts.push(box(scene, 'lampL', 0.1, 0.08, 0.05, new Vector3(-0.6, 2.2, 0.17), mats.light, root));
-    parts.push(box(scene, 'lampR', 0.1, 0.08, 0.05, new Vector3(0.6, 2.2, 0.17), mats.light, root));
-    parts.push(cyl(scene, 'beacon', 0.12, 0.1, new Vector3(0.4, 2.42, -1.4), mats.lineYellow, root, 12));
-    parts.push(box(scene, 'tailL', 0.1, 0.08, 0.03, new Vector3(-0.5, 0.95, -2.18), mats.redLight, root));
-    parts.push(box(scene, 'tailR', 0.1, 0.08, 0.03, new Vector3(0.5, 0.95, -2.18), mats.redLight, root));
+    parts.push(box(scene, 'lampL', 0.1, 0.08, 0.05, new Vector3(-0.6, 2.2, 0.17), mats.light, body));
+    parts.push(box(scene, 'lampR', 0.1, 0.08, 0.05, new Vector3(0.6, 2.2, 0.17), mats.light, body));
+    parts.push(cyl(scene, 'beacon', 0.12, 0.1, new Vector3(0.4, 2.42, -1.4), mats.lineYellow, body, 12));
+    parts.push(box(scene, 'tailL', 0.1, 0.08, 0.03, new Vector3(-0.5, 0.95, -2.18), mats.redLight, body));
+    parts.push(box(scene, 'tailR', 0.1, 0.08, 0.03, new Vector3(0.5, 0.95, -2.18), mats.redLight, body));
+
+    // Dettagli tipici di ogni modello
+    if (st.lpg) {
+      // Bombola GPL orizzontale dietro al sedile
+      const tank = cyl(scene, 'lpgTank', 0.34, 0.85, new Vector3(0.05, 1.5, -1.62), mats.steel, body, 20);
+      tank.rotation.z = Math.PI / 2;
+      for (const x of [-0.3, 0.35]) box(scene, 'lpgStrap', 0.04, 0.38, 0.38, new Vector3(x, 1.5, -1.62), mats.darkSteel, body);
+    }
+    if (st.exhaust) {
+      // Scarico verticale dietro alla cabina
+      cyl(scene, 'exhaust', 0.11, 1.5, new Vector3(0.48, 1.95, -1.7), mats.darkSteel, body, 12);
+      cyl(scene, 'exhaustCap', 0.14, 0.12, new Vector3(0.48, 2.72, -1.7), mats.rubber, body, 12);
+    }
+    if (st.workLights) {
+      for (const x of [-0.56, 0.56]) cyl(scene, 'workLight', 0.14, 0.05, new Vector3(x, 1.75, 0.2), mats.light, body, 12).rotation.x = Math.PI / 2;
+    }
+    if (st.cab === 'closed') {
+      // Cabina chiusa: tetto pieno, pannelli bassi e vetri. Visibile solo da fuori (prima persona pulita).
+      const cabMat = trim;
+      const shell = [
+        box(scene, 'cabRoof', 1.16, 0.1, 1.9, new Vector3(0, 2.4, -0.7), cabMat, body),
+        box(scene, 'cabDoorL', 0.04, 0.75, 1.65, new Vector3(-0.56, 1.5, -0.7), cabMat, body),
+        box(scene, 'cabDoorR', 0.04, 0.75, 1.65, new Vector3(0.56, 1.5, -0.7), cabMat, body),
+        box(scene, 'cabGlassL', 0.02, 0.75, 1.6, new Vector3(-0.56, 2.0, -0.7), mats.glass, body),
+        box(scene, 'cabGlassR', 0.02, 0.75, 1.6, new Vector3(0.56, 2.0, -0.7), mats.glass, body),
+        box(scene, 'cabGlassF', 1.05, 1.15, 0.02, new Vector3(0, 1.75, 0.15), mats.glass, body),
+        box(scene, 'cabGlassB', 1.05, 1.0, 0.02, new Vector3(0, 1.85, -1.56), mats.glass, body),
+      ];
+      for (const m of shell) m.metadata = { cabShell: true };
+    }
   }
 
   // Ruote: anteriori motrici fisse, posteriori sterzanti
   const frontWheels = [
-    wheel(scene, 'wFL', 0.33, 0.24, new Vector3(-0.5, 0.33, 0), mats, root),
-    wheel(scene, 'wFR', 0.33, 0.24, new Vector3(0.5, 0.33, 0), mats, root),
+    wheel(scene, 'wFL', 0.33, 0.24, new Vector3(-0.5, 0.33, 0), mats, body, rimMat),
+    wheel(scene, 'wFR', 0.33, 0.24, new Vector3(0.5, 0.33, 0), mats, body, rimMat),
   ];
+  if (st.dualFront) {
+    // Ruote anteriori gemellate
+    frontWheels.push(wheel(scene, 'wFL2', 0.33, 0.22, new Vector3(-0.74, 0.33, 0), mats, body, rimMat));
+    frontWheels.push(wheel(scene, 'wFR2', 0.33, 0.22, new Vector3(0.74, 0.33, 0), mats, body, rimMat));
+  }
   const rearWheels = [
-    wheel(scene, 'wRL', 0.25, 0.18, new Vector3(-0.45, 0.25, -1.55), mats, root),
-    wheel(scene, 'wRR', 0.25, 0.18, new Vector3(0.45, 0.25, -1.55), mats, root),
+    wheel(scene, 'wRL', 0.25, 0.18, new Vector3(-0.45, 0.25, -1.55), mats, body, rimMat),
+    wheel(scene, 'wRR', 0.25, 0.18, new Vector3(0.45, 0.25, -1.55), mats, body, rimMat),
   ];
 
   // Montante (inclinabile) con sfilo interno e carrello porta-forche
   const mastPivot = new TransformNode('mastPivot', scene);
   mastPivot.parent = root;
-  mastPivot.position.set(0, 0.15, 0.48);
+  mastPivot.position.set(0, 0.15, geo.mastZ);
+  // Montante esterno e sfilo: crescono con la taglia; carrello e forche no
+  const outer = new TransformNode('outerMast', scene);
+  outer.parent = mastPivot;
+  outer.scaling.setAll(geo.s);
   for (const side of [-1, 1]) {
     // Profilo a I del montante esterno
-    box(scene, 'mastWeb', 0.03, 2.2, 0.12, new Vector3(side * 0.34, 1.1, 0), mats.darkSteel, mastPivot);
-    box(scene, 'mastFlangeF', 0.1, 2.2, 0.02, new Vector3(side * 0.34, 1.1, 0.06), mats.darkSteel, mastPivot);
-    box(scene, 'mastFlangeB', 0.1, 2.2, 0.02, new Vector3(side * 0.34, 1.1, -0.06), mats.darkSteel, mastPivot);
+    box(scene, 'mastWeb', 0.03, 2.2, 0.12, new Vector3(side * 0.34, 1.1, 0), mats.darkSteel, outer);
+    box(scene, 'mastFlangeF', 0.1, 2.2, 0.02, new Vector3(side * 0.34, 1.1, 0.06), mats.darkSteel, outer);
+    box(scene, 'mastFlangeB', 0.1, 2.2, 0.02, new Vector3(side * 0.34, 1.1, -0.06), mats.darkSteel, outer);
     // Cilindri di sollevamento laterali dietro al montante
-    cyl(scene, 'liftCyl', 0.08, 1.7, new Vector3(side * 0.42, 0.95, -0.12), mats.steel, mastPivot, 12);
-    cyl(scene, 'liftRod', 0.04, 0.6, new Vector3(side * 0.42, 2.0, -0.12), mats.chrome, mastPivot, 10);
+    cyl(scene, 'liftCyl', 0.08, 1.7, new Vector3(side * 0.42, 0.95, -0.12), mats.steel, outer, 12);
+    cyl(scene, 'liftRod', 0.04, 0.6, new Vector3(side * 0.42, 2.0, -0.12), mats.chrome, outer, 10);
   }
-  box(scene, 'mastTop', 0.78, 0.1, 0.1, new Vector3(0, 2.15, 0), mats.darkSteel, mastPivot);
-  box(scene, 'mastCross', 0.78, 0.06, 0.06, new Vector3(0, 0.22, -0.02), mats.darkSteel, mastPivot);
+  box(scene, 'mastTop', 0.78, 0.1, 0.1, new Vector3(0, 2.15, 0), mats.darkSteel, outer);
+  box(scene, 'mastCross', 0.78, 0.06, 0.06, new Vector3(0, 0.22, -0.02), mats.darkSteel, outer);
   const inner = new TransformNode('innerMast', scene);
   inner.parent = mastPivot;
-  box(scene, 'innerL', 0.07, 2.2, 0.1, new Vector3(-0.24, 1.15, 0.06), mats.steel, inner);
-  box(scene, 'innerR', 0.07, 2.2, 0.1, new Vector3(0.24, 1.15, 0.06), mats.steel, inner);
-  box(scene, 'innerTop', 0.55, 0.08, 0.08, new Vector3(0, 2.22, 0.06), mats.steel, inner);
+  const innerBody = new TransformNode('innerMastBody', scene);
+  innerBody.parent = inner;
+  innerBody.scaling.setAll(geo.s);
+  box(scene, 'innerL', 0.07, 2.2, 0.1, new Vector3(-0.24, 1.15, 0.06), mats.steel, innerBody);
+  box(scene, 'innerR', 0.07, 2.2, 0.1, new Vector3(0.24, 1.15, 0.06), mats.steel, innerBody);
+  box(scene, 'innerTop', 0.55, 0.08, 0.08, new Vector3(0, 2.22, 0.06), mats.steel, innerBody);
 
   const chains = [-1, 1].map((side) => {
     const c = MeshBuilder.CreateBox('chain', { width: 0.035, height: 1, depth: 0.02 }, scene);
@@ -174,13 +248,14 @@ export async function createForkliftModel(scene, mats, vehicle) {
   for (const x of [-0.48, 0.48]) box(scene, 'backrestFrameSide', 0.04, 0.78, 0.04, new Vector3(x, 0.92, 0.12), mats.darkSteel, carriage);
   for (const y of [0.8, 1.05]) box(scene, 'backrestRail', 0.96, 0.02, 0.02, new Vector3(0, y, 0.12), mats.darkSteel, carriage);
   for (let i = -4; i <= 4; i++) box(scene, 'backrestBar', 0.018, 0.76, 0.018, new Vector3(i * 0.105, 0.92, 0.12), mats.darkSteel, carriage);
+  const forkMat = st.fork ? mats.paint(st.fork) : mats.steel;
   const makeFork = (name) => {
     const f = new TransformNode(name, scene);
     f.parent = carriage;
     // Forca a "L": gambo verticale + lama orizzontale (la lama parte dal carrello in avanti)
-    box(scene, name + 'Shank', FORK.width, 0.55, 0.05, new Vector3(0, 0.27, 0.16), mats.steel, f);
+    box(scene, name + 'Shank', FORK.width, 0.55, 0.05, new Vector3(0, 0.27, 0.16), forkMat, f);
     box(scene, name + 'Blade', FORK.width, FORK.thickness, FORK.length - 0.12,
-      new Vector3(0, FORK.thickness / 2, 0.14 + (FORK.length - 0.12) / 2), mats.steel, f);
+      new Vector3(0, FORK.thickness / 2, 0.14 + (FORK.length - 0.12) / 2), forkMat, f);
     box(scene, name + 'Tip', FORK.width, FORK.thickness, 0.12,
       new Vector3(0, FORK.thickness / 2, 0.14 + FORK.length - 0.06), mats.lineYellow, f);
     return f;
@@ -189,7 +264,8 @@ export async function createForkliftModel(scene, mats, vehicle) {
   const forkR = makeFork('forkR');
 
   const all = root.getChildMeshes();
-  return { root, mastPivot, inner, carriage, chains, steerSpin, forkL, forkR, frontWheels, rearWheels, meshes: all };
+  const cabShell = all.filter((m) => m.metadata?.cabShell);
+  return { root, mastPivot, inner, carriage, chains, steerSpin, forkL, forkR, frontWheels, rearWheels, cabShell, meshes: all };
 }
 
 export async function createTruckModel(scene, mats, color = '#d63a2f') {

@@ -1,14 +1,10 @@
-import { createForkliftModel, FORK, PALLET } from './models.js';
+import { createForkliftModel, vehicleGeometry, FORK, PALLET } from './models.js';
 import { rectsOverlap, aabbToRect, verticalOverlap, toLocal, toWorld, wrapAngle } from './physics.js';
 
-const WHEELBASE = 1.55;
 const MAX_STEER = 1.05; // rad, angolo massimo ruote posteriori
-const BODY = { hw: 0.6, z0: -2.25, z1: 0.6, height: 2.45 };
 const SPREAD = [0.25, 1.0];
 const TILT = [-0.09, 0.17]; // negativo = in avanti
 const QUARTER = Math.PI / 2;
-const MAST_PIVOT_Z = 0.48;
-const TIP_ARM = FORK.baseZ + FORK.length - MAST_PIVOT_Z; // distanza perno montante -> punta forche
 const WHEEL_TURNS = Math.PI * 1.5; // rotazione del volante a fine corsa
 
 export class Forklift {
@@ -16,6 +12,7 @@ export class Forklift {
     this.scene = scene;
     this.mats = mats;
     this.vehicle = vehicle;
+    this.geo = vehicleGeometry(vehicle); // misure del mezzo (corpo, passo, montante)
     this.x = 0; this.z = 0; this.yaw = 0;
     this.v = 0;
     this.steer = 0; // -1..1
@@ -58,13 +55,13 @@ export class Forklift {
   }
 
   bodyRect(x = this.x, z = this.z, yaw = this.yaw) {
-    const cz = (BODY.z0 + BODY.z1) / 2;
+    const cz = (this.geo.body.z0 + this.geo.body.z1) / 2;
     const [wx, wz] = toWorld({ x, z, yaw }, 0, cz);
-    return { x: wx, z: wz, hw: BODY.hw, hd: (BODY.z1 - BODY.z0) / 2, yaw };
+    return { x: wx, z: wz, hw: this.geo.body.hw, hd: (this.geo.body.z1 - this.geo.body.z0) / 2, yaw };
   }
 
   forkRects(x = this.x, z = this.z, yaw = this.yaw, spread = this.spread) {
-    const cz = FORK.baseZ + FORK.length / 2;
+    const cz = this.geo.forkBase + FORK.length / 2;
     return [-1, 1].map((side) => {
       const [wx, wz] = toWorld({ x, z, yaw }, side * spread / 2, cz);
       return { x: wx, z: wz, hw: FORK.width / 2, hd: FORK.length / 2, yaw, side };
@@ -94,8 +91,8 @@ export class Forklift {
     const dL = -spread / 2 - lx, dR = spread / 2 - lx;
     const inPockets = dL < -0.12 && dL > -0.41 && dR > 0.12 && dR < 0.41;
     const nearFace = lz - PALLET.size / 2;
-    const notTooDeep = nearFace >= FORK.baseZ - 0.03;
-    const depth = FORK.baseZ + FORK.length - nearFace;
+    const notTooDeep = nearFace >= this.geo.forkBase - 0.03;
+    const depth = this.geo.forkBase + FORK.length - nearFace;
     return { valid: aligned && inHeight && inPockets && notTooDeep, depth, lx, lz, dy, aligned, inPockets };
   }
 
@@ -110,14 +107,14 @@ export class Forklift {
     const body = this.bodyRect(x, z, yaw);
     const forks = this.forkRects(x, z, yaw, spread);
     // Le punte si alzano/abbassano con l'inclinazione: l'ingombro verticale delle forche lo include
-    const tipY = forkY + Math.sin(this.tilt) * TIP_ARM;
+    const tipY = forkY + Math.sin(this.tilt) * this.geo.tipArm;
     const fy0 = Math.min(forkY, tipY), fy1 = Math.max(forkY, tipY) + FORK.thickness;
     // Carrello porta-forche con griglia, e parte alta del montante quando e' sfilato
-    const [cx, cz] = toWorld({ x, z, yaw }, 0, 0.55);
+    const [cx, cz] = toWorld({ x, z, yaw }, 0, this.geo.forkBase - 0.07);
     const carriage = { x: cx, z: cz, hw: 0.5, hd: 0.05, yaw };
-    const [mx, mz] = toWorld({ x, z, yaw }, 0, MAST_PIVOT_Z);
+    const [mx, mz] = toWorld({ x, z, yaw }, 0, this.geo.mastZ);
     const mast = { x: mx, z: mz, hw: 0.46, hd: 0.1, yaw };
-    const mastTop = 2.41 + Math.max(0, forkY - 1.6);
+    const mastTop = this.geo.mastHeight + Math.max(0, forkY - this.geo.freeLift);
     const carried = this.carried ? this.carriedPose(x, z, yaw) : null;
     const cRect = carried && { x: carried.x, z: carried.z, hw: PALLET.size / 2, hd: PALLET.size / 2, yaw: carried.yaw };
     const cTop = carried && carried.bottom + PALLET.height + this.carried.p.loadH;
@@ -127,10 +124,10 @@ export class Forklift {
       // Scarta subito gli ostacoli lontani (il muletto con forche e carico sta in ~5 m)
       if (c.maxX < x - 5 || c.minX > x + 5 || c.maxZ < z - 5 || c.minZ > z + 5) continue;
       const r = aabbToRect(c);
-      if (verticalOverlap(0.05, BODY.height, c.y0, c.y1) && rectsOverlap(body, r)) return null;
+      if (verticalOverlap(0.05, this.geo.body.height, c.y0, c.y1) && rectsOverlap(body, r)) return null;
       if (verticalOverlap(fy0, fy1, c.y0, c.y1) && forks.some((f) => rectsOverlap(f, r))) return null;
       if (verticalOverlap(forkY - 0.05, forkY + 1.32, c.y0, c.y1) && rectsOverlap(carriage, r)) return null;
-      if (mastTop > BODY.height && verticalOverlap(BODY.height, mastTop, c.y0, c.y1) && rectsOverlap(mast, r)) return null;
+      if (mastTop > this.geo.body.height && verticalOverlap(this.geo.body.height, mastTop, c.y0, c.y1) && rectsOverlap(mast, r)) return null;
       if (cRect && verticalOverlap(carried.bottom + 0.01, cTop, c.y0, c.y1) && rectsOverlap(cRect, r, 0.0)) return null;
     }
     const hits = [];
@@ -213,7 +210,7 @@ export class Forklift {
     if (p.state !== 'rest' || (this.carried && this.carried.p === p)) return null;
     const pr = env.pallets.rect(p);
     const top = env.pallets.top(p);
-    if (verticalOverlap(0.05, BODY.height, p.bottom, top) && rectsOverlap(body, pr)) return 'body';
+    if (verticalOverlap(0.05, this.geo.body.height, p.bottom, top) && rectsOverlap(body, pr)) return 'body';
     if (cRect && verticalOverlap(carried.bottom + 0.01, cTop, p.bottom, top) && rectsOverlap(cRect, pr, -0.02)) return 'carried';
     if (verticalOverlap(forkY, forkY + FORK.thickness, p.bottom, top) && forks.some((f) => rectsOverlap(f, pr))) {
       const ins = this.insertion(p, env.pallets, x, z, yaw, forkY, spread);
@@ -225,8 +222,8 @@ export class Forklift {
   // Distanza tra il pallet e la parte del muletto che lo tocca (forche o corpo).
   palletDistance(p, via, x, z, yaw) {
     const [rx, rz] = via === 'fork'
-      ? toWorld({ x, z, yaw }, 0, FORK.baseZ + FORK.length / 2)
-      : toWorld({ x, z, yaw }, 0, (BODY.z0 + BODY.z1) / 2);
+      ? toWorld({ x, z, yaw }, 0, this.geo.forkBase + FORK.length / 2)
+      : toWorld({ x, z, yaw }, 0, (this.geo.body.z0 + this.geo.body.z1) / 2);
     return Math.hypot(p.x - rx, p.z - rz);
   }
 
@@ -319,7 +316,7 @@ export class Forklift {
     this.spread = newSpread;
     // In avanti le punte non possono scendere sotto la superficie su cui poggiano
     const ground = this.minForkHeight(env);
-    const maxFwd = Math.asin(Math.max(0, Math.min(1, (this.forkY - ground) / TIP_ARM)));
+    const maxFwd = Math.asin(Math.max(0, Math.min(1, (this.forkY - ground) / this.geo.tipArm)));
     const tiltMin = Math.max(TILT[0], -maxFwd);
     let newTilt = this.tilt + tiltRate * dt;
     if (newTilt < tiltMin) { newTilt = Math.max(tiltMin, Math.min(this.tilt, newTilt)); this.rates.tilt = Math.max(0, this.rates.tilt); }
@@ -338,7 +335,7 @@ export class Forklift {
 
     // --- Cinematica: modello bicicletta con riferimento sull'asse anteriore ---
     const delta = this.steer * MAX_STEER;
-    const yawRate = this.v * Math.tan(delta) / WHEELBASE;
+    const yawRate = this.v * Math.tan(delta) / this.geo.wheelbase;
     const nYaw = this.yaw + yawRate * dt;
     const nx = this.x + Math.sin(nYaw) * this.v * dt;
     const nz = this.z + Math.cos(nYaw) * this.v * dt;
@@ -378,7 +375,7 @@ export class Forklift {
 
   // Abbassamento delle punte dovuto all'inclinazione in avanti.
   tipDrop(tilt) {
-    return tilt < 0 ? Math.sin(-tilt) * TIP_ARM : 0;
+    return tilt < 0 ? Math.sin(-tilt) * this.geo.tipArm : 0;
   }
 
   // Altezza minima delle forche: non possono attraversare il pianale o un pallet sotto di esse.
@@ -538,7 +535,7 @@ export class Forklift {
     this.unstable = 0;
     this.detachVisual(p, env);
     // Il pallet scivola in avanti oltre le punte delle forche (se c'e' spazio)
-    const clear = FORK.baseZ + FORK.length - (c.lz - PALLET.size / 2) + 0.15;
+    const clear = this.geo.forkBase + FORK.length - (c.lz - PALLET.size / 2) + 0.15;
     const dir = [Math.sin(this.yaw), Math.cos(this.yaw)];
     let slide = 0;
     for (const d of [clear, clear * 0.6, clear * 0.3]) {
@@ -561,10 +558,10 @@ export class Forklift {
     m.root.rotation.y = this.yaw;
     m.mastPivot.rotation.x = -this.tilt;
     m.carriage.position.y = this.forkY - m.mastPivot.position.y;
-    m.inner.position.y = Math.max(0, this.forkY - 1.6);
+    m.inner.position.y = Math.max(0, this.forkY - this.geo.freeLift);
     // Catene: dal carrello alla puleggia in cima allo sfilo interno
     const bottom = this.forkY - m.mastPivot.position.y + 0.55;
-    const top = m.inner.position.y + 2.2;
+    const top = m.inner.position.y + this.geo.innerLen;
     for (const c of m.chains) {
       c.scaling.y = Math.max(0.05, top - bottom);
       c.position.y = (top + bottom) / 2;

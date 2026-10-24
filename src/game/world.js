@@ -170,7 +170,7 @@ export class World {
     const board = MeshBuilder.CreatePlane('saleBoard', { width: 2.6, height: 1.6, sideOrientation: Mesh.DOUBLESIDE }, this.scene);
     board.parent = saleNode;
     board.position.y = 2.6;
-    board.rotation.y = wh.side > 0 ? Math.PI : 0;
+    board.rotation.y = wh.side > 0 ? 0 : Math.PI; // testo leggibile dalla strada
     board.material = mats.sign(`SALE\n${wh.price.toLocaleString('it-IT')}`, '#c0392b', '#ffffff');
     const salePost = { minX: sx - 0.15, maxX: sx + 0.15, minZ: sz - 0.15, maxZ: sz + 0.15, y0: 0, y1: 3.4, tag: 'post' };
     this.colliders.push(salePost);

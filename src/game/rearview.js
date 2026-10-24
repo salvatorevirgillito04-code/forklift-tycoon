@@ -86,7 +86,7 @@ export function createRearview(scene, mainCam) {
       document.documentElement.style.setProperty('--rearview-h', on ? `${pushPx}px` : '0px');
     },
     // Da chiamare dopo aver posizionato la camera principale
-    update(forkliftRoot) {
+    update(forkliftRoot, scale = 1) {
       root = forkliftRoot;
       if (!enabled || !forkliftRoot) return;
       const engine = scene.getEngine();
@@ -120,7 +120,7 @@ export function createRearview(scene, mainCam) {
       frame.scaling.set((wPx + 8) * worldPerPx, (hPx + 8) * worldPerPx, 1);
       // Telecamera dello specchietto: sopra il tettuccio, guarda indietro e un po' in basso
       const m = forkliftRoot.getWorldMatrix();
-      Vector3.TransformCoordinatesToRef(new Vector3(0, 2.5, -0.6), m, camPos);
+      Vector3.TransformCoordinatesToRef(new Vector3(0, 2.5 * scale, -0.6 * scale), m, camPos);
       Vector3.TransformNormalToRef(new Vector3(0, -0.18, -1), m, back);
       back.normalize();
       cam.position.copyFrom(camPos);

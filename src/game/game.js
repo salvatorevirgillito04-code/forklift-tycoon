@@ -141,6 +141,7 @@ export class Game {
     await this.forklift.build(this.settings.quality === 'high' ? this.shadowGen : null);
     const start = await this.mission.start(contract);
     this.forklift.place(start.x, start.z, start.yaw);
+    this.cabHidden = null;
     this.hud = new Hud(hudRoot, { onSettings, onMap, onCamera, coins });
     this.rearview = createRearview(this.scene, this.camera);
     this.rearview.setEnabled(this.settings.mirrors !== false);
@@ -244,15 +245,15 @@ export class Game {
       this.clearFadedWalls();
       const fy = f.yaw;
       // Occhio del guidatore al centro: si guarda attraverso il montante, tra le catene
-      const [ex, ez] = [0.05, -0.75];
-      pos = base.add(new Vector3(ex * Math.cos(fy) + ez * Math.sin(fy), 2.0, -ex * Math.sin(fy) + ez * Math.cos(fy)));
+      const [ex, ey, ez] = f.geo.eye;
+      pos = base.add(new Vector3(ex * Math.cos(fy) + ez * Math.sin(fy), ey, -ex * Math.sin(fy) + ez * Math.cos(fy)));
       target = pos.add(new Vector3(fwd.x, -0.5 - this.lookPitch, fwd.z));
       cam.fov = 1.2;
       cam.position.copyFrom(pos);
     } else {
-      const dist = 6.8;
-      target = base.add(new Vector3(0, 1.3 + f.forkY * 0.25, 0)).add(fwd.scale(1.6));
-      const desired = base.add(fwd.scale(-dist)).add(new Vector3(0, 3.4 + this.lookPitch * 5, 0));
+      const dist = 6.8 * f.geo.s;
+      target = base.add(new Vector3(0, 1.3 * f.geo.s + f.forkY * 0.25, 0)).add(fwd.scale(1.6));
+      const desired = base.add(fwd.scale(-dist)).add(new Vector3(0, 3.4 * f.geo.s + this.lookPitch * 5, 0));
       // Muri tra camera e muletto: diventano semitrasparenti (la camera resta dietro)
       const origin = base.add(new Vector3(0, 1.6, 0));
       const dir = desired.subtract(origin);
@@ -271,6 +272,12 @@ export class Game {
     cam.setTarget(target);
     this.sun.position = base.subtract(SUN_DIR.scale(100));
     f.model?.root.computeWorldMatrix(true);
-    this.rearview?.update(f.model?.root);
+    this.rearview?.update(f.model?.root, f.geo.s);
+    // Cabina chiusa: si vede da fuori, in prima persona viene nascosta per una vista pulita
+    const firstPerson = this.settings.view === 'first';
+    if (f.model?.cabShell?.length && this.cabHidden !== firstPerson) {
+      this.cabHidden = firstPerson;
+      f.model.cabShell.forEach((m) => m.setEnabled(!firstPerson));
+    }
   }
 }
