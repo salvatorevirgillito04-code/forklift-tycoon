@@ -64,14 +64,14 @@ export class Hud {
         <button class="round-btn small" data-act="settings" aria-label="${t('settings')}">${ICONS.gear}</button>
       </div>
       <button class="hud-cam" data-act="camera" aria-label="${t('view')}">${ICONS.camera}</button>
-      <div class="task-panel">
+      <div class="task-panel" role="button" aria-label="${t('tasks')}">
         <div class="task-stats">
           <div class="task-stat" data-stat="time">${ICONS.clock}<b class="timer">--:--</b></div>
           <div class="task-stat" data-stat="pallets">${ICONS.pallets}<b class="pallets">0/0</b></div>
           <div class="task-stat" data-stat="drops">${ICONS.drop}<b class="drops">0</b></div>
         </div>
         <div class="task-box">
-          <div class="task-title">${t('tasks')}</div>
+          <div class="task-title">${t('tasks')}<span class="task-chevron">▾</span></div>
           <ul class="task-list"></ul>
         </div>
       </div>
@@ -82,6 +82,13 @@ export class Hud {
     root.querySelector('[data-act="settings"]').addEventListener('click', onSettings);
     root.querySelector('[data-act="map"]').addEventListener('click', onMap);
     root.querySelector('[data-act="camera"]').addEventListener('click', onCamera);
+    // Un tocco sul pannello lo comprime/espande; la scelta viene ricordata
+    const panel = root.querySelector('.task-panel');
+    try { panel.classList.toggle('collapsed', localStorage.getItem('ft-tasks-collapsed') === '1'); } catch { /* storage bloccato */ }
+    panel.addEventListener('click', () => {
+      const collapsed = panel.classList.toggle('collapsed');
+      try { localStorage.setItem('ft-tasks-collapsed', collapsed ? '1' : '0'); } catch { /* storage bloccato */ }
+    });
     this.canvas = root.querySelector('.minimap canvas');
     this.ctx = this.canvas.getContext('2d');
     this.els = {

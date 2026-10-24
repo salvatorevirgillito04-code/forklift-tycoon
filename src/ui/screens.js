@@ -32,6 +32,7 @@ export function renderHome(app) {
         <h1 class="logo-1">${t('title1')}</h1>
         <h2 class="logo-2">${t('title2')}</h2>
       </div>
+      ${app.installPrompt ? `<button class="pill-btn blue install-btn" data-act="install">${t('installApp')}</button>` : ''}
       <div class="home-buttons">
         <button class="big-btn green" data-go="hub">${t('play')}</button>
         <button class="big-btn blue" data-go="profile">${ICONS.user}<span>${t('profile')}</span></button>
@@ -54,6 +55,14 @@ export function renderHome(app) {
   el.querySelector('[data-act="settings"]').addEventListener('click', () => openSettings(app));
   el.querySelector('[data-act="lang"]').addEventListener('click', () => openLanguage(app));
   el.querySelector('[data-act="login"]').addEventListener('click', () => openLogin(app));
+  el.querySelector('[data-act="install"]')?.addEventListener('click', async () => {
+    const prompt = app.installPrompt;
+    if (!prompt) return;
+    prompt.prompt();
+    await prompt.userChoice;
+    app.installPrompt = null;
+    renderHome(app);
+  });
 }
 
 // ---------- HUB ----------

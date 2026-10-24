@@ -41,6 +41,8 @@ const app = {
     $('#screen').style.display = 'none';
     $('#loading').classList.add('show');
     document.body.classList.add('playing');
+    // In app installata (schermo intero) blocca l'orizzontale; nel browser puo' fallire senza problemi
+    screen.orientation?.lock?.('landscape').catch(() => {});
     try {
       await this.game.startMission(contract, {
         vehicleId: save.activeVehicle,
@@ -134,6 +136,22 @@ async function boot() {
 window.addEventListener('error', (e) => {
   if (e.message?.includes('ResizeObserver')) return;
   console.error(e.error || e.message);
+});
+
+// PWA: service worker (solo build pubblicata) e prompt di installazione Android
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((err) => Sentry.captureException(err));
+  });
+}
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  app.installPrompt = e;
+  if (app.current === 'home' && app.game?.mode !== 'play' && $('#screen').innerHTML) app.go('home');
+});
+window.addEventListener('appinstalled', () => {
+  app.installPrompt = null;
+  if (app.current === 'home') app.go('home');
 });
 
 boot();

@@ -733,3 +733,14 @@ body.playing #hud, body.playing #controls { display: block; }
 .pedal.pressed { transform: perspective(200px) rotateX(18deg) scale(0.96); }
 .gear-btn { background: rgba(22, 28, 38, 0.6); }
 .pedal.gas, .pedal.brake { background: none; }
+
+/* Pannello compiti comprimibile */
+#hud .task-panel { pointer-events: auto; cursor: pointer; }
+.task-chevron { display: inline-block; margin-left: 6px; transition: transform 0.15s; }
+.task-panel.collapsed .task-list { display: none; }
+.task-panel.collapsed .task-title { border-bottom: 0; padding-bottom: 0; margin-bottom: 0; }
+.task-panel.collapsed .task-chevron { transform: rotate(-90deg); }
+.task-panel.collapsed .task-box { padding: 3px 12px; }
+
+.install-btn { position: absolute; top: calc(18px + var(--safe-t)); left: 50%; transform: translateX(-50%); min-height: 40px; font-size: 16px; z-index: 2; }
+.install-btn:active { transform: translateX(-50%) scale(0.95); }

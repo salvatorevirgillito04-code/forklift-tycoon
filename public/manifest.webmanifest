@@ -1,10 +1,20 @@
 {
+  "id": "/",
   "name": "Forklift Tycoon",
   "short_name": "Forklift",
-  "start_url": "/",
+  "description": "Simulatore di carrelli elevatori: carica e scarica camion, compra magazzini e muletti.",
+  "start_url": "/?source=pwa",
+  "scope": "/",
   "display": "fullscreen",
-  "orientation": "any",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "landscape",
   "background_color": "#5b4bd6",
   "theme_color": "#5b4bd6",
-  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+  "lang": "it",
+  "categories": ["games"],
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
 }
