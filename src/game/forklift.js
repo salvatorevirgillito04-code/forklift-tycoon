@@ -571,7 +571,7 @@ export class Forklift {
     m.rearWheels.forEach((w) => { w.rotation.y = -delta; });
     if (m.steerSpin) m.steerSpin.rotation.y = this.steer * WHEEL_TURNS;
     [...m.frontWheels, ...m.rearWheels].forEach((w) => {
-      w.getChildMeshes()[0].rotation.x = this.wheelSpin;
+      w.spin.rotation.x = this.wheelSpin;
     });
   }
 }

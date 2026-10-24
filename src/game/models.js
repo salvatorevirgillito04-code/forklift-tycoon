@@ -1,4 +1,4 @@
-import { MeshBuilder, TransformNode, Mesh, Vector3, LoadAssetContainerAsync } from '@babylonjs/core';
+import { MeshBuilder, TransformNode, Mesh, Vector3, Curve3, LoadAssetContainerAsync } from '@babylonjs/core';
 import '@babylonjs/loaders/glTF';
 
 // Dimensioni condivise con la simulazione (metri).
@@ -27,14 +27,55 @@ function cyl(scene, name, diameter, height, pos, mat, parent, tess = 20) {
   return m;
 }
 
+// Ruota: gomma con tasselli, cerchio con bulloni e mozzo, unita in un'unica mesh.
+// node.spin e' il nodo che ruota col movimento.
 function wheel(scene, name, radius, width, pos, mats, parent, rimMat = mats.steel) {
   const node = new TransformNode(name, scene);
   node.parent = parent;
   node.position.copyFrom(pos);
-  const tyre = cyl(scene, name + 'Tyre', radius * 2, width, Vector3.Zero(), mats.rubber, node, 24);
+  const spin = new TransformNode(name + 'Spin', scene);
+  spin.parent = node;
+  node.spin = spin;
+  const pieces = [];
+  const tyre = cyl(scene, name + 'Tyre', radius * 1.88, width, Vector3.Zero(), mats.rubber, spin, 24);
   tyre.rotation.z = Math.PI / 2;
-  const rim = cyl(scene, name + 'Rim', radius * 1.15, width + 0.02, Vector3.Zero(), rimMat, node, 16);
+  pieces.push(tyre);
+  // Tasselli del battistrada, alternati a spina di pesce
+  const lugs = 14;
+  for (let i = 0; i < lugs; i++) {
+    const a = (i / lugs) * Math.PI * 2;
+    for (const side of [-1, 1]) {
+      const lug = box(scene, name + 'Lug', width * 0.46, 0.035, radius * 0.22,
+        new Vector3(side * width * 0.24, Math.cos(a + side * 0.08) * radius * 0.95, Math.sin(a + side * 0.08) * radius * 0.95), mats.rubber, spin);
+      lug.rotation.x = -(a + side * 0.08);
+      pieces.push(lug);
+    }
+  }
+  // Cerchio, mozzo e bulloni su entrambi i lati
+  const rim = cyl(scene, name + 'Rim', radius * 1.15, width + 0.02, Vector3.Zero(), rimMat, spin, 20);
   rim.rotation.z = Math.PI / 2;
+  pieces.push(rim);
+  for (const side of [-1, 1]) {
+    const hub = cyl(scene, name + 'Hub', radius * 0.42, 0.03, new Vector3(side * (width / 2 + 0.02), 0, 0), mats.darkSteel, spin, 14);
+    hub.rotation.z = Math.PI / 2;
+    pieces.push(hub);
+    for (let b = 0; b < 6; b++) {
+      const a = (b / 6) * Math.PI * 2;
+      const bolt = cyl(scene, name + 'Bolt', 0.035, 0.03,
+        new Vector3(side * (width / 2 + 0.025), Math.cos(a) * radius * 0.3, Math.sin(a) * radius * 0.3), mats.chrome, spin, 6);
+      bolt.rotation.z = Math.PI / 2;
+      pieces.push(bolt);
+    }
+  }
+  spin.computeWorldMatrix(true);
+  const merged = Mesh.MergeMeshes(pieces, true, true, undefined, false, true);
+  if (merged) {
+    // MergeMeshes porta i vertici in coordinate mondo: li riporto in quelle del nodo che ruota
+    merged.name = name + 'Wheel';
+    const inv = spin.getWorldMatrix().clone().invert();
+    merged.bakeTransformIntoVertices(inv);
+    merged.parent = spin;
+  }
   return node;
 }
 
@@ -102,15 +143,27 @@ export async function createForkliftModel(scene, mats, vehicle) {
   } else {
     // Telaio e contrappeso
     parts.push(box(scene, 'chassis', 1.15, 0.5, 1.8, new Vector3(0, 0.45, -1.15), paint, body));
-    const cw = box(scene, 'counterweight', 1.18, 0.75, 0.55, new Vector3(0, 0.75, -1.9), paint, body);
-    parts.push(cw);
+    // Contrappeso: parte anteriore squadrata e retro curvo (visto dall'alto)
+    parts.push(box(scene, 'counterweight', 1.18, 0.75, 0.35, new Vector3(0, 0.75, -1.8), paint, body));
+    const cwBack = cyl(scene, 'cwBack', 1.18, 0.75, new Vector3(0, 0.75, -1.97), paint, body, 28);
+    cwBack.scaling.z = 0.42;
+    parts.push(cwBack);
     if (st.roundRear) {
       // Contrappeso arrotondato (mezzi pesanti)
       const r = cyl(scene, 'cwRound', 0.7, 1.18, new Vector3(0, 0.95, -2.02), paint, body, 20);
       r.rotation.z = Math.PI / 2;
     }
-    parts.push(box(scene, 'cwTop', 1.1, 0.12, 0.5, new Vector3(0, 1.17, -1.88), trim, body));
-    parts.push(box(scene, 'hood', 1.05, 0.3, 1.0, new Vector3(0, 0.85, -1.15), trim, body));
+    const cwTop = cyl(scene, 'cwTop', 1.12, 0.12, new Vector3(0, 1.17, -1.9), trim, body, 28);
+    cwTop.scaling.z = 0.5;
+    parts.push(cwTop);
+    // Cofano bombato: capsula schiacciata lungo la macchina
+    const hood = MeshBuilder.CreateCapsule('hood', { radius: 0.5, height: 2.4, tessellation: 16, subdivisions: 2 }, scene);
+    hood.parent = body;
+    hood.position.set(0, 0.86, -1.15);
+    hood.rotation.x = Math.PI / 2; // asse della capsula lungo la macchina
+    hood.scaling.set(1.05, 0.46, 0.36); // larghezza, lunghezza (~1,1 m), altezza
+    hood.material = trim;
+    parts.push(hood);
     parts.push(box(scene, 'step', 1.2, 0.08, 0.5, new Vector3(0, 0.25, 0.05), mats.darkSteel, body));
     parts.push(box(scene, 'dash', 0.42, 0.16, 0.22, new Vector3(-0.24, 0.9, 0.0), trim, body));
     // Sedile
@@ -142,16 +195,31 @@ export async function createForkliftModel(scene, mats, vehicle) {
     display.rotation.x = -0.6;
     parts.push(display);
     // Tettuccio di protezione
-    for (const [x, z, h] of [[-0.52, 0.15, 2.0], [0.52, 0.15, 2.0], [-0.52, -1.55, 1.25], [0.52, -1.55, 1.25]]) {
-      parts.push(box(scene, 'post', 0.085, h, 0.085, new Vector3(x, z > 0 ? 1.15 + h / 2 - 0.15 : 1.2 + h / 2, z), mats.darkSteel, body));
+    const curved = st.cab !== 'closed';
+    for (const x of [-0.52, 0.52]) {
+      // Montanti posteriori dritti
+      parts.push(box(scene, 'post', 0.085, 1.25, 0.085, new Vector3(x, 1.2 + 0.625, -1.55), mats.darkSteel, body));
+      if (curved) {
+        // Montanti anteriori: dritti in basso, poi piegati ad arco verso il tetto
+        const path = [new Vector3(x, 1.0, 0.15), new Vector3(x, 1.85, 0.15)]
+          .concat(Curve3.CreateQuadraticBezier(new Vector3(x, 1.85, 0.15), new Vector3(x, 2.34, 0.15), new Vector3(x, 2.34, -0.35), 10).getPoints().slice(1));
+        const tube = MeshBuilder.CreateTube('postCurve', { path, radius: 0.045, tessellation: 8, cap: Mesh.CAP_ALL }, scene);
+        tube.parent = body;
+        tube.material = mats.darkSteel;
+        parts.push(tube);
+      } else {
+        parts.push(box(scene, 'post', 0.085, 2.0, 0.085, new Vector3(x, 1.15 + 1.0 - 0.15, 0.15), mats.darkSteel, body));
+      }
     }
-    parts.push(box(scene, 'guardRoof', 1.12, 0.06, 1.85, new Vector3(0, 2.32, -0.7), mats.darkSteel, body));
-    for (let i = 0; i < 5; i++) {
-      parts.push(box(scene, 'guardBar', 1.1, 0.04, 0.05, new Vector3(0, 2.36, -1.5 + i * 0.4), mats.darkSteel, body));
+    const roofFront = curved ? -0.35 : 0.22;
+    const roofLen = roofFront + 1.62;
+    parts.push(box(scene, 'guardRoof', 1.12, 0.06, roofLen, new Vector3(0, 2.32, roofFront - roofLen / 2), mats.darkSteel, body));
+    for (let z = -1.5; z <= roofFront - 0.1; z += 0.38) {
+      parts.push(box(scene, 'guardBar', 1.1, 0.04, 0.05, new Vector3(0, 2.36, z), mats.darkSteel, body));
     }
     // Fari e lampeggiante
-    parts.push(box(scene, 'lampL', 0.1, 0.08, 0.05, new Vector3(-0.6, 2.2, 0.17), mats.light, body));
-    parts.push(box(scene, 'lampR', 0.1, 0.08, 0.05, new Vector3(0.6, 2.2, 0.17), mats.light, body));
+    parts.push(box(scene, 'lampL', 0.1, 0.08, 0.05, new Vector3(-0.6, 1.9, 0.17), mats.light, body));
+    parts.push(box(scene, 'lampR', 0.1, 0.08, 0.05, new Vector3(0.6, 1.9, 0.17), mats.light, body));
     parts.push(cyl(scene, 'beacon', 0.12, 0.1, new Vector3(0.4, 2.42, -1.4), mats.lineYellow, body, 12));
     parts.push(box(scene, 'tailL', 0.1, 0.08, 0.03, new Vector3(-0.5, 0.95, -2.18), mats.redLight, body));
     parts.push(box(scene, 'tailR', 0.1, 0.08, 0.03, new Vector3(0.5, 0.95, -2.18), mats.redLight, body));
