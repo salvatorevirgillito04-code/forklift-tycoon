@@ -171,7 +171,13 @@ export class World {
     board.position.y = 2.6;
     board.rotation.y = wh.side > 0 ? Math.PI : 0;
     board.material = mats.sign(`SALE\n${wh.price.toLocaleString('it-IT')}`, '#c0392b', '#ffffff');
-    this.colliders.push({ minX: sx - 0.15, maxX: sx + 0.15, minZ: sz - 0.15, maxZ: sz + 0.15, y0: 0, y1: 3.4, tag: 'post' });
+    const salePost = { minX: sx - 0.15, maxX: sx + 0.15, minZ: sz - 0.15, maxZ: sz + 0.15, y0: 0, y1: 3.4, tag: 'post' };
+    this.colliders.push(salePost);
+    // Cartello: anche le forche alzate ci sbattono contro
+    const saleBoard = { minX: sx - 1.3, maxX: sx + 1.3, minZ: sz - 0.05, maxZ: sz + 0.05, y0: 1.8, y1: 3.4, tag: 'post' };
+    this.colliders.push(saleBoard);
+    this.saleBoards = this.saleBoards || new Map();
+    this.saleBoards.set(wh.id, [salePost, saleBoard]);
     this.signs.set(wh.id, saleNode);
   }
 
@@ -182,8 +188,8 @@ export class World {
       for (const z of [-7.6, 7.6]) {
         this.addBox('lampPost', x - 0.1, x + 0.1, 0, 7, z - 0.1, z + 0.1, mats.darkSteel, { shadow: false });
         const dir = z > 0 ? -1 : 1;
-        this.addBox('lampArm', x - 0.06, x + 0.06, 6.9, 7.0, Math.min(z, z + dir * 1.6), Math.max(z, z + dir * 1.6), mats.darkSteel, { collide: false, shadow: false });
-        this.addBox('lampHead', x - 0.25, x + 0.25, 6.75, 6.9, z + dir * 1.4 - 0.4, z + dir * 1.4 + 0.4, mats.light, { collide: false, shadow: false });
+        this.addBox('lampArm', x - 0.06, x + 0.06, 6.9, 7.0, Math.min(z, z + dir * 1.6), Math.max(z, z + dir * 1.6), mats.darkSteel, { shadow: false });
+        this.addBox('lampHead', x - 0.25, x + 0.25, 6.75, 6.9, z + dir * 1.4 - 0.4, z + dir * 1.4 + 0.4, mats.light, { shadow: false });
       }
     }
     // Container e alberi sul retro dei lotti
@@ -193,7 +199,7 @@ export class World {
       const c = colors[i % colors.length];
       const r = { minX: x - 1.25, maxX: x + 1.25, minZ: z - 6, maxZ: z + 6 };
       this.addBox('container', r.minX, r.maxX, 0, 2.6, r.minZ, r.maxZ, mats.container(c));
-      if (i % 3 === 0) this.addBox('container2', r.minX, r.maxX, 2.6, 5.2, r.minZ + 0.5, r.maxZ - 0.5, mats.container(colors[(i + 2) % 5]), { collide: false });
+      if (i % 3 === 0) this.addBox('container2', r.minX, r.maxX, 2.6, 5.2, r.minZ + 0.5, r.maxZ - 0.5, mats.container(colors[(i + 2) % 5]));
       const [tx, tz] = plotToWorld(wh, 18, 60);
       this.tree(tx, tz);
     });
@@ -224,6 +230,7 @@ export class World {
       door.mesh.setEnabled(!owned);
       door.collider.y1 = owned ? -1 : PLOT.door.height; // y1 negativo = collisione disattivata
       this.signs.get(id).setEnabled(!owned);
+      for (const c of this.saleBoards?.get(id) || []) c.y1 = owned ? -1 : 3.4;
     }
   }
 

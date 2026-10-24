@@ -74,7 +74,7 @@ export class Forklift {
   carriedPose(x = this.x, z = this.z, yaw = this.yaw) {
     const c = this.carried;
     const [wx, wz] = toWorld({ x, z, yaw }, c.lx, c.lz);
-    return { x: wx, z: wz, yaw: yaw + c.relYaw, bottom: this.forkY + FORK.thickness - PALLET.pocketHigh };
+    return { x: wx, z: wz, yaw: yaw + c.relYaw, bottom: this.forkY + c.off };
   }
 
   // Analizza come le forche stanno entrando in un pallet fermo.
@@ -109,6 +109,15 @@ export class Forklift {
   contacts(env, x, z, yaw, forkY = this.forkY, spread = this.spread) {
     const body = this.bodyRect(x, z, yaw);
     const forks = this.forkRects(x, z, yaw, spread);
+    // Le punte si alzano/abbassano con l'inclinazione: l'ingombro verticale delle forche lo include
+    const tipY = forkY + Math.sin(this.tilt) * TIP_ARM;
+    const fy0 = Math.min(forkY, tipY), fy1 = Math.max(forkY, tipY) + FORK.thickness;
+    // Carrello porta-forche con griglia, e parte alta del montante quando e' sfilato
+    const [cx, cz] = toWorld({ x, z, yaw }, 0, 0.55);
+    const carriage = { x: cx, z: cz, hw: 0.5, hd: 0.05, yaw };
+    const [mx, mz] = toWorld({ x, z, yaw }, 0, MAST_PIVOT_Z);
+    const mast = { x: mx, z: mz, hw: 0.46, hd: 0.1, yaw };
+    const mastTop = 2.41 + Math.max(0, forkY - 1.6);
     const carried = this.carried ? this.carriedPose(x, z, yaw) : null;
     const cRect = carried && { x: carried.x, z: carried.z, hw: PALLET.size / 2, hd: PALLET.size / 2, yaw: carried.yaw };
     const cTop = carried && carried.bottom + PALLET.height + this.carried.p.loadH;
@@ -117,7 +126,9 @@ export class Forklift {
       if (c.y1 <= 0) continue;
       const r = aabbToRect(c);
       if (verticalOverlap(0.05, BODY.height, c.y0, c.y1) && rectsOverlap(body, r)) return null;
-      if (verticalOverlap(forkY, forkY + FORK.thickness, c.y0, c.y1) && forks.some((f) => rectsOverlap(f, r))) return null;
+      if (verticalOverlap(fy0, fy1, c.y0, c.y1) && forks.some((f) => rectsOverlap(f, r))) return null;
+      if (verticalOverlap(forkY - 0.05, forkY + 1.32, c.y0, c.y1) && rectsOverlap(carriage, r)) return null;
+      if (mastTop > BODY.height && verticalOverlap(BODY.height, mastTop, c.y0, c.y1) && rectsOverlap(mast, r)) return null;
       if (cRect && verticalOverlap(carried.bottom + 0.01, cTop, c.y0, c.y1) && rectsOverlap(cRect, r, 0.0)) return null;
     }
     const hits = [];
@@ -139,7 +150,7 @@ export class Forklift {
     if (this.pushGrace > 0) { this.pushGrace = 0.4; return true; }
     this.pushTime = (this.pushTime || 0) + dt;
     const heavy = hits.reduce((m, p) => Math.max(m, p.weight), 0) / this.vehicle.capacity;
-    if (this.pushTime < 0.35 + Math.min(1, heavy) * 0.5) return false;
+    if (this.pushTime < 0.12 + Math.min(1, heavy) * 0.25) return false;
     this.pushGrace = 0.4;
     return true;
   }
@@ -156,18 +167,14 @@ export class Forklift {
       if (p.state !== 'rest' || p.weight > this.vehicle.capacity * 2.5) { restore(); return false; }
       const [lx, lz] = toLocal(cur, p.x, p.z);
       const [wx, wz] = toWorld(next, lx, lz);
-      let dx = wx - p.x, dz = wz - p.z;
+      const dx = wx - p.x, dz = wz - p.z;
       const len = Math.hypot(dx, dz);
       if (len < 1e-6) { restore(); return false; }
-      // Un pallet spinto non segue rigidamente il muletto: scivola nel verso della spinta
-      // e ruota in base a quanto e' fuori centro rispetto al muletto.
-      const push = Math.max(len * 1.1, 0.004);
-      dx = (dx / len) * push; dz = (dz / len) * push;
-      const fwd = [Math.sin(nYaw), Math.cos(nYaw)];
-      const side = lx * Math.sign(this.v || 1);
-      const along = dx * fwd[0] + dz * fwd[1];
-      p.x += dx; p.z += dz;
-      p.yaw += (nYaw - cur.yaw) * 0.6 + Math.max(-0.02, Math.min(0.02, along * side * 0.35));
+      // Il pallet spinto segue la traiettoria del muletto (avanti, curve a destra e a sinistra),
+      // con un piccolo distacco per non restare compenetrato.
+      p.x = wx + (dx / len) * 0.003;
+      p.z = wz + (dz / len) * 0.003;
+      p.yaw += nYaw - cur.yaw;
     }
     // Il pallet spostato non deve entrare in muri, camion o altri pallet
     for (const p of hits) {
@@ -307,7 +314,17 @@ export class Forklift {
     let newTilt = this.tilt + tiltRate * dt;
     if (newTilt < tiltMin) { newTilt = Math.max(tiltMin, Math.min(this.tilt, newTilt)); this.rates.tilt = Math.max(0, this.rates.tilt); }
     if (newTilt > TILT[1]) { newTilt = TILT[1]; this.rates.tilt = 0; }
-    this.tilt = newTilt;
+    // Inclinando, le punte non devono entrare negli ostacoli
+    if (newTilt !== this.tilt) {
+      const old = this.tilt;
+      this.tilt = newTilt;
+      if (this.contacts(env, this.x, this.z, this.yaw) === null) {
+        this.tilt = old;
+        if (this.contacts(env, this.x, this.z, this.yaw) !== null) this.rates.tilt = 0;
+        else this.tilt = newTilt; // era gia' a contatto: non bloccare per sempre
+      }
+    }
+    this.tilt = Math.max(TILT[0], Math.min(TILT[1], this.tilt));
 
     // --- Cinematica: modello bicicletta con riferimento sull'asse anteriore ---
     const delta = this.steer * MAX_STEER;
@@ -343,8 +360,8 @@ export class Forklift {
       env.onImpact?.(Math.abs(prevV));
     }
 
-    this.updateCarried(dt, env, { yawRate, decel: (Math.abs(prevV) - Math.abs(this.v)) / dt, loadRatio });
-    this.checkPickup(env);
+    this.updateCarried(dt, env, { yawRate, decel: (Math.abs(prevV) - Math.abs(this.v)) / dt, loadRatio, input });
+    this.checkPickup(env, input);
     this.wheelSpin += this.v * dt / 0.33;
     this.sync(delta);
   }
@@ -389,15 +406,28 @@ export class Forklift {
     return false;
   }
 
-  checkPickup(env) {
+  checkPickup(env, input = {}) {
     if (this.carried) return;
     for (const p of env.pallets.list) {
       if (p.state !== 'rest') continue;
       const ins = this.insertion(p, env.pallets);
       if (!ins || !ins.valid) continue;
+      // Forche infilate e inclinate: il pallet segue l'inclinazione (resta appoggiato finche' non lo alzi)
+      if (input.tilt && ins.depth > 0.3) {
+        this.carried = {
+          p, lx: ins.lx, lz: ins.lz, relYaw: ins.dy, shallow: ins.depth < 0.55, time: 0,
+          off: p.bottom - this.forkY, byTilt: true, attachTilt: this.tilt,
+        };
+        p.state = 'carried';
+        this.attachVisual(p);
+        return;
+      }
       // Le forche toccano il piano superiore della tasca: il pallet si solleva.
       if (this.forkY + FORK.thickness >= p.bottom + PALLET.pocketHigh + 0.01) {
-        this.carried = { p, lx: ins.lx, lz: ins.lz, relYaw: ins.dy, shallow: ins.depth < 0.55, time: 0 };
+        this.carried = {
+          p, lx: ins.lx, lz: ins.lz, relYaw: ins.dy, shallow: ins.depth < 0.55, time: 0,
+          off: FORK.thickness - PALLET.pocketHigh,
+        };
         p.state = 'carried';
         this.attachVisual(p);
         this.emit('pickup');
@@ -412,7 +442,7 @@ export class Forklift {
     if (!m) return;
     const c = this.carried;
     p.node.parent = m.carriage;
-    p.node.position.set(c.lx, FORK.thickness - PALLET.pocketHigh, c.lz - m.mastPivot.position.z);
+    p.node.position.set(c.lx, c.off, c.lz - m.mastPivot.position.z);
     p.node.rotation.set(0, c.relYaw, 0);
   }
 
@@ -423,7 +453,7 @@ export class Forklift {
     env.pallets.sync(p);
   }
 
-  updateCarried(dt, env, { yawRate, decel, loadRatio }) {
+  updateCarried(dt, env, { yawRate, decel, loadRatio, input = {} }) {
     const c = this.carried;
     if (!c) return;
     c.time += dt;
@@ -433,6 +463,26 @@ export class Forklift {
     const support = env.pallets.supportAt(p, p.bottom + 0.05);
     const lifted = p.bottom - support;
 
+    // Agganciato inclinando: finche' resta appoggiato segue l'inclinazione;
+    // si stacca se le forche tornano all'inclinazione iniziale o si abbassano.
+    if (c.byTilt) {
+      if (lifted > 0.02) c.byTilt = false;
+      else {
+        // Tornato (o oltre) all'inclinazione con cui era appoggiato: si sgancia
+        const delta = this.tilt - c.attachTilt;
+        const back = c.lastDelta
+          ? Math.abs(delta) < 0.004 || Math.sign(delta) !== Math.sign(c.lastDelta)
+          : !input.tilt && Math.abs(this.rates.tilt) < 1e-3 && Math.abs(delta) < 0.004;
+        if (Math.abs(delta) >= 0.004) c.lastDelta = delta;
+        // Se il muletto si muove, il pallet appoggiato non viene trascinato: si raddrizza e resta li'
+        const moving = Math.abs(this.v) > 0.05;
+        if (!back && !moving && !(input.lift < 0)) {
+          p.bottom = Math.max(p.bottom, support);
+          c.off = p.bottom - this.forkY;
+          return;
+        }
+      }
+    }
     // Appoggiato: il pallet si stacca dalle forche
     if (lifted <= 0.002) {
       p.bottom = support;
