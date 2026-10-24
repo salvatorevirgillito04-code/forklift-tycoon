@@ -174,7 +174,15 @@ export class Forklift {
       // con un piccolo distacco per non restare compenetrato.
       p.x = wx + (dx / len) * 0.003;
       p.z = wz + (dz / len) * 0.003;
-      p.yaw += nYaw - cur.yaw;
+      // In curva il pallet scivola un po' verso l'esterno e ruota leggermente meno del muletto
+      const dYaw = nYaw - cur.yaw;
+      if (Math.abs(dYaw) > 1e-5) {
+        const centerSide = Math.sign(dYaw * Math.sign(this.v || 1)); // lato del centro di curva (x locale)
+        const slip = Math.min(0.01, Math.abs(dYaw) * Math.hypot(lx, lz) * 0.3);
+        const [ox, oz] = toWorld({ x: 0, z: 0, yaw: nYaw }, -centerSide * slip, 0);
+        p.x += ox; p.z += oz;
+      }
+      p.yaw += dYaw * 0.9;
     }
     // Il pallet spostato non deve entrare in muri, camion o altri pallet
     for (const p of hits) {
