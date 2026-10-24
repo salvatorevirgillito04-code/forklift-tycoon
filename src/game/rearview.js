@@ -8,7 +8,8 @@ import {
 const TEX_W = 256;
 const TEX_H = 96;
 const RANGE = 45; // metri disegnati nello specchietto
-const SCREEN_FRACTION = 0.3; // larghezza sullo schermo rispetto alla larghezza totale
+const SCREEN_FRACTION = 0.24; // larghezza sullo schermo rispetto alla larghezza totale
+const GAP_PX = 10; // distanza dalla minimappa
 const TOP_PX = 8;
 const DIST = 0.5; // distanza del pannello davanti alla camera principale
 
@@ -71,6 +72,9 @@ export function createRearview(scene, mainCam) {
 
   let enabled = true;
   let heightPx = 0;
+  let pushPx = 0; // quanto deve scendere il pannello compiti (0 se lo specchietto non lo tocca)
+  let layoutKey = '';
+  let leftPx = 0;
   const api = {
     setEnabled(on) {
       enabled = on;
@@ -79,7 +83,7 @@ export function createRearview(scene, mainCam) {
       const i = scene.customRenderTargets.indexOf(rtt);
       if (on && i < 0) scene.customRenderTargets.push(rtt);
       if (!on && i >= 0) scene.customRenderTargets.splice(i, 1);
-      document.documentElement.style.setProperty('--rearview-h', on && heightPx ? `${heightPx + 8}px` : '0px');
+      document.documentElement.style.setProperty('--rearview-h', on ? `${pushPx}px` : '0px');
     },
     // Da chiamare dopo aver posizionato la camera principale
     update(forkliftRoot) {
@@ -92,15 +96,25 @@ export function createRearview(scene, mainCam) {
       const wPx = sw * SCREEN_FRACTION;
       const hPx = wPx * (TEX_H / TEX_W);
       const worldPerPx = (2 * Math.tan(mainCam.fov / 2) * DIST) / sh;
-      const yPx = sh / 2 - (TOP_PX + hPx / 2);
-      glass.position.set(0, yPx * worldPerPx, DIST);
-      glass.scaling.set(wPx * worldPerPx, hPx * worldPerPx, 1);
-      frame.position.set(0, yPx * worldPerPx, DIST + 0.001);
-      frame.scaling.set((wPx + 8) * worldPerPx, (hPx + 8) * worldPerPx, 1);
-      if (Math.abs(hPx - heightPx) > 0.5) {
+      // Posizione accanto alla minimappa: ricalcolata solo quando cambia lo schermo
+      const key = `${sw}x${sh}`;
+      if (key !== layoutKey) {
+        layoutKey = key;
+        const mini = document.querySelector('.minimap')?.getBoundingClientRect();
+        leftPx = (mini ? mini.right : 0) + GAP_PX + 4;
         heightPx = hPx;
-        document.documentElement.style.setProperty('--rearview-h', `${hPx + 8}px`);
+        // Il pannello compiti scende solo se lo specchietto arriva fino a lui (schermi stretti)
+        const panel = document.querySelector('.task-panel')?.getBoundingClientRect();
+        const panelLeft = panel ? panel.left : sw / 2 - 120;
+        pushPx = leftPx + wPx + 4 > panelLeft - 6 ? hPx + 8 : 0;
+        document.documentElement.style.setProperty('--rearview-h', `${pushPx}px`);
       }
+      const xPx = leftPx + wPx / 2 - sw / 2;
+      const yPx = sh / 2 - (TOP_PX + 4 + hPx / 2);
+      glass.position.set(xPx * worldPerPx, yPx * worldPerPx, DIST);
+      glass.scaling.set(wPx * worldPerPx, hPx * worldPerPx, 1);
+      frame.position.set(xPx * worldPerPx, yPx * worldPerPx, DIST + 0.001);
+      frame.scaling.set((wPx + 8) * worldPerPx, (hPx + 8) * worldPerPx, 1);
       // Telecamera dello specchietto: sopra il tettuccio, guarda indietro e un po' in basso
       const m = forkliftRoot.getWorldMatrix();
       Vector3.TransformCoordinatesToRef(new Vector3(0, 2.5, -0.6), m, camPos);

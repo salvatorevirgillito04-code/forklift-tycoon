@@ -542,8 +542,8 @@ body.playing #hud, body.playing #controls { display: block; }
 
 .minimap {
   position: absolute;
-  top: calc(10px + var(--safe-t));
-  left: calc(10px + var(--safe-l));
+  top: calc(8px + var(--safe-t));
+  left: calc(3px + var(--safe-l));
   width: clamp(104px, 17vmin, 160px);
   aspect-ratio: 1;
   border-radius: 20px;
@@ -589,8 +589,8 @@ body.playing #hud, body.playing #controls { display: block; }
 
 .fork-pad {
   position: absolute;
-  top: calc(clamp(104px, 17vmin, 160px) + 22px + var(--safe-t));
-  left: calc(10px + var(--safe-l));
+  top: calc(clamp(104px, 17vmin, 160px) + 20px + var(--safe-t));
+  left: calc(3px + var(--safe-l));
   display: grid;
   grid-template-columns: repeat(3, clamp(46px, 9vmin, 62px));
   grid-template-rows: auto repeat(2, auto);
