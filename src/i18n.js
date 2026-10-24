@@ -1,5 +1,7 @@
 const STRINGS = {
   it: {
+    tasks: 'Compiti', taskLoad: 'Carica {n} pallet sul camion ({d}/{n})', taskUnload: 'Scarica {n} pallet nella zona gialla ({d}/{n})',
+    taskNoDrop: 'Non far cadere pallet', taskTime: 'Finisci entro il tempo',
     title1: 'FORKLIFT', title2: 'TYCOON',
     play: 'GIOCA', profile: 'PROFILO', settings: 'IMPOSTAZIONI', login: 'LOGIN', logout: 'Esci',
     back: 'Indietro', close: 'Chiudi', save: 'Salva', cancel: 'Annulla', confirm: 'Conferma',
@@ -39,6 +41,8 @@ const STRINGS = {
     starter: 'Mezzo iniziale', rewardMult: 'Paga x{n}',
   },
   es: {
+    tasks: 'Tareas', taskLoad: 'Carga {n} palés en el camión ({d}/{n})', taskUnload: 'Descarga {n} palés en la zona amarilla ({d}/{n})',
+    taskNoDrop: 'No dejes caer palés', taskTime: 'Termina a tiempo',
     title1: 'FORKLIFT', title2: 'TYCOON',
     play: 'JUGAR', profile: 'PERFIL', settings: 'AJUSTES', login: 'LOGIN', logout: 'Salir',
     back: 'Atrás', close: 'Cerrar', save: 'Guardar', cancel: 'Cancelar', confirm: 'Confirmar',
@@ -78,6 +82,8 @@ const STRINGS = {
     starter: 'Vehículo inicial', rewardMult: 'Pago x{n}',
   },
   en: {
+    tasks: 'Tasks', taskLoad: 'Load {n} pallets onto the truck ({d}/{n})', taskUnload: 'Unload {n} pallets into the yellow zone ({d}/{n})',
+    taskNoDrop: 'Do not drop any pallet', taskTime: 'Finish before time runs out',
     title1: 'FORKLIFT', title2: 'TYCOON',
     play: 'PLAY', profile: 'PROFILE', settings: 'SETTINGS', login: 'LOGIN', logout: 'Log out',
     back: 'Back', close: 'Close', save: 'Save', cancel: 'Cancel', confirm: 'Confirm',

@@ -61,12 +61,12 @@ export class Controls {
            <button class="ctl-btn arrow-btn" data-hold="right" aria-label="right">${ICONS.arrowRight}</button>
          </div>`
       : mode === 'wheel'
-        ? `<div class="steer-wheel" data-wheel>${ICONS.wheel}</div>`
-        : `<button class="ctl-btn pedal brake" data-hold="brake" aria-label="brake">${ICONS.pedal}<span>STOP</span></button>`;
+        ? `<div class="steer-wheel" data-wheel>${ICONS.wheel3}</div>`
+        : `<button class="pedal brake" data-hold="brake" aria-label="brake">${ICONS.brakePedal}</button>`;
     const right = mode === 'gyro'
-      ? `<button class="ctl-btn pedal gas" data-hold="gas" aria-label="gas">${ICONS.pedal}<span>GAS</span></button>`
-      : `<button class="ctl-btn pedal brake" data-hold="brake" aria-label="brake">${ICONS.pedal}<span>STOP</span></button>
-         <button class="ctl-btn pedal gas" data-hold="gas" aria-label="gas">${ICONS.pedal}<span>GAS</span></button>`;
+      ? `<button class="pedal gas" data-hold="gas" aria-label="gas">${ICONS.gasPedal}</button>`
+      : `<button class="pedal brake" data-hold="brake" aria-label="brake">${ICONS.brakePedal}</button>
+         <button class="pedal gas" data-hold="gas" aria-label="gas">${ICONS.gasPedal}</button>`;
 
     this.root.innerHTML = `
       <div class="fork-pad">

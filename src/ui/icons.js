@@ -28,4 +28,28 @@ export const ICONS = {
   workers: svg('<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14.2A5 5 0 0 1 21.5 19"/>'),
   contract: svg('<path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6M9 13h8M9 17h6"/>'),
   play: svg('<path d="M7 4l13 8-13 8z"/>'),
+
+  camera: svg('<path d="M3 8h4l2-3h6l2 3h4v11H3z"/><circle cx="12" cy="13" r="3.5"/>'),
+  clock: svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
+  pallets: svg('<path d="M4 4h7v6H4zM13 4h7v6h-7zM8.5 12h7v6h-7zM3 20h18"/>'),
+  drop: svg('<path d="M5 16V8h6l3 4v4M17 4v12h3M14 7h3"/><circle cx="8" cy="18" r="1.6"/><path d="M20 19l-3 2M14 21l-2-2"/>'),
+  wheel3: `<svg viewBox="0 0 100 100" aria-hidden="true">
+    <circle cx="50" cy="50" r="43" fill="none" stroke="#15171a" stroke-width="11"/>
+    <circle cx="50" cy="50" r="43" fill="none" stroke="#4a4f57" stroke-width="2.5" stroke-dasharray="3 5"/>
+    <path d="M50 50L9 58M50 50L91 58M50 50L50 93" stroke="#1f2226" stroke-width="10" stroke-linecap="round"/>
+    <circle cx="50" cy="50" r="14" fill="#2b2f35" stroke="#5c626b" stroke-width="2.5"/>
+    <circle cx="50" cy="50" r="5" fill="#8a9099"/>
+    <circle cx="77" cy="20" r="6.5" fill="#3a3f46" stroke="#15171a" stroke-width="3"/>
+  </svg>`,
+  brakePedal: `<svg viewBox="0 0 60 70" aria-hidden="true">
+    <rect x="2" y="2" width="56" height="66" rx="8" fill="#26292d" stroke="#0f1012" stroke-width="3"/>
+    <rect x="7" y="7" width="46" height="56" rx="5" fill="#33373c"/>
+    <g fill="#1a1c1f">${Array.from({ length: 30 }, (_, i) => `<rect x="${10 + (i % 5) * 9}" y="${10 + Math.floor(i / 5) * 9}" width="5" height="5" rx="1"/>`).join('')}</g>
+  </svg>`,
+  gasPedal: `<svg viewBox="0 0 44 90" aria-hidden="true">
+    <rect x="2" y="2" width="40" height="86" rx="9" fill="#26292d" stroke="#0f1012" stroke-width="3"/>
+    <rect x="7" y="7" width="30" height="76" rx="6" fill="#33373c"/>
+    <g fill="#1a1c1f">${Array.from({ length: 8 }, (_, i) => `<rect x="11" y="${12 + i * 8.6}" width="22" height="4" rx="2"/>`).join('')}</g>
+    <circle cx="22" cy="80" r="2.5" fill="#8a9099"/>
+  </svg>`,
 };

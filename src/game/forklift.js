@@ -322,6 +322,13 @@ export class Forklift {
     m.mastPivot.rotation.x = -this.tilt;
     m.carriage.position.y = this.forkY - m.mastPivot.position.y;
     m.inner.position.y = Math.max(0, this.forkY - 1.6);
+    // Catene: dal carrello alla puleggia in cima allo sfilo interno
+    const bottom = this.forkY - m.mastPivot.position.y + 0.55;
+    const top = m.inner.position.y + 2.2;
+    for (const c of m.chains) {
+      c.scaling.y = Math.max(0.05, top - bottom);
+      c.position.y = (top + bottom) / 2;
+    }
     m.forkL.position.x = -this.spread / 2;
     m.forkR.position.x = this.spread / 2;
     m.rearWheels.forEach((w) => { w.rotation.y = -delta; });

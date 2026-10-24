@@ -130,7 +130,7 @@ export class Game {
     this.isLooking = () => !!last;
   }
 
-  async startMission(contract, { vehicleId, hudRoot, controlsRoot, onResult, onSettings, onMap, owned }) {
+  async startMission(contract, { vehicleId, hudRoot, controlsRoot, onResult, onSettings, onMap, onCamera, owned, coins }) {
     this.stopMission();
     this.mode = 'loading';
     const vehicle = vehicleById(vehicleId);
@@ -138,7 +138,7 @@ export class Game {
     await this.forklift.build(this.settings.quality === 'high' ? this.shadowGen : null);
     const start = await this.mission.start(contract);
     this.forklift.place(start.x, start.z, start.yaw);
-    this.hud = new Hud(hudRoot, { onSettings, onMap });
+    this.hud = new Hud(hudRoot, { onSettings, onMap, onCamera, coins });
     this.hud.setOwned(owned);
     this.hud.setObjective(contract);
     this.controls = new Controls(controlsRoot, this.settings);
@@ -229,11 +229,11 @@ export class Game {
     let pos, target;
     if (this.settings.view === 'first') {
       const fy = f.yaw;
-      // Occhio del guidatore leggermente a sinistra per vedere oltre il montante
-      const [ex, ez] = [-0.3, -0.6];
-      pos = base.add(new Vector3(ex * Math.cos(fy) + ez * Math.sin(fy), 2.05, -ex * Math.sin(fy) + ez * Math.cos(fy)));
-      target = pos.add(new Vector3(fwd.x, -0.28 - this.lookPitch, fwd.z));
-      cam.fov = 1.15;
+      // Occhio del guidatore al centro: si guarda attraverso il montante, tra le catene
+      const [ex, ez] = [0.05, -0.75];
+      pos = base.add(new Vector3(ex * Math.cos(fy) + ez * Math.sin(fy), 2.0, -ex * Math.sin(fy) + ez * Math.cos(fy)));
+      target = pos.add(new Vector3(fwd.x, -0.5 - this.lookPitch, fwd.z));
+      cam.fov = 1.2;
       cam.position.copyFrom(pos);
     } else {
       const dist = 6.8;

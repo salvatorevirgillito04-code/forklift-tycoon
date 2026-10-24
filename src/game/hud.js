@@ -54,19 +54,25 @@ export function worldToMap(x, z, scale) {
 }
 
 export class Hud {
-  constructor(root, { onSettings, onMap }) {
+  constructor(root, { onSettings, onMap, onCamera, coins }) {
     this.root = root;
     root.innerHTML = `
       <div class="minimap"><canvas width="300" height="300"></canvas></div>
       <div class="top-right">
+        <div class="coin-pill hud-coins">${ICONS.coin}<span>${fmt(coins)}</span></div>
         <button class="round-btn small" data-act="map" aria-label="${t('map')}">${ICONS.map}</button>
         <button class="round-btn small" data-act="settings" aria-label="${t('settings')}">${ICONS.gear}</button>
       </div>
-      <div class="objective">
-        <div class="obj-text"></div>
-        <div class="obj-row">
-          <span class="chip timer"></span>
-          <span class="chip pallets"></span>
+      <button class="hud-cam" data-act="camera" aria-label="${t('view')}">${ICONS.camera}</button>
+      <div class="task-panel">
+        <div class="task-stats">
+          <div class="task-stat" data-stat="time">${ICONS.clock}<b class="timer">--:--</b></div>
+          <div class="task-stat" data-stat="pallets">${ICONS.pallets}<b class="pallets">0/0</b></div>
+          <div class="task-stat" data-stat="drops">${ICONS.drop}<b class="drops">0</b></div>
+        </div>
+        <div class="task-box">
+          <div class="task-title">${t('tasks')}</div>
+          <ul class="task-list"></ul>
         </div>
       </div>
       <div class="gauges">
@@ -75,12 +81,16 @@ export class Hud {
       <div class="toast"></div>`;
     root.querySelector('[data-act="settings"]').addEventListener('click', onSettings);
     root.querySelector('[data-act="map"]').addEventListener('click', onMap);
+    root.querySelector('[data-act="camera"]').addEventListener('click', onCamera);
     this.canvas = root.querySelector('.minimap canvas');
     this.ctx = this.canvas.getContext('2d');
     this.els = {
-      obj: root.querySelector('.obj-text'),
+      panel: root.querySelector('.task-panel'),
+      tasks: root.querySelector('.task-list'),
       timer: root.querySelector('.timer'),
       pallets: root.querySelector('.pallets'),
+      drops: root.querySelector('.drops'),
+      coins: root.querySelector('.hud-coins span'),
       speed: root.querySelector('.speed'),
       height: root.querySelector('.height'),
       load: root.querySelector('.load'),
@@ -88,6 +98,7 @@ export class Hud {
     };
     this.toastTimer = null;
     this.mapScale = 3;
+    this.lastTasks = '';
   }
 
   setOwned(owned) {
@@ -98,12 +109,23 @@ export class Hud {
     drawStaticMap(this.staticMap.getContext('2d'), s, owned);
   }
 
+  setCoins(coins) {
+    this.els.coins.textContent = fmt(coins);
+  }
+
   setObjective(contract) {
-    const key = !contract || contract.type === 'free' ? 'objFree' : contract.type === 'load' ? 'objLoad' : 'objUnload';
-    this.els.obj.textContent = t(key);
+    this.contract = contract;
     const timed = contract && contract.type !== 'free';
-    this.els.timer.style.display = timed ? '' : 'none';
-    this.els.pallets.style.display = timed ? '' : 'none';
+    this.els.panel.classList.toggle('free', !timed);
+    this.renderTasks(timed ? [] : [{ text: t('objFree'), state: 'todo' }]);
+  }
+
+  renderTasks(tasks) {
+    const key = JSON.stringify(tasks);
+    if (key === this.lastTasks) return;
+    this.lastTasks = key;
+    const mark = { todo: '○', done: '✓', fail: '✕' };
+    this.els.tasks.innerHTML = tasks.map((x) => `<li class="${x.state}"><i>${mark[x.state]}</i>${x.text}</li>`).join('');
   }
 
   toast(text, kind = 'info') {
@@ -116,12 +138,20 @@ export class Hud {
 
   update({ forklift, mission, pallets }) {
     const { els } = this;
-    if (mission.contract && mission.contract.type !== 'free') {
+    const c = mission.contract;
+    if (c && c.type !== 'free') {
       const tl = Math.ceil(mission.timeLeft);
-      els.timer.textContent = `⏱ ${Math.floor(tl / 60)}:${String(tl % 60).padStart(2, '0')}`;
+      els.timer.textContent = `${String(Math.floor(tl / 60)).padStart(2, '0')}:${String(tl % 60).padStart(2, '0')}`;
       els.timer.classList.toggle('warn', tl <= 20);
       const { done, total } = mission.progress();
-      els.pallets.textContent = `▣ ${done}/${total}`;
+      els.pallets.textContent = `${done}/${total}`;
+      els.drops.textContent = String(mission.drops);
+      els.drops.classList.toggle('warn', mission.drops > 0);
+      this.renderTasks([
+        { text: t(c.type === 'load' ? 'taskLoad' : 'taskUnload', { n: total, d: done }), state: done >= total ? 'done' : 'todo' },
+        { text: t('taskNoDrop'), state: mission.drops > 0 ? 'fail' : done >= total ? 'done' : 'todo' },
+        { text: t('taskTime'), state: mission.timeLeft <= 0 ? 'fail' : done >= total ? 'done' : 'todo' },
+      ]);
     }
     els.speed.textContent = `${Math.abs(forklift.v * 3.6).toFixed(0)} km/h`;
     els.height.textContent = `↕ ${forklift.forkY.toFixed(2)} m`;

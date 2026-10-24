@@ -72,36 +72,50 @@ export async function createForkliftModel(scene, mats, vehicle) {
     instantiateGLB(glb, root, 'forkliftBody');
   } else {
     // Telaio e contrappeso
-    parts.push(box(scene, 'chassis', 1.15, 0.5, 2.3, new Vector3(0, 0.45, -0.9), paint, root));
+    parts.push(box(scene, 'chassis', 1.15, 0.5, 1.8, new Vector3(0, 0.45, -1.15), paint, root));
     const cw = box(scene, 'counterweight', 1.18, 0.75, 0.55, new Vector3(0, 0.75, -1.9), paint, root);
     parts.push(cw);
     parts.push(box(scene, 'cwTop', 1.1, 0.12, 0.5, new Vector3(0, 1.17, -1.88), mats.darkSteel, root));
     parts.push(box(scene, 'hood', 1.05, 0.3, 1.0, new Vector3(0, 0.85, -1.15), paint, root));
     parts.push(box(scene, 'step', 1.2, 0.08, 0.5, new Vector3(0, 0.25, 0.05), mats.darkSteel, root));
-    parts.push(box(scene, 'dash', 0.9, 0.35, 0.25, new Vector3(0, 1.0, 0.15), mats.darkSteel, root));
+    parts.push(box(scene, 'dash', 0.42, 0.16, 0.22, new Vector3(-0.24, 0.9, 0.0), mats.darkSteel, root));
     // Sedile
     parts.push(box(scene, 'seat', 0.5, 0.12, 0.5, new Vector3(0, 1.08, -0.75), mats.seat, root));
     const back = box(scene, 'seatBack', 0.5, 0.55, 0.1, new Vector3(0, 1.38, -1.0), mats.seat, root);
     back.rotation.x = -0.15;
     parts.push(back);
     // Volante
-    const steer = MeshBuilder.CreateTorus('steerWheel', { diameter: 0.36, thickness: 0.035, tessellation: 24 }, scene);
-    steer.parent = root;
-    steer.position.set(0, 1.3, -0.05);
-    steer.rotation.x = -0.9;
-    steer.material = mats.rubber;
-    parts.push(cyl(scene, 'steerCol', 0.05, 0.4, new Vector3(0, 1.15, 0.03), mats.darkSteel, root));
+    // Volante scuro con pomello e piantone con display
+    const steerNode = new TransformNode('steerNode', scene);
+    steerNode.parent = root;
+    steerNode.position.set(-0.24, 1.42, -0.26);
+    steerNode.rotation.x = -0.75;
+    const rim = MeshBuilder.CreateTorus('steerRim', { diameter: 0.4, thickness: 0.04, tessellation: 32 }, scene);
+    rim.parent = steerNode;
+    rim.material = mats.rubber;
+    for (const a of [Math.PI / 2, Math.PI * 7 / 6, Math.PI * 11 / 6]) {
+      const spoke = box(scene, 'spoke', 0.18, 0.02, 0.03, new Vector3(Math.cos(a) * 0.09, 0, Math.sin(a) * 0.09), mats.rubber, steerNode);
+      spoke.rotation.y = -a;
+    }
+    cyl(scene, 'steerHub', 0.08, 0.04, Vector3.Zero(), mats.darkSteel, steerNode, 16);
+    cyl(scene, 'steerKnob', 0.045, 0.07, new Vector3(0.14, 0.04, -0.14), mats.seat, steerNode, 12);
+    const col = cyl(scene, 'steerCol', 0.07, 0.55, new Vector3(-0.24, 1.2, -0.09), mats.darkSteel, root);
+    col.rotation.x = 0.8;
+    parts.push(col);
+    const display = box(scene, 'display', 0.14, 0.08, 0.01, new Vector3(-0.24, 1.38, -0.02), mats.display, root);
+    display.rotation.x = -0.6;
+    parts.push(display);
     // Tettuccio di protezione
     for (const [x, z, h] of [[-0.52, 0.15, 2.0], [0.52, 0.15, 2.0], [-0.52, -1.55, 1.25], [0.52, -1.55, 1.25]]) {
-      parts.push(box(scene, 'post', 0.07, h, 0.07, new Vector3(x, z > 0 ? 1.15 + h / 2 - 0.15 : 1.2 + h / 2, z), mats.darkSteel, root));
+      parts.push(box(scene, 'post', 0.085, h, 0.085, new Vector3(x, z > 0 ? 1.15 + h / 2 - 0.15 : 1.2 + h / 2, z), mats.darkSteel, root));
     }
     parts.push(box(scene, 'guardRoof', 1.12, 0.06, 1.85, new Vector3(0, 2.32, -0.7), mats.darkSteel, root));
     for (let i = 0; i < 5; i++) {
       parts.push(box(scene, 'guardBar', 1.1, 0.04, 0.05, new Vector3(0, 2.36, -1.5 + i * 0.4), mats.darkSteel, root));
     }
     // Fari e lampeggiante
-    parts.push(box(scene, 'lampL', 0.12, 0.1, 0.05, new Vector3(-0.45, 2.15, 0.2), mats.light, root));
-    parts.push(box(scene, 'lampR', 0.12, 0.1, 0.05, new Vector3(0.45, 2.15, 0.2), mats.light, root));
+    parts.push(box(scene, 'lampL', 0.1, 0.08, 0.05, new Vector3(-0.6, 2.2, 0.17), mats.light, root));
+    parts.push(box(scene, 'lampR', 0.1, 0.08, 0.05, new Vector3(0.6, 2.2, 0.17), mats.light, root));
     parts.push(cyl(scene, 'beacon', 0.12, 0.1, new Vector3(0.4, 2.42, -1.4), mats.lineYellow, root, 12));
     parts.push(box(scene, 'tailL', 0.1, 0.08, 0.03, new Vector3(-0.5, 0.95, -2.18), mats.redLight, root));
     parts.push(box(scene, 'tailR', 0.1, 0.08, 0.03, new Vector3(0.5, 0.95, -2.18), mats.redLight, root));
@@ -121,20 +135,35 @@ export async function createForkliftModel(scene, mats, vehicle) {
   const mastPivot = new TransformNode('mastPivot', scene);
   mastPivot.parent = root;
   mastPivot.position.set(0, 0.15, 0.48);
-  box(scene, 'mastL', 0.09, 2.2, 0.12, new Vector3(-0.32, 1.1, 0), mats.darkSteel, mastPivot);
-  box(scene, 'mastR', 0.09, 2.2, 0.12, new Vector3(0.32, 1.1, 0), mats.darkSteel, mastPivot);
-  box(scene, 'mastTop', 0.73, 0.1, 0.1, new Vector3(0, 2.15, 0), mats.darkSteel, mastPivot);
-  box(scene, 'liftCyl', 0.1, 1.6, 0.1, new Vector3(0, 0.9, -0.05), mats.steel, mastPivot);
+  for (const side of [-1, 1]) {
+    // Profilo a I del montante esterno
+    box(scene, 'mastWeb', 0.03, 2.2, 0.12, new Vector3(side * 0.34, 1.1, 0), mats.darkSteel, mastPivot);
+    box(scene, 'mastFlangeF', 0.1, 2.2, 0.02, new Vector3(side * 0.34, 1.1, 0.06), mats.darkSteel, mastPivot);
+    box(scene, 'mastFlangeB', 0.1, 2.2, 0.02, new Vector3(side * 0.34, 1.1, -0.06), mats.darkSteel, mastPivot);
+    // Cilindri di sollevamento laterali dietro al montante
+    cyl(scene, 'liftCyl', 0.08, 1.7, new Vector3(side * 0.42, 0.95, -0.12), mats.steel, mastPivot, 12);
+    cyl(scene, 'liftRod', 0.04, 0.6, new Vector3(side * 0.42, 2.0, -0.12), mats.chrome, mastPivot, 10);
+  }
+  box(scene, 'mastTop', 0.78, 0.1, 0.1, new Vector3(0, 2.15, 0), mats.darkSteel, mastPivot);
+  box(scene, 'mastCross', 0.78, 0.12, 0.08, new Vector3(0, 0.25, -0.02), mats.darkSteel, mastPivot);
   const inner = new TransformNode('innerMast', scene);
   inner.parent = mastPivot;
   box(scene, 'innerL', 0.07, 2.2, 0.1, new Vector3(-0.24, 1.15, 0.06), mats.steel, inner);
   box(scene, 'innerR', 0.07, 2.2, 0.1, new Vector3(0.24, 1.15, 0.06), mats.steel, inner);
   box(scene, 'innerTop', 0.55, 0.08, 0.08, new Vector3(0, 2.22, 0.06), mats.steel, inner);
 
+  const chains = [-1, 1].map((side) => {
+    const c = MeshBuilder.CreateBox('chain', { width: 0.035, height: 1, depth: 0.02 }, scene);
+    c.parent = mastPivot;
+    c.position.set(side * 0.17, 1, 0.1);
+    c.material = mats.chain;
+    return c;
+  });
   const carriage = new TransformNode('carriage', scene);
   carriage.parent = mastPivot;
   box(scene, 'carriagePlate', 1.0, 0.45, 0.06, new Vector3(0, 0.3, 0.12), mats.darkSteel, carriage);
-  box(scene, 'backrest', 1.0, 0.7, 0.03, new Vector3(0, 0.88, 0.12), mats.darkSteel, carriage);
+  box(scene, 'backrestTop', 1.0, 0.05, 0.04, new Vector3(0, 1.21, 0.12), mats.darkSteel, carriage);
+  box(scene, 'backrestMid', 1.0, 0.04, 0.03, new Vector3(0, 0.88, 0.12), mats.darkSteel, carriage);
   for (let i = -2; i <= 2; i++) box(scene, 'backrestBar', 0.03, 0.7, 0.03, new Vector3(i * 0.22, 0.88, 0.12), mats.darkSteel, carriage);
 
   const makeFork = (name) => {
@@ -150,7 +179,7 @@ export async function createForkliftModel(scene, mats, vehicle) {
   const forkR = makeFork('forkR');
 
   const all = root.getChildMeshes();
-  return { root, mastPivot, inner, carriage, forkL, forkR, frontWheels, rearWheels, meshes: all };
+  return { root, mastPivot, inner, carriage, chains, forkL, forkR, frontWheels, rearWheels, meshes: all };
 }
 
 export async function createTruckModel(scene, mats, color = '#d63a2f') {

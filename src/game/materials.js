@@ -101,7 +101,21 @@ export function createMaterials(scene) {
     noise(ctx, s, '#4f7a35', 90, 6000, 0.25);
   }, 30, 30);
 
+  const chainTex = canvasTexture(scene, 'chainTex', 64, (ctx, s) => {
+    ctx.fillStyle = '#1b1d20';
+    ctx.fillRect(0, 0, s, s);
+    ctx.strokeStyle = '#8b9096';
+    ctx.lineWidth = 5;
+    for (let y = 0; y < s; y += 16) {
+      ctx.strokeRect(14, y + 2, 36, 12);
+    }
+  }, 1, 30);
+  const chain = pbr(scene, 'chain', { color: '#ffffff', metal: 0.7, rough: 0.4, tex: chainTex });
+
   return {
+    chain,
+    chrome: pbr(scene, 'chrome', { color: '#d9dde2', metal: 1, rough: 0.12 }),
+    display: pbr(scene, 'display', { color: '#3b5f3b', rough: 0.3, emissive: '#2f6b3a' }),
     asphalt: pbr(scene, 'asphalt', { color: '#ffffff', rough: 0.95, tex: asphaltTex }),
     concrete: pbr(scene, 'concrete', { color: '#ffffff', rough: 0.9, tex: concreteTex }),
     grass: pbr(scene, 'grass', { color: '#ffffff', rough: 1, tex: grassTex }),

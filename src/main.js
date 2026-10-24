@@ -2,7 +2,7 @@ import * as Sentry from '@sentry/browser';
 import './style.css';
 import { SENTRY_DSN, APP_VERSION } from './config.js';
 import { setLang, t } from './i18n.js';
-import { save, loadLocal, syncFromCloud, addRewards } from './state.js';
+import { save, loadLocal, syncFromCloud, addRewards, persist } from './state.js';
 import { initAuth, onAuthChange } from './cloud.js';
 import { Game } from './game/game.js';
 import { $, openModal, toast } from './ui/ui.js';
@@ -50,6 +50,12 @@ const app = {
         onResult: (outcome, result, c) => this.finishMission(outcome, result, c),
         onSettings: () => this.pauseWith((done) => S.openSettings(this, { inGame: true, onClose: done })),
         onMap: () => this.pauseWith((done) => this.openGameMap(done)),
+        onCamera: () => {
+          save.settings.view = save.settings.view === 'first' ? 'third' : 'first';
+          persist();
+          this.game.setSettings(save.settings);
+        },
+        coins: save.coins,
       });
     } catch (err) {
       Sentry.captureException(err);
@@ -71,7 +77,10 @@ const app = {
   openGameMap(done) {
     const f = this.game.forklift;
     const { el } = openModal(`<h2 class="modal-title">${t('map')}</h2>${mapHtml()}`, { onClose: done, className: 'map' });
-    bindMap(el, () => this.game.setOwnedWarehouses(save.warehouses), { x: f.x, z: f.z });
+    bindMap(el, () => {
+      this.game.setOwnedWarehouses(save.warehouses);
+      this.game.hud?.setCoins(save.coins);
+    }, { x: f.x, z: f.z });
   },
 
   finishMission(outcome, result, contract) {

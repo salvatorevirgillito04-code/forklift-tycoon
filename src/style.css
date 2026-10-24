@@ -645,3 +645,91 @@ body.playing #hud, body.playing #controls { display: block; }
   .tile { aspect-ratio: 0.95; font-size: 18px; }
   .tile-icon { font-size: 40px; }
 }
+
+/* ---------- HUD v2 (riferimenti: immagini 1 e 2) ---------- */
+.top-right { align-items: center; }
+.hud-coins { font-size: 17px; padding: 2px 12px 2px 4px; border-width: 2px; }
+.hud-coins svg { font-size: 24px; }
+
+.task-panel {
+  position: absolute;
+  top: calc(8px + var(--safe-t));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: none;
+  min-width: 230px;
+}
+.task-stats, .task-box {
+  background: rgba(22, 28, 38, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 6px;
+  color: #fff;
+}
+.task-stats { display: flex; }
+.task-stat { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 5px 10px; font-size: 20px; }
+.task-stat + .task-stat { border-left: 1px solid rgba(255, 255, 255, 0.3); }
+.task-stat b { font-size: 13px; font-variant-numeric: tabular-nums; }
+.task-stat b.warn { color: #ff6b5e; }
+.task-box { padding: 6px 12px 8px; }
+.task-title { font-weight: 900; font-size: 14px; text-align: center; padding-bottom: 4px; margin-bottom: 4px; border-bottom: 2px solid #f4c20d; }
+.task-list { list-style: none; margin: 0; padding: 0; font-size: 12px; font-weight: 700; }
+.task-list li { display: flex; gap: 6px; padding: 1px 0; }
+.task-list li i { font-style: normal; width: 12px; text-align: center; }
+.task-list li.done { color: #7ee08a; }
+.task-list li.fail { color: #ff7b6e; }
+.task-panel.free .task-stats { display: none; }
+@media (max-height: 420px) {
+  .task-panel { min-width: 200px; }
+  .task-box { padding: 4px 10px 5px; }
+  .task-list { font-size: 11px; }
+}
+
+/* Bottone camera rapido, sotto mappa e impostazioni */
+.hud-cam {
+  position: absolute;
+  right: calc(12px + var(--safe-r));
+  top: calc(76px + var(--safe-t));
+  width: 48px; height: 48px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 24px;
+  color: #fff;
+  background: rgba(22, 28, 38, 0.6);
+  border: 2px solid rgba(255, 255, 255, 0.75);
+}
+
+/* Forche: bottoni tondi scuri semitrasparenti */
+.fork-btn {
+  border-radius: 50%;
+  aspect-ratio: 1;
+  background: rgba(22, 28, 38, 0.5);
+  border: 2px solid rgba(255, 255, 255, 0.7);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.35);
+  backdrop-filter: none;
+}
+.fork-btn.pressed { background: rgba(244, 194, 13, 0.85); color: #1b1d20; }
+
+/* Volante e pedali realistici */
+.steer-wheel svg { stroke-width: 0; }
+.steer-wheel { filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.55)); }
+.pedal {
+  background: none;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+  touch-action: none;
+  filter: drop-shadow(0 6px 8px rgba(0, 0, 0, 0.5));
+  transition: transform 0.06s;
+  transform-origin: 50% 100%;
+}
+.pedal svg { width: 100%; height: 100%; }
+.pedal.brake { width: clamp(64px, 14vmin, 92px); height: clamp(76px, 16vmin, 108px); }
+.pedal.gas { width: clamp(52px, 11vmin, 70px); height: clamp(106px, 23vmin, 142px); }
+.ctl-left .pedal.brake { height: clamp(76px, 16vmin, 108px); }
+.pedal.pressed { transform: perspective(200px) rotateX(18deg) scale(0.96); }
+.gear-btn { background: rgba(22, 28, 38, 0.6); }
+.pedal.gas, .pedal.brake { background: none; }
