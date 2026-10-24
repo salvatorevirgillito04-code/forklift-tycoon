@@ -190,7 +190,7 @@ export class Forklift {
       if (this.v === 0 || Math.sign(this.v) === dir) {
         this.v += dir * input.throttle * veh.accel * (1 - loadRatio * 0.3) * dt;
       } else {
-        const dec = (2.2 + input.throttle * 1.8) * dt;
+        const dec = (1.2 + input.throttle * 0.8) * dt; // inversione dolce: max 2 m/s²
         if (Math.abs(this.v) <= dec) {
           // supera lo zero e inizia a muoversi nel nuovo senso
           const left = 1 - Math.abs(this.v) / dec;
