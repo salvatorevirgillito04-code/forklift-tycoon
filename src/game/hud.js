@@ -76,7 +76,7 @@ export class Hud {
         </div>
       </div>
       <div class="gauges">
-        <span class="chip speed"></span><span class="chip height"></span><span class="chip load"></span>
+        <span class="chip speed"></span><span class="chip height"></span><span class="chip tilt"></span><span class="chip load"></span>
       </div>
       <div class="toast"></div>`;
     root.querySelector('[data-act="settings"]').addEventListener('click', onSettings);
@@ -100,6 +100,7 @@ export class Hud {
       coins: root.querySelector('.hud-coins span'),
       speed: root.querySelector('.speed'),
       height: root.querySelector('.height'),
+      tilt: root.querySelector('.tilt'),
       load: root.querySelector('.load'),
       toast: root.querySelector('.toast'),
     };
@@ -162,6 +163,9 @@ export class Hud {
     }
     els.speed.textContent = `${Math.abs(forklift.v * 3.6).toFixed(0)} km/h`;
     els.height.textContent = `↕ ${forklift.forkY.toFixed(2)} m`;
+    // Inclinazione: positiva = forche all'indietro, negativa = in avanti
+    const deg = forklift.tilt * 180 / Math.PI;
+    els.tilt.textContent = `∠ ${deg > 0.05 ? '+' : ''}${deg.toFixed(1)}°`;
     els.load.textContent = forklift.carried ? `${fmt(forklift.carried.p.weight)} kg` : `0 / ${fmt(forklift.vehicle.capacity)} kg`;
     els.load.classList.toggle('warn', !!forklift.carried && forklift.carried.p.weight > forklift.vehicle.capacity * 0.8);
     this.drawMinimap(forklift, mission, pallets);

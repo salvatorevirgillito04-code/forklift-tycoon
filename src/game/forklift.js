@@ -1,4 +1,5 @@
 import { createForkliftModel, FORK, PALLET } from './models.js';
+import { createMirrors } from './mirrors.js';
 import { rectsOverlap, aabbToRect, verticalOverlap, toLocal, toWorld, wrapAngle } from './physics.js';
 
 const WHEELBASE = 1.55;
@@ -32,6 +33,7 @@ export class Forklift {
 
   async build(shadowGen) {
     this.model = await createForkliftModel(this.scene, this.mats, this.vehicle);
+    this.mirrors = createMirrors(this.scene, this.model.root, this.mats);
     this.model.root.getChildMeshes().forEach((m) => {
       shadowGen?.addShadowCaster(m);
       m.receiveShadows = true;
@@ -40,6 +42,7 @@ export class Forklift {
   }
 
   dispose() {
+    this.mirrors?.dispose();
     if (this.carried) this.carried.p.node.parent = null;
     this.model?.root.dispose();
   }
@@ -571,6 +574,8 @@ export class Forklift {
     m.forkR.position.x = this.spread / 2;
     m.rearWheels.forEach((w) => { w.rotation.y = -delta; });
     if (m.steerSpin) m.steerSpin.rotation.y = this.steer * WHEEL_TURNS;
+    m.root.computeWorldMatrix(true);
+    this.mirrors?.update();
     [...m.frontWheels, ...m.rearWheels].forEach((w) => {
       w.getChildMeshes()[0].rotation.x = this.wheelSpin;
     });
