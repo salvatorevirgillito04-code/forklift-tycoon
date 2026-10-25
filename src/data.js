@@ -17,6 +17,9 @@ export const VEHICLES = [
     photo: 'forklift-6.jpg', style: { trim: '#1a1a1a', rim: '#e8e2c8', exhaust: true, cab: 'closed' } },
 ];
 
+// Il mezzo iniziale e' gratis solo la prima volta: le copie per gli operai si pagano.
+export const unitPrice = (v, owned) => (owned ? v.price || 1000 : v.price);
+
 export const vehicleById = (id) => VEHICLES.find((v) => v.id === id) || VEHICLES[0];
 
 // Quartiere industriale: una strada principale lungo X (z=0), 5 lotti a nord e 5 a sud.
@@ -87,3 +90,44 @@ export function makeContract(level, difficulty, warehouseId) {
 }
 
 export const xpForLevel = (lvl) => Math.round(120 * Math.pow(lvl, 1.45));
+
+// ---------- OPERAI ----------
+// Posti per magazzino: 1 nei magazzini 1-3, 2 nei 4-6, 3 nei 7-9, 4 nel 10 (22 in totale).
+export const workerSlots = (whId) => (whId >= 9 ? 4 : Math.floor(whId / 3) + 1);
+export const WORKER_MAX_LEVEL = 10;
+
+// Costo di assunzione: 500, poi +40% per ogni operaio gia' in squadra; i candidati esperti costano di piu'.
+export const hireCost = (teamSize, level = 1) => Math.round((500 * Math.pow(1.4, teamSize) * (1 + 0.3 * (level - 1))) / 10) * 10;
+export const trainCost = (level) => Math.round((300 * Math.pow(1.6, level - 1)) / 10) * 10;
+
+// Guadagno lordo e stipendio all'ora.
+export function workerIncome(worker) {
+  const v = vehicleById(worker.vehicle);
+  const wh = WAREHOUSES[worker.warehouse];
+  const gross = (v.capacity / 10) * wh.rewardMult * (1 + 0.15 * (worker.level - 1));
+  const salary = 40 + 15 * worker.level;
+  return { gross: Math.round(gross), salary, net: Math.round(gross - salary) };
+}
+
+const FIRST = ['Marco', 'Giulia', 'Luca', 'Sara', 'Javier', 'Lucía', 'Tom', 'Emma', 'Paolo', 'Elena', 'Diego', 'Carmen',
+  'Jack', 'Olivia', 'Andrea', 'Chiara', 'Pablo', 'Sofía', 'Sam', 'Grace', 'Davide', 'Marta', 'Raúl', 'Nina'];
+const LAST = ['Rossi', 'Bianchi', 'García', 'López', 'Smith', 'Brown', 'Esposito', 'Romano', 'Martín', 'Ruiz',
+  'Taylor', 'Wilson', 'Greco', 'Conti', 'Moreno', 'Navarro', 'Clark', 'Hall', 'Ferri', 'Costa'];
+const SKIN = ['#f3d2b3', '#e8b892', '#c98e66', '#a86b45', '#7a4a2e', '#5b3820'];
+const HAIR = ['#2b1d14', '#5a3a22', '#a5652c', '#d8b26a', '#1a1a1a', '#8c8c8c'];
+const HELMET = ['#f2c200', '#ff7a1a', '#ffffff', '#2f80ed', '#35b06a', '#e04848'];
+
+// Tre candidati per ogni "giro" di colloqui: stesso seed = stessi candidati.
+export function makeCandidates(seed, count = 3) {
+  const r = rng(seed * 2654435761);
+  const pick = (arr) => arr[Math.floor(r() * arr.length)];
+  return Array.from({ length: count }, (_, i) => {
+    const level = 1 + Math.floor(r() * r() * 4); // spesso livello 1, a volte fino a 4
+    return {
+      id: `${seed}-${i}`,
+      name: `${pick(FIRST)} ${pick(LAST)}`,
+      level,
+      avatar: { skin: pick(SKIN), hair: pick(HAIR), helmet: pick(HELMET), beard: r() < 0.3, glasses: r() < 0.25 },
+    };
+  });
+}

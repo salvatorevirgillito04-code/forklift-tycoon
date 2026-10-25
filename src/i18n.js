@@ -1,5 +1,11 @@
 const STRINGS = {
   it: {
+    perHour: '{n}/h', hire: 'Assumi', hireFor: 'Assumi per {n}', emptySlot: 'Posto libero', train: 'Forma', fire: 'Licenzia',
+    confirmFire: 'Licenziare {n}?', salary: 'Stipendio', income: 'Guadagno', net: 'Netto', candidates: 'Candidati',
+    chooseForklift: 'Muletto assegnato', noFreeForklift: 'Nessun muletto libero: comprane un altro nel garage.',
+    teamIncome: 'Squadra: {n} monete/h nette', maxLevel: 'Livello massimo', offlineEarned: 'I tuoi operai hanno guadagnato {n} monete mentre eri via',
+    buyAnother: 'Compra un altro', units: '{n} posseduti · {a} agli operai', workerBusy: 'Tutti i muletti di questo modello sono usati dagli operai',
+    slotsInfo: 'Posti: {n}', noWarehouseSlots: 'Compra altri magazzini per avere piu\' posti', change: 'Cambia', hired: 'Assunto!',
     installApp: 'Installa app', mirrors: 'Specchietto retrovisore', saleSign: 'VENDESI',
     tasks: 'Compiti', taskLoad: 'Carica {n} pallet sul camion ({d}/{n})', taskUnload: 'Scarica {n} pallet nella zona gialla ({d}/{n})',
     taskNoDrop: 'Non far cadere pallet', taskTime: 'Finisci entro il tempo',
@@ -42,6 +48,12 @@ const STRINGS = {
     starter: 'Mezzo iniziale', rewardMult: 'Paga x{n}',
   },
   es: {
+    perHour: '{n}/h', hire: 'Contratar', hireFor: 'Contratar por {n}', emptySlot: 'Puesto libre', train: 'Formar', fire: 'Despedir',
+    confirmFire: '¿Despedir a {n}?', salary: 'Sueldo', income: 'Ingresos', net: 'Neto', candidates: 'Candidatos',
+    chooseForklift: 'Carretilla asignada', noFreeForklift: 'No hay carretillas libres: compra otra en el garaje.',
+    teamIncome: 'Equipo: {n} monedas/h netas', maxLevel: 'Nivel máximo', offlineEarned: 'Tus operarios ganaron {n} monedas mientras no estabas',
+    buyAnother: 'Comprar otra', units: '{n} en propiedad · {a} a operarios', workerBusy: 'Todas las carretillas de este modelo las usan los operarios',
+    slotsInfo: 'Puestos: {n}', noWarehouseSlots: 'Compra más almacenes para tener más puestos', change: 'Cambiar', hired: '¡Contratado!',
     installApp: 'Instalar app', mirrors: 'Espejo retrovisor', saleSign: 'SE VENDE',
     tasks: 'Tareas', taskLoad: 'Carga {n} palés en el camión ({d}/{n})', taskUnload: 'Descarga {n} palés en la zona amarilla ({d}/{n})',
     taskNoDrop: 'No dejes caer palés', taskTime: 'Termina a tiempo',
@@ -84,6 +96,12 @@ const STRINGS = {
     starter: 'Vehículo inicial', rewardMult: 'Pago x{n}',
   },
   en: {
+    perHour: '{n}/h', hire: 'Hire', hireFor: 'Hire for {n}', emptySlot: 'Free slot', train: 'Train', fire: 'Fire',
+    confirmFire: 'Fire {n}?', salary: 'Salary', income: 'Income', net: 'Net', candidates: 'Candidates',
+    chooseForklift: 'Assigned forklift', noFreeForklift: 'No free forklift: buy another one in the garage.',
+    teamIncome: 'Team: {n} coins/h net', maxLevel: 'Max level', offlineEarned: 'Your workers earned {n} coins while you were away',
+    buyAnother: 'Buy another', units: '{n} owned · {a} with workers', workerBusy: 'All forklifts of this model are used by workers',
+    slotsInfo: 'Slots: {n}', noWarehouseSlots: 'Buy more warehouses to get more slots', change: 'Change', hired: 'Hired!',
     installApp: 'Install app', mirrors: 'Rear-view mirror', saleSign: 'FOR SALE',
     tasks: 'Tasks', taskLoad: 'Load {n} pallets onto the truck ({d}/{n})', taskUnload: 'Unload {n} pallets into the yellow zone ({d}/{n})',
     taskNoDrop: 'Do not drop any pallet', taskTime: 'Finish before time runs out',

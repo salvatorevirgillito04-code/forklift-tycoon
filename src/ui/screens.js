@@ -1,8 +1,14 @@
 import { t, fmt, LANGS, getLang, setLang } from '../i18n.js';
 import { ICONS } from './icons.js';
 import { $, esc, coinPill, openModal, confirmDialog, toast } from './ui.js';
-import { save, persist, buyVehicle, buyWarehouse, resetSave } from '../state.js';
-import { VEHICLES, WAREHOUSES, DIFFICULTIES, makeContract, vehicleById, xpForLevel } from '../data.js';
+import {
+  save, buyVehicle, buyWarehouse, resetSave, persist, equipVehicle, ownedCount, assignedCount, freeUnits,
+  freeSlots, hireWorker, trainWorker, fireWorker, setWorkerVehicle, workersNetPerHour, accrueWorkers,
+} from '../state.js';
+import {
+  VEHICLES, WAREHOUSES, DIFFICULTIES, unitPrice, makeContract, vehicleById, xpForLevel,
+  workerSlots, hireCost, trainCost, workerIncome, makeCandidates, WORKER_MAX_LEVEL,
+} from '../data.js';
 import { isLinked, getUser, linkEmail, logout, isOnline } from '../cloud.js';
 import { drawStaticMap, worldToMap, MAP_W, MAP_H } from '../game/hud.js';
 import { PLOT, plotToWorld } from '../game/world.js';
@@ -81,7 +87,7 @@ export function renderHub(app) {
         ${tile('garage', ICONS.forklift, t('garage'), 'blue')}
         ${tile('warehouses', ICONS.warehouse, t('warehouses'), 'orange')}
         ${tile('free', ICONS.play, t('freeDrive'), 'purple')}
-        ${tile('workers', ICONS.workers, t('workers'), 'slate', true)}
+        ${tile('workers', ICONS.workers, t('workers'), 'slate')}
       </div>
     </div>`;
   bindBack(app);
@@ -144,40 +150,193 @@ export function renderGarage(app) {
   const bar = (label, val, max, unit) => `<div class="stat"><span>${label}</span>
       <div class="bar"><i style="width:${Math.round((val / max) * 100)}%"></i></div><b>${unit}</b></div>`;
   const cards = VEHICLES.map((v) => {
-    const owned = save.vehicles.includes(v.id);
+    const count = ownedCount(v.id);
     const active = save.activeVehicle === v.id;
-    const btn = active
-      ? `<button class="pill-btn grey" disabled>${t('equipped')}</button>`
-      : owned
-        ? `<button class="pill-btn blue" data-equip="${v.id}">${t('equip')}</button>`
-        : `<button class="pill-btn ${save.coins >= v.price ? 'green' : 'grey'}" data-buy="${v.id}">${ICONS.coin}${fmt(v.price)}</button>`;
+    const price = unitPrice(v, count);
+    const canBuy = save.coins >= price ? 'green' : 'grey';
+    let btns;
+    if (!count) btns = `<button class="pill-btn ${canBuy}" data-buy="${v.id}">${ICONS.coin}${fmt(price)}</button>`;
+    else {
+      const equip = active
+        ? `<button class="pill-btn grey" disabled>${t('equipped')}</button>`
+        : `<button class="pill-btn ${freeUnits(v.id) > 0 ? 'blue' : 'grey'}" data-equip="${v.id}">${t('equip')}</button>`;
+      btns = `${equip}<button class="pill-btn small ${canBuy}" data-buy="${v.id}">+1 ${ICONS.coin}${fmt(price)}</button>`;
+    }
     return `<div class="vehicle-card ${active ? 'active' : ''}">
         <div class="vehicle-photo" style="--c:${v.color}">
           <img src="${import.meta.env.BASE_URL}garage/${v.photo}" alt="${esc(v.name)}" loading="lazy">
+          ${count > 1 ? `<span class="unit-count">×${count}</span>` : ''}
         </div>
         <div class="vehicle-info">
           <h3>${esc(v.name)} ${v.price === 0 ? `<small>${t('starter')}</small>` : ''}</h3>
           ${bar(t('capacity'), v.capacity, maxOf('capacity'), `${fmt(v.capacity)} kg`)}
           ${bar(t('liftHeight'), v.lift, maxOf('lift'), `${v.lift} m`)}
           ${bar(t('speed'), v.speed, maxOf('speed'), `${Math.round(v.speed * 3.6)} km/h`)}
+          ${count ? `<small class="units">${t('units', { n: count, a: assignedCount(v.id) })}</small>` : ''}
         </div>
-        <div class="vehicle-action">${owned ? `<span class="owned-tag">${t('owned')}</span>` : ''}${btn}</div>
+        <div class="vehicle-action">${btns}</div>
       </div>`;
   }).join('');
   screenEl().innerHTML = `<div class="page">${topBar(true)}<h2 class="page-title">${t('garage')}</h2>
     <div class="vehicle-list">${cards}</div></div>`;
   bindBack(app, 'hub');
   screenEl().querySelectorAll('[data-equip]').forEach((b) => b.addEventListener('click', () => {
-    save.activeVehicle = b.dataset.equip;
-    persist();
+    if (!equipVehicle(b.dataset.equip)) return toast(t('workerBusy'), 'bad');
     renderGarage(app);
   }));
   screenEl().querySelectorAll('[data-buy]').forEach((b) => b.addEventListener('click', async () => {
     const v = vehicleById(b.dataset.buy);
-    if (save.coins < v.price) return toast(t('notEnoughCoins'), 'bad');
-    if (!(await confirmDialog(`${v.name}: ${t('buyFor', { n: fmt(v.price) })}?`))) return;
+    const price = unitPrice(v, ownedCount(v.id));
+    if (save.coins < price) return toast(t('notEnoughCoins'), 'bad');
+    if (!(await confirmDialog(`${v.name}: ${t('buyFor', { n: fmt(price) })}?`))) return;
     if (buyVehicle(v.id)) toast(t('bought'), 'good');
     renderGarage(app);
+  }));
+}
+
+// ---------- OPERAI ----------
+export function avatarSvg(a) {
+  return `<svg class="worker-avatar" viewBox="0 0 64 64" aria-hidden="true">
+    <circle cx="32" cy="32" r="32" fill="#2b4a6f"/>
+    <path d="M12 64c2-12 10-17 20-17s18 5 20 17z" fill="#f08a24"/>
+    <path d="M24 49l8 9 8-9" fill="none" stroke="#e8ecef" stroke-width="3"/>
+    <circle cx="32" cy="33" r="13" fill="${a.skin}"/>
+    <path d="M19 32c0-6 3-10 13-10s13 4 13 10c-2-3-6-4-13-4s-11 1-13 4z" fill="${a.hair}"/>
+    ${a.beard ? `<path d="M20 35c1 9 6 12 12 12s11-3 12-12c-3 4-7 5-12 5s-9-1-12-5z" fill="${a.hair}"/>` : ''}
+    <circle cx="27" cy="34" r="1.6" fill="#222"/><circle cx="37" cy="34" r="1.6" fill="#222"/>
+    <path d="M28 40q4 3 8 0" fill="none" stroke="#7a3b2a" stroke-width="1.6" stroke-linecap="round"/>
+    ${a.glasses ? '<g fill="none" stroke="#222" stroke-width="1.4"><circle cx="27" cy="34" r="3.6"/><circle cx="37" cy="34" r="3.6"/><path d="M30.6 34h2.8"/></g>' : ''}
+    <path d="M17 27c0-9 7-14 15-14s15 5 15 14z" fill="${a.helmet}"/>
+    <rect x="14" y="25.5" width="36" height="3.5" rx="1.75" fill="${a.helmet}" stroke="rgba(0,0,0,.18)"/>
+    <path d="M30 13.5h4v12h-4z" fill="rgba(0,0,0,.12)"/>
+  </svg>`;
+}
+
+const money = (n) => `${ICONS.coin}${fmt(n)}`;
+
+export function renderWorkers(app) {
+  accrueWorkers();
+  const sections = save.warehouses.map((whId) => {
+    const wh = WAREHOUSES[whId];
+    const list = save.workers.filter((w) => w.warehouse === whId);
+    const cards = list.map((w) => {
+      const inc = workerIncome(w);
+      const max = w.level >= WORKER_MAX_LEVEL;
+      return `<div class="worker-card">
+          ${avatarSvg(w.avatar)}
+          <div class="worker-info">
+            <h3>${esc(w.name)}</h3>
+            <span class="worker-level">${t('level')} ${w.level}</span>
+            <button class="worker-veh" data-veh="${w.id}">${ICONS.forklift}<span>${esc(vehicleById(w.vehicle).name)}</span><em>${t('change')}</em></button>
+            <div class="worker-money"><span class="good">+${fmt(inc.gross)}</span><span class="bad">−${fmt(inc.salary)}</span>
+              <b>${t('perHour', { n: fmt(inc.net) })}</b></div>
+          </div>
+          <div class="worker-actions">
+            <button class="link-btn" data-fire="${w.id}">${t('fire')}</button>
+            ${max ? `<button class="pill-btn grey small" disabled>${t('maxLevel')}</button>`
+    : `<button class="pill-btn small ${save.coins >= trainCost(w.level) ? 'blue' : 'grey'}" data-train="${w.id}">${t('train')} ${money(trainCost(w.level))}</button>`}
+          </div>
+        </div>`;
+    });
+    for (let i = list.length; i < workerSlots(whId); i++) {
+      cards.push(`<button class="worker-card empty" data-hire="${whId}"><div class="worker-plus">+</div>
+        <div class="worker-info"><h3>${t('emptySlot')}</h3><small>${t('hire')}</small></div></button>`);
+    }
+    return `<section class="worker-section">
+        <h3 class="worker-section-title">${t('warehouse', { n: whId + 1 })}
+          <small>${t('rewardMult', { n: wh.rewardMult })} · ${t('slotsInfo', { n: workerSlots(whId) })}</small></h3>
+        <div class="worker-grid">${cards.join('')}</div>
+      </section>`;
+  }).join('');
+  screenEl().innerHTML = `<div class="page">${topBar(true)}
+    <h2 class="page-title">${t('workers')}</h2>
+    <p class="team-income">${t('teamIncome', { n: fmt(workersNetPerHour()) })}</p>
+    <div class="worker-list">${sections}</div>
+    ${save.warehouses.length < WAREHOUSES.length ? `<p class="hint">${ICONS.warehouse} ${t('noWarehouseSlots')}</p>` : ''}
+  </div>`;
+  bindBack(app, 'hub');
+  const el = screenEl();
+  const refresh = () => renderWorkers(app);
+  el.querySelectorAll('[data-hire]').forEach((b) => b.addEventListener('click', () => openHire(app, +b.dataset.hire, refresh)));
+  el.querySelectorAll('[data-veh]').forEach((b) => b.addEventListener('click', () => openWorkerVehicle(b.dataset.veh, refresh)));
+  el.querySelectorAll('[data-train]').forEach((b) => b.addEventListener('click', () => {
+    const w = save.workers.find((x) => x.id === b.dataset.train);
+    if (save.coins < trainCost(w.level)) return toast(t('notEnoughCoins'), 'bad');
+    if (trainWorker(w.id)) toast(`${w.name} · ${t('level')} ${w.level}`, 'good');
+    refresh();
+  }));
+  el.querySelectorAll('[data-fire]').forEach((b) => b.addEventListener('click', async () => {
+    const w = save.workers.find((x) => x.id === b.dataset.fire);
+    if (!(await confirmDialog(t('confirmFire', { n: w.name })))) return;
+    fireWorker(w.id);
+    refresh();
+  }));
+}
+
+// Elenco dei modelli con almeno un muletto libero per un operaio.
+function vehicleChoices(current) {
+  return VEHICLES.filter((v) => v.id === current || freeUnits(v.id, true) > 0);
+}
+
+function openHire(app, whId, onDone) {
+  if (freeSlots(whId) < 1) return;
+  const candidates = makeCandidates(save.candidateSeed);
+  const choices = vehicleChoices();
+  let vehicle = choices.length ? choices[choices.length - 1].id : null; // di default il piu' potente libero
+  const { el, close } = openModal(`
+    <h2 class="modal-title">${t('candidates')} · ${t('warehouse', { n: whId + 1 })}</h2>
+    <div class="setting"><span>${t('chooseForklift')}</span>
+      ${choices.length ? `<div class="segmented wrap" data-vehicles>${choices.map((v) => `<button class="${v.id === vehicle ? 'on' : ''}" data-v="${v.id}">
+        ${esc(v.name)} <small>×${freeUnits(v.id, true)}</small></button>`).join('')}</div>`
+    : `<p class="modal-text small">${t('noFreeForklift')}</p>`}
+    </div>
+    <div class="candidate-list">${candidates.map((c) => {
+    const cost = hireCost(save.workers.length, c.level);
+    return `<div class="candidate">
+        ${avatarSvg(c.avatar)}
+        <b>${esc(c.name)}</b><small>${t('level')} ${c.level}</small>
+        <small class="cand-net"></small>
+        <button class="pill-btn small ${choices.length && save.coins >= cost ? 'green' : 'grey'}" data-cand="${c.id}" ${choices.length ? '' : 'disabled'}>${t('hire')} ${money(cost)}</button>
+      </div>`;
+  }).join('')}</div>
+    ${choices.length ? '' : `<button class="pill-btn blue" data-garage>${t('garage')}</button>`}`, { className: 'hire' });
+  const showNet = () => el.querySelectorAll('.candidate').forEach((node, i) => {
+    if (!vehicle) return;
+    const inc = workerIncome({ vehicle, warehouse: whId, level: candidates[i].level });
+    node.querySelector('.cand-net').textContent = `${t('net')} ${t('perHour', { n: fmt(inc.net) })}`;
+  });
+  showNet();
+  el.querySelectorAll('[data-v]').forEach((b) => b.addEventListener('click', () => {
+    vehicle = b.dataset.v;
+    el.querySelectorAll('[data-v]').forEach((x) => x.classList.toggle('on', x === b));
+    showNet();
+  }));
+  el.querySelector('[data-garage]')?.addEventListener('click', () => { close(); app.go('garage'); });
+  el.querySelectorAll('[data-cand]').forEach((b) => b.addEventListener('click', () => {
+    const c = candidates.find((x) => x.id === b.dataset.cand);
+    if (save.coins < hireCost(save.workers.length, c.level)) return toast(t('notEnoughCoins'), 'bad');
+    if (hireWorker(c, whId, vehicle)) {
+      toast(`${c.name}: ${t('hired')}`, 'good');
+      close();
+      onDone();
+    }
+  }));
+}
+
+function openWorkerVehicle(workerId, onDone) {
+  const w = save.workers.find((x) => x.id === workerId);
+  const { el, close } = openModal(`
+    <h2 class="modal-title">${esc(w.name)} · ${t('chooseForklift')}</h2>
+    <div class="lang-list">${vehicleChoices(w.vehicle).map((v) => {
+    const inc = workerIncome({ ...w, vehicle: v.id });
+    return `<button class="lang-btn ${v.id === w.vehicle ? 'on' : ''}" data-v="${v.id}">${esc(v.name)}
+        <small>${t('perHour', { n: fmt(inc.net) })}</small></button>`;
+  }).join('')}</div>
+    <p class="modal-text small">${t('noFreeForklift')}</p>`, { className: 'small' });
+  el.querySelectorAll('[data-v]').forEach((b) => b.addEventListener('click', () => {
+    setWorkerVehicle(w.id, b.dataset.v);
+    close();
+    onDone();
   }));
 }
 
@@ -260,7 +419,8 @@ export function renderProfile(app) {
           <li><span>${t('contractsDone')}</span><b>${fmt(save.stats.contracts)}</b></li>
           <li><span>${t('palletsMoved')}</span><b>${fmt(save.stats.pallets)}</b></li>
           <li><span>${t('totalEarned')}</span><b>${fmt(save.stats.earned)}</b></li>
-          <li><span>${t('garage')}</span><b>${save.vehicles.length} / ${VEHICLES.length}</b></li>
+          <li><span>${t('garage')}</span><b>${Object.values(save.vehicles).reduce((a, b) => a + b, 0)}</b></li>
+          <li><span>${t('workers')}</span><b>${save.workers.length} / ${WAREHOUSES.reduce((a, w) => a + workerSlots(w.id), 0)}</b></li>
           <li><span>${t('warehouses')}</span><b>${save.warehouses.length} / ${WAREHOUSES.length}</b></li>
         </ul>
         <div class="account">${account} · <small>${isOnline() ? t('cloudOk') : t('cloudOffline')}</small></div>

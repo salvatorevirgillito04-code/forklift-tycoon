@@ -758,3 +758,53 @@ body.playing #hud, body.playing #controls { display: block; }
 }
 .vehicle-photo img { width: 100%; height: 100%; object-fit: contain; display: block; }
 @media (max-width: 520px) { .vehicle-photo { width: 100%; height: 160px; } }
+
+/* Copie dei mezzi */
+.vehicle-photo { position: relative; }
+.unit-count { position: absolute; right: 6px; bottom: 6px; padding: 1px 8px; border-radius: 10px; background: var(--ink); color: #fff; font-weight: 900; font-size: 14px; }
+.vehicle-info .units { display: block; margin-top: 4px; font-size: 12px; font-weight: 800; color: #5b6f86; }
+.pill-btn.small { min-height: 34px; padding: 4px 14px; font-size: 14px; }
+.pill-btn svg { width: 1.1em; height: 1.1em; }
+
+/* Operai */
+.team-income { margin: -6px 0 12px; text-align: center; font-weight: 900; color: #fff; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.25); }
+.worker-list { display: flex; flex-direction: column; gap: 18px; max-width: 900px; margin: 0 auto; padding: 0 16px; }
+.worker-section-title { margin: 0 0 8px; font-family: 'Lilita One', sans-serif; font-weight: 400; font-size: 20px; color: #fff; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.25); }
+.worker-section-title small { font-family: 'Nunito'; font-weight: 800; font-size: 13px; opacity: 0.9; margin-left: 6px; }
+.worker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.worker-card {
+  display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 20px; text-align: left;
+  background: var(--panel); box-shadow: 0 0 0 4px #fff, 0 8px 16px rgba(30, 20, 90, 0.25); color: var(--ink);
+}
+.worker-card.empty { background: rgba(255, 255, 255, 0.55); box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.8); border: 0; cursor: pointer; font: inherit; }
+.worker-card.empty:active { transform: scale(0.97); }
+.worker-avatar { width: 58px; height: 58px; flex-shrink: 0; border-radius: 50%; box-shadow: 0 0 0 3px #fff; }
+.worker-plus { width: 58px; height: 58px; flex-shrink: 0; border-radius: 50%; display: grid; place-items: center; font-size: 34px; font-weight: 900; color: #fff; background: var(--green); box-shadow: 0 0 0 3px #fff; }
+.worker-info { flex: 1; min-width: 0; }
+.worker-info h3 { margin: 0 0 4px; font-family: 'Lilita One', sans-serif; font-weight: 400; font-size: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.worker-level { display: inline-block; margin-bottom: 4px; padding: 0 8px; border-radius: 8px; background: var(--blue); color: #fff; font-weight: 900; font-size: 12px; }
+.worker-info > small { font-weight: 900; color: var(--green-d); }
+.worker-veh { display: flex; align-items: center; gap: 6px; max-width: 100%; padding: 2px 8px; border-radius: 10px; background: #e3ecf4; font-weight: 800; font-size: 13px; color: var(--ink); }
+.worker-veh svg { width: 18px; height: 18px; flex-shrink: 0; }
+.worker-veh span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.worker-veh em { font-style: normal; color: var(--blue-d); font-size: 11px; }
+.worker-money { display: flex; gap: 8px; align-items: baseline; margin-top: 4px; font-size: 12px; font-weight: 900; }
+.worker-money .good { color: var(--green-d); }
+.worker-money .bad { color: var(--red-d); }
+.worker-money b { margin-left: auto; font-size: 14px; }
+.worker-card:not(.empty) { flex-wrap: wrap; }
+.worker-actions { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 8px; border-top: 2px solid #e3ecf4; }
+.worker-actions .link-btn { font-size: 12px; }
+.modal.hire { width: min(100%, 640px); }
+.segmented.wrap { flex-wrap: wrap; }
+.segmented.wrap button { flex: 1 1 30%; font-size: 13px; }
+.segmented button small { opacity: 0.7; }
+.candidate-list { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.candidate { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 12px 8px; border-radius: 18px; background: #fff; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12); text-align: center; }
+.candidate .worker-avatar { width: 64px; height: 64px; margin-bottom: 4px; }
+.candidate b { font-size: 15px; }
+.candidate small { font-weight: 800; color: #5b6f86; }
+.candidate .cand-net { color: var(--green-d); min-height: 1.2em; }
+.candidate .pill-btn { margin-top: 6px; width: 100%; }
+@media (max-width: 560px) { .candidate-list { grid-template-columns: 1fr; } }
+.lang-btn small { margin-left: auto; font-size: 13px; color: var(--green-d); }

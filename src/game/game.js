@@ -12,6 +12,7 @@ import { Controls } from './controls.js';
 import { Hud } from './hud.js';
 import { TRUCK } from './models.js';
 import { createRearview } from './rearview.js';
+import { WorkerBots } from './workerbots.js';
 import { vehicleById } from '../data.js';
 import { t } from '../i18n.js';
 
@@ -73,6 +74,7 @@ export class Game {
     this.pallets = new PalletManager(scene, this.mats, this.shadowGen);
     this.env = { colliders: this.world.colliders, pallets: this.pallets, truckBedHeight: TRUCK.bedHeight };
     this.mission = new Mission(scene, this.mats, this.env, this.shadowGen);
+    this.bots = new WorkerBots(scene, this.mats, this.env);
     this.world.freezeStatics();
     this.bindLook();
 
@@ -133,7 +135,7 @@ export class Game {
     this.isLooking = () => !!last;
   }
 
-  async startMission(contract, { vehicleId, hudRoot, controlsRoot, onResult, onSettings, onMap, onCamera, owned, coins }) {
+  async startMission(contract, { vehicleId, hudRoot, controlsRoot, onResult, onSettings, onMap, onCamera, owned, workers, coins }) {
     this.stopMission();
     this.mode = 'loading';
     const vehicle = vehicleById(vehicleId);
@@ -141,6 +143,8 @@ export class Game {
     await this.forklift.build(this.settings.quality === 'high' ? this.shadowGen : null);
     const start = await this.mission.start(contract);
     this.forklift.place(start.x, start.z, start.yaw);
+    this.bots.shadowGen = this.settings.quality === 'high' ? this.shadowGen : null;
+    this.bots.setWorkers(workers);
     this.cabHidden = null;
     this.hud = new Hud(hudRoot, { onSettings, onMap, onCamera, coins });
     this.rearview = createRearview(this.scene, this.camera);
@@ -167,6 +171,7 @@ export class Game {
     this.rearview?.dispose();
     this.rearview = null;
     this.mission.cleanup();
+    this.bots?.clear();
     this.forklift?.dispose();
     this.forklift = null;
     this.controls?.dispose();
@@ -198,6 +203,7 @@ export class Game {
     const input = this.controls.update(dt);
     const f = this.forklift;
     f.update(dt, input, this.env);
+    this.bots.update(dt, f);
     this.pallets.update(dt);
     for (const ev of f.events) {
       if (ev === 'dropped') {

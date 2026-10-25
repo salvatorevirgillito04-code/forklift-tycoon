@@ -1,8 +1,8 @@
 import * as Sentry from '@sentry/browser';
 import './style.css';
 import { SENTRY_DSN, APP_VERSION } from './config.js';
-import { setLang, t } from './i18n.js';
-import { save, loadLocal, syncFromCloud, addRewards, persist } from './state.js';
+import { setLang, t, fmt } from './i18n.js';
+import { save, loadLocal, syncFromCloud, addRewards, persist, accrueWorkers } from './state.js';
 import { initAuth, onAuthChange } from './cloud.js';
 import { Game } from './game/game.js';
 import { $, openModal, toast } from './ui/ui.js';
@@ -24,6 +24,7 @@ const SCREENS = {
   garage: S.renderGarage,
   warehouses: S.renderWarehouses,
   profile: S.renderProfile,
+  workers: S.renderWorkers,
 };
 
 const app = {
@@ -47,6 +48,7 @@ const app = {
       await this.game.startMission(contract, {
         vehicleId: save.activeVehicle,
         owned: save.warehouses,
+        workers: save.workers,
         hudRoot: $('#hud'),
         controlsRoot: $('#controls'),
         onResult: (outcome, result, c) => this.finishMission(outcome, result, c),
@@ -104,6 +106,16 @@ const app = {
   },
 };
 
+// Guadagni automatici degli operai (anche a gioco chiuso).
+function payWorkers(offline) {
+  const coins = accrueWorkers();
+  if (!coins) return;
+  if (offline && coins >= 10) toast(t('offlineEarned', { n: fmt(coins) }), 'good');
+  app.game?.hud?.setCoins(save.coins);
+  const pill = document.querySelector('#screen .coin-pill span');
+  if (pill) pill.textContent = fmt(save.coins);
+}
+
 async function boot() {
   loadLocal();
   setLang(save.settings.lang);
@@ -121,11 +133,14 @@ async function boot() {
   }
   $('#loading').classList.remove('show');
   app.go('home');
+  payWorkers(true);
+  setInterval(() => payWorkers(false), 10000);
 
   // Cloud in background: non blocca l'avvio
   onAuthChange(async (user) => {
     if (!user) return;
     await syncFromCloud();
+    payWorkers(true);
     setLang(save.settings.lang);
     game.world?.setSaleLabel(t('saleSign'));
     game.setOwnedWarehouses(save.warehouses);

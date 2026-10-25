@@ -1,6 +1,6 @@
 import { loadCloudSave, writeCloudSave } from './cloud.js';
 import { detectLang } from './i18n.js';
-import { VEHICLES, WAREHOUSES, xpForLevel } from './data.js';
+import { VEHICLES, WAREHOUSES, xpForLevel, unitPrice, workerSlots, hireCost, trainCost, workerIncome, WORKER_MAX_LEVEL } from './data.js';
 
 const KEY = 'forklift-tycoon-save-v1';
 
@@ -11,16 +11,23 @@ const defaults = () => ({
   xp: 0,
   level: 1,
   contractLevel: 1,
-  stats: { contracts: 0, pallets: 0, earned: 0 },
-  vehicles: ['e12'],
+  stats: { contracts: 0, pallets: 0, earned: 0, workerEarned: 0 },
+  vehicles: { e12: 1 }, // id modello -> numero di muletti posseduti
   activeVehicle: 'e12',
   warehouses: [0],
+  workers: [], // { id, name, avatar, level, warehouse, vehicle }
+  candidateSeed: 1,
+  workersPaidAt: 0, // ultimo accredito dei guadagni degli operai
+  workerCarry: 0, // frazione di moneta non ancora accreditata
   settings: { lang: detectLang(), view: 'third', sensitivity: 1, steering: 'arrows', invertGyro: false, quality: 'high', mirrors: true },
   savedAt: 0,
 });
 
 function merge(base, data) {
-  return { ...base, ...data, stats: { ...base.stats, ...data?.stats }, settings: { ...base.settings, ...data?.settings } };
+  const out = { ...base, ...data, stats: { ...base.stats, ...data?.stats }, settings: { ...base.settings, ...data?.settings } };
+  // Vecchi salvataggi: lista di id (un esemplare per modello) -> conteggi
+  if (Array.isArray(out.vehicles)) out.vehicles = Object.fromEntries(out.vehicles.map((id) => [id, 1]));
+  return out;
 }
 
 export let save = defaults();
@@ -76,13 +83,85 @@ export function spend(amount) {
   return true;
 }
 
+export const ownedCount = (id) => save.vehicles[id] || 0;
+export const assignedCount = (id) => save.workers.filter((w) => w.vehicle === id).length;
+// Muletti liberi di un modello: quelli non usati dagli operai (uno resta sempre al giocatore se e' il suo mezzo).
+export const freeUnits = (id, forWorker = false) =>
+  ownedCount(id) - assignedCount(id) - (forWorker && save.activeVehicle === id ? 1 : 0);
+
+// Il primo esemplare di un modello diventa il mezzo del giocatore; gli altri vanno agli operai.
 export function buyVehicle(id) {
   const v = VEHICLES.find((x) => x.id === id);
-  if (!v || save.vehicles.includes(id) || !spend(v.price)) return false;
-  save.vehicles.push(id);
+  if (!v || !spend(unitPrice(v, ownedCount(id)))) return false;
+  const first = !ownedCount(id);
+  save.vehicles[id] = ownedCount(id) + 1;
+  if (first) save.activeVehicle = id;
+  persist();
+  return true;
+}
+
+export function equipVehicle(id) {
+  if (freeUnits(id) < 1) return false;
   save.activeVehicle = id;
   persist();
   return true;
+}
+
+// ---------- OPERAI ----------
+export const freeSlots = (whId) => workerSlots(whId) - save.workers.filter((w) => w.warehouse === whId).length;
+
+export function hireWorker(candidate, warehouse, vehicle) {
+  if (!save.warehouses.includes(warehouse) || freeSlots(warehouse) < 1 || freeUnits(vehicle, true) < 1) return false;
+  accrueWorkers();
+  if (!spend(hireCost(save.workers.length, candidate.level))) return false;
+  save.workers.push({ id: `w${Date.now().toString(36)}`, name: candidate.name, avatar: candidate.avatar, level: candidate.level, warehouse, vehicle });
+  save.candidateSeed += 1;
+  persist();
+  return true;
+}
+
+export function trainWorker(id) {
+  const w = save.workers.find((x) => x.id === id);
+  if (!w || w.level >= WORKER_MAX_LEVEL) return false;
+  accrueWorkers();
+  if (!spend(trainCost(w.level))) return false;
+  w.level += 1;
+  persist();
+  return true;
+}
+
+export function setWorkerVehicle(id, vehicle) {
+  const w = save.workers.find((x) => x.id === id);
+  if (!w || (w.vehicle !== vehicle && freeUnits(vehicle, true) < 1)) return false;
+  accrueWorkers();
+  w.vehicle = vehicle;
+  persist();
+  return true;
+}
+
+export function fireWorker(id) {
+  accrueWorkers();
+  save.workers = save.workers.filter((w) => w.id !== id);
+  persist();
+}
+
+export const workersNetPerHour = () => save.workers.reduce((sum, w) => sum + workerIncome(w).net, 0);
+
+// Accredita i guadagni maturati dall'ultimo accredito (anche a gioco chiuso, senza limite).
+// Ritorna le monete accreditate.
+export function accrueWorkers(now = Date.now()) {
+  const last = save.workersPaidAt || now;
+  save.workersPaidAt = now;
+  if (!save.workers.length || now <= last) return 0;
+  const total = save.workerCarry + (workersNetPerHour() * (now - last)) / 3600000;
+  const coins = Math.floor(total);
+  save.workerCarry = total - coins;
+  if (coins > 0) {
+    save.coins += coins;
+    save.stats.workerEarned += coins;
+  }
+  persist();
+  return coins;
 }
 
 export function buyWarehouse(id) {
