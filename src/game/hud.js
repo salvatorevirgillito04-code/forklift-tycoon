@@ -1,3 +1,4 @@
+import { coinText } from '../ui/ui.js';
 import { WAREHOUSES, WORLD } from '../data.js';
 import { PLOT, plotToWorld, zoneRect } from './world.js';
 import { t, fmt } from '../i18n.js';
@@ -59,7 +60,7 @@ export class Hud {
     root.innerHTML = `
       <div class="minimap"><canvas width="300" height="300"></canvas></div>
       <div class="top-right">
-        <div class="coin-pill hud-coins">${ICONS.coin}<span>${fmt(coins)}</span></div>
+        <div class="coin-pill hud-coins">${ICONS.coin}<span>${coinText(coins)}</span></div>
         <button class="round-btn small" data-act="map" aria-label="${t('map')}">${ICONS.map}</button>
         <button class="round-btn small" data-act="settings" aria-label="${t('settings')}">${ICONS.gear}</button>
       </div>
@@ -118,7 +119,7 @@ export class Hud {
   }
 
   setCoins(coins) {
-    this.els.coins.textContent = fmt(coins);
+    this.els.coins.textContent = coinText(coins);
   }
 
   setObjective(contract) {

@@ -2,11 +2,11 @@ import * as Sentry from '@sentry/browser';
 import './style.css';
 import { SENTRY_DSN, APP_VERSION, IS_NATIVE } from './config.js';
 import { setLang, t, fmt } from './i18n.js';
-import { save, loadLocal, syncFromCloud, addRewards, persist, accrueWorkers } from './state.js';
-import { initAuth, onAuthChange } from './cloud.js';
+import { save, loadLocal, syncFromCloud, addRewards, persist, accrueWorkers, dev } from './state.js';
+import { initAuth, onAuthChange, checkDeveloper } from './cloud.js';
 import { Game } from './game/game.js';
 import { Controls } from './game/controls.js';
-import { $, openModal, toast } from './ui/ui.js';
+import { $, openModal, toast, coinText } from './ui/ui.js';
 import { mapHtml, bindMap } from './ui/screens.js';
 import * as S from './ui/screens.js';
 
@@ -117,7 +117,7 @@ function payWorkers(offline) {
   if (offline && coins >= 10) toast(t('offlineEarned', { n: fmt(coins) }), 'good');
   app.game?.hud?.setCoins(save.coins);
   const pill = document.querySelector('#screen .coin-pill span');
-  if (pill) pill.textContent = fmt(save.coins);
+  if (pill) pill.textContent = coinText(save.coins);
 }
 
 async function boot() {
@@ -142,6 +142,9 @@ async function boot() {
 
   // Cloud in background: non blocca l'avvio
   onAuthChange(async (user) => {
+    const wasDev = dev.on;
+    dev.on = await checkDeveloper();
+    if (dev.on && !wasDev) toast(t('devOn'), 'good');
     if (!user) return;
     await syncFromCloud();
     payWorkers(true);

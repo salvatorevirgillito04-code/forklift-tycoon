@@ -48,6 +48,7 @@ export class Mission {
     this.timeLeft = contract.timeLimit ?? Infinity;
     this.drops = 0;
     this.finished = false;
+    this.forceDone = false;
     this.leaving = 0;
 
     const [bx, bz] = plotToWorld(wh, PLOT.truck.u, PLOT.truck.w);
@@ -118,7 +119,7 @@ export class Mission {
       return 'failed';
     }
     const { done, total } = this.progress();
-    if (done >= total && !forklift.carried) {
+    if ((done >= total || this.forceDone) && !forklift.carried) {
       this.finished = true;
       // Il camion riparte (con o senza carico)
       if (this.contract.type === 'load') {

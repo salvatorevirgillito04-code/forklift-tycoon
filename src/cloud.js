@@ -63,6 +63,14 @@ export async function logout() {
   setUser(null);
 }
 
+// Account sviluppatore: lo decide il database (solo email confermate nell'elenco developers).
+export async function checkDeveloper() {
+  if (!user || user.is_anonymous) return false;
+  const { data, error } = await supabase.rpc('is_developer');
+  if (error) return false;
+  return data === true;
+}
+
 export async function loadCloudSave() {
   if (!user) return null;
   const { data, error } = await supabase.from('player_saves').select('data, updated_at').eq('user_id', user.id).maybeSingle();

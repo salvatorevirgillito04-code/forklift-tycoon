@@ -1,5 +1,7 @@
 const STRINGS = {
   it: {
+    devMenu: 'Menu sviluppatore', devOn: 'Modalità sviluppatore attiva', playerLevel: 'Livello giocatore', apply: 'Applica',
+    workersTime: 'Fai lavorare gli operai', timeSpeed: 'Velocità del tempo', completeContract: 'Completa contratto', teleport: 'Teletrasporto',
     downloadApk: 'Scarica l\'app Android',
     iosTitle: 'Installa su iPhone', iosStep1: 'Apri questa pagina con Safari', iosStep2: 'Tocca Condividi {i} in basso',
     iosStep3: 'Scegli "Aggiungi alla schermata Home" {i}', iosStep4: 'Tocca Aggiungi, poi apri il gioco dall\'icona',
@@ -52,6 +54,8 @@ const STRINGS = {
     starter: 'Mezzo iniziale', rewardMult: 'Paga x{n}',
   },
   es: {
+    devMenu: 'Menú desarrollador', devOn: 'Modo desarrollador activo', playerLevel: 'Nivel del jugador', apply: 'Aplicar',
+    workersTime: 'Hacer trabajar a los operarios', timeSpeed: 'Velocidad del tiempo', completeContract: 'Completar contrato', teleport: 'Teletransporte',
     downloadApk: 'Descargar app Android',
     iosTitle: 'Instalar en iPhone', iosStep1: 'Abre esta página con Safari', iosStep2: 'Toca Compartir {i} abajo',
     iosStep3: 'Elige "Añadir a pantalla de inicio" {i}', iosStep4: 'Toca Añadir y abre el juego desde el icono',
@@ -104,6 +108,8 @@ const STRINGS = {
     starter: 'Vehículo inicial', rewardMult: 'Pago x{n}',
   },
   en: {
+    devMenu: 'Developer menu', devOn: 'Developer mode on', playerLevel: 'Player level', apply: 'Apply',
+    workersTime: 'Let workers work', timeSpeed: 'Time speed', completeContract: 'Complete contract', teleport: 'Teleport',
     downloadApk: 'Get the Android app',
     iosTitle: 'Install on iPhone', iosStep1: 'Open this page in Safari', iosStep2: 'Tap Share {i} at the bottom',
     iosStep3: 'Choose "Add to Home Screen" {i}', iosStep4: 'Tap Add, then open the game from the icon',

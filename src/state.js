@@ -32,6 +32,9 @@ function merge(base, data) {
 
 export let save = defaults();
 
+// Modalita' sviluppatore (non salvata: arriva dal login): monete infinite e menu segreto.
+export const dev = { on: false };
+
 export function loadLocal() {
   try {
     const raw = localStorage.getItem(KEY);
@@ -77,6 +80,7 @@ export function resetSave() {
 }
 
 export function spend(amount) {
+  if (dev.on) return true;
   if (save.coins < amount) return false;
   save.coins -= amount;
   persist();
@@ -109,6 +113,8 @@ export function equipVehicle(id) {
 
 // ---------- OPERAI ----------
 export const freeSlots = (whId) => workerSlots(whId) - save.workers.filter((w) => w.warehouse === whId).length;
+
+export const canAfford = (amount) => dev.on || save.coins >= amount;
 
 export function hireWorker(candidate, warehouse, vehicle) {
   if (!save.warehouses.includes(warehouse) || freeSlots(warehouse) < 1 || freeUnits(vehicle, true) < 1) return false;

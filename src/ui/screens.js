@@ -1,10 +1,10 @@
 import { t, fmt, LANGS, getLang, setLang } from '../i18n.js';
 import { ICONS } from './icons.js';
 import { IS_NATIVE, APK_URL } from '../config.js';
-import { $, esc, coinPill, openModal, confirmDialog, toast } from './ui.js';
+import { $, esc, coinPill, coinText, openModal, confirmDialog, toast } from './ui.js';
 import {
   save, buyVehicle, buyWarehouse, resetSave, persist, equipVehicle, ownedCount, assignedCount, freeUnits,
-  freeSlots, hireWorker, trainWorker, fireWorker, setWorkerVehicle, workersNetPerHour, accrueWorkers,
+  freeSlots, canAfford, dev, hireWorker, trainWorker, fireWorker, setWorkerVehicle, workersNetPerHour, accrueWorkers,
 } from '../state.js';
 import {
   VEHICLES, WAREHOUSES, DIFFICULTIES, unitPrice, makeContract, vehicleById, xpForLevel,
@@ -176,7 +176,7 @@ export function renderGarage(app) {
     const count = ownedCount(v.id);
     const active = save.activeVehicle === v.id;
     const price = unitPrice(v, count);
-    const canBuy = save.coins >= price ? 'green' : 'grey';
+    const canBuy = canAfford(price) ? 'green' : 'grey';
     let btns;
     if (!count) btns = `<button class="pill-btn ${canBuy}" data-buy="${v.id}">${ICONS.coin}${fmt(price)}</button>`;
     else {
@@ -210,7 +210,7 @@ export function renderGarage(app) {
   screenEl().querySelectorAll('[data-buy]').forEach((b) => b.addEventListener('click', async () => {
     const v = vehicleById(b.dataset.buy);
     const price = unitPrice(v, ownedCount(v.id));
-    if (save.coins < price) return toast(t('notEnoughCoins'), 'bad');
+    if (!canAfford(price)) return toast(t('notEnoughCoins'), 'bad');
     if (!(await confirmDialog(`${v.name}: ${t('buyFor', { n: fmt(price) })}?`))) return;
     if (buyVehicle(v.id)) toast(t('bought'), 'good');
     renderGarage(app);
@@ -257,7 +257,7 @@ export function renderWorkers(app) {
           <div class="worker-actions">
             <button class="link-btn" data-fire="${w.id}">${t('fire')}</button>
             ${max ? `<button class="pill-btn grey small" disabled>${t('maxLevel')}</button>`
-    : `<button class="pill-btn small ${save.coins >= trainCost(w.level) ? 'blue' : 'grey'}" data-train="${w.id}">${t('train')} ${money(trainCost(w.level))}</button>`}
+    : `<button class="pill-btn small ${canAfford(trainCost(w.level)) ? 'blue' : 'grey'}" data-train="${w.id}">${t('train')} ${money(trainCost(w.level))}</button>`}
           </div>
         </div>`;
     });
@@ -284,7 +284,7 @@ export function renderWorkers(app) {
   el.querySelectorAll('[data-veh]').forEach((b) => b.addEventListener('click', () => openWorkerVehicle(b.dataset.veh, refresh)));
   el.querySelectorAll('[data-train]').forEach((b) => b.addEventListener('click', () => {
     const w = save.workers.find((x) => x.id === b.dataset.train);
-    if (save.coins < trainCost(w.level)) return toast(t('notEnoughCoins'), 'bad');
+    if (!canAfford(trainCost(w.level))) return toast(t('notEnoughCoins'), 'bad');
     if (trainWorker(w.id)) toast(`${w.name} · ${t('level')} ${w.level}`, 'good');
     refresh();
   }));
@@ -319,7 +319,7 @@ function openHire(app, whId, onDone) {
         ${avatarSvg(c.avatar)}
         <b>${esc(c.name)}</b><small>${t('level')} ${c.level}</small>
         <small class="cand-net"></small>
-        <button class="pill-btn small ${choices.length && save.coins >= cost ? 'green' : 'grey'}" data-cand="${c.id}" ${choices.length ? '' : 'disabled'}>${t('hire')} ${money(cost)}</button>
+        <button class="pill-btn small ${choices.length && canAfford(cost) ? 'green' : 'grey'}" data-cand="${c.id}" ${choices.length ? '' : 'disabled'}>${t('hire')} ${money(cost)}</button>
       </div>`;
   }).join('')}</div>
     ${choices.length ? '' : `<button class="pill-btn blue" data-garage>${t('garage')}</button>`}`, { className: 'hire' });
@@ -337,7 +337,7 @@ function openHire(app, whId, onDone) {
   el.querySelector('[data-garage]')?.addEventListener('click', () => { close(); app.go('garage'); });
   el.querySelectorAll('[data-cand]').forEach((b) => b.addEventListener('click', () => {
     const c = candidates.find((x) => x.id === b.dataset.cand);
-    if (save.coins < hireCost(save.workers.length, c.level)) return toast(t('notEnoughCoins'), 'bad');
+    if (!canAfford(hireCost(save.workers.length, c.level))) return toast(t('notEnoughCoins'), 'bad');
     if (hireWorker(c, whId, vehicle)) {
       toast(`${c.name}: ${t('hired')}`, 'good');
       close();
@@ -400,7 +400,7 @@ export function bindMap(root, onChange, playerPos = null) {
       if (save.warehouses.includes(wh.id)) {
         return toast(`${t('warehouse', { n: wh.id + 1 })} · ${t('rewardMult', { n: wh.rewardMult })}`);
       }
-      if (save.coins < wh.price) return toast(t('notEnoughCoins'), 'bad');
+      if (!canAfford(wh.price)) return toast(t('notEnoughCoins'), 'bad');
       if (!(await confirmDialog(t('buyWarehouse', { n: wh.id + 1, p: fmt(wh.price) })))) return;
       if (buyWarehouse(wh.id)) {
         toast(t('bought'), 'good');
@@ -418,7 +418,7 @@ export function renderWarehouses(app) {
   bindBack(app, 'hub');
   bindMap(screenEl(), () => {
     app.game.setOwnedWarehouses(save.warehouses);
-    screenEl().querySelector('.coin-pill span').textContent = fmt(save.coins);
+    screenEl().querySelector('.coin-pill span').textContent = coinText(save.coins);
   });
 }
 
@@ -480,6 +480,7 @@ export function openSettings(app, { inGame = false, onClose } = {}) {
     <div class="setting"><span>${t('graphics')}</span>${seg('quality', [['low', t('low')], ['high', t('high')]])}</div>
     <label class="setting check" data-mirrors><span>${t('mirrors')}</span>
       <input type="checkbox" ${s.mirrors !== false ? 'checked' : ''}></label>
+    ${dev.on ? `<button class="pill-btn purple" data-dev>${ICONS.gear}${t('devMenu')}</button>` : ''}
     ${inGame
     ? `<div class="row-btns"><button class="pill-btn red" data-exit>${t('exitMission')}</button><button class="pill-btn green" data-resume>${t('resume')}</button></div>`
     : `<button class="link-btn" data-reset>${t('resetProgress')}</button>`}
@@ -515,6 +516,7 @@ export function openSettings(app, { inGame = false, onClose } = {}) {
     apply();
   });
   el.querySelector('[data-resume]')?.addEventListener('click', close);
+  el.querySelector('[data-dev]')?.addEventListener('click', () => openDevMenu(app, inGame, close));
   el.querySelector('[data-exit]')?.addEventListener('click', () => {
     close();
     app.exitMission();
@@ -526,6 +528,58 @@ export function openSettings(app, { inGame = false, onClose } = {}) {
       close();
       app.go('home');
     }
+  });
+}
+
+// ---------- MENU SVILUPPATORE ----------
+// Solo per gli account abilitati nel database (vedi checkDeveloper).
+function openDevMenu(app, inGame, closeSettings) {
+  const g = app.game;
+  const speeds = [1, 2, 4];
+  const { el, close } = openModal(`
+    <h2 class="modal-title">${t('devMenu')}</h2>
+    <div class="setting dev-row"><span>${t('playerLevel')}</span>
+      <input type="number" min="1" max="999" value="${save.level}" data-lvl></div>
+    <div class="setting dev-row"><span>${t('contractLevel', { n: '' }).trim()}</span>
+      <input type="number" min="1" max="9999" value="${save.contractLevel}" data-clvl></div>
+    <button class="pill-btn blue small" data-apply>${t('apply')}</button>
+    <div class="setting"><span>${t('workersTime')}</span>
+      <div class="segmented">${[1, 8, 24].map((h) => `<button data-hours="${h}">+${h} h</button>`).join('')}</div></div>
+    <div class="setting"><span>${t('timeSpeed')}</span>
+      <div class="segmented">${speeds.map((x) => `<button class="${(g.timeScale || 1) === x ? 'on' : ''}" data-speed="${x}">×${x}</button>`).join('')}</div></div>
+    ${inGame ? `
+    <div class="setting"><span>${t('teleport')}</span>
+      <div class="segmented wrap">${WAREHOUSES.map((w) => `<button data-tp="${w.id}">${w.id + 1}</button>`).join('')}</div></div>
+    ${g.mission.contract?.type !== 'free' ? `<button class="pill-btn green" data-complete>${t('completeContract')}</button>` : ''}` : ''}
+  `, { className: 'small' });
+  el.querySelector('[data-apply]').addEventListener('click', () => {
+    save.level = Math.max(1, Math.floor(+el.querySelector('[data-lvl]').value || 1));
+    save.contractLevel = Math.max(1, Math.floor(+el.querySelector('[data-clvl]').value || 1));
+    save.xp = 0;
+    persist();
+    toast(`${t('level')} ${save.level} · ${t('contractLevel', { n: save.contractLevel })}`, 'good');
+  });
+  el.querySelectorAll('[data-hours]').forEach((b) => b.addEventListener('click', () => {
+    save.workersPaidAt -= +b.dataset.hours * 3600000;
+    const coins = accrueWorkers();
+    toast(t('offlineEarned', { n: fmt(coins) }), 'good');
+  }));
+  el.querySelectorAll('[data-speed]').forEach((b) => b.addEventListener('click', () => {
+    g.timeScale = +b.dataset.speed;
+    el.querySelectorAll('[data-speed]').forEach((x) => x.classList.toggle('on', x === b));
+  }));
+  el.querySelectorAll('[data-tp]').forEach((b) => b.addEventListener('click', () => {
+    const wh = WAREHOUSES[+b.dataset.tp];
+    const [x, z] = plotToWorld(wh, 9, 18);
+    g.forklift.place(x, z, wh.side > 0 ? 0 : Math.PI);
+    g.camPos = null;
+    close();
+    closeSettings();
+  }));
+  el.querySelector('[data-complete]')?.addEventListener('click', () => {
+    g.mission.forceDone = true;
+    close();
+    closeSettings();
   });
 }
 

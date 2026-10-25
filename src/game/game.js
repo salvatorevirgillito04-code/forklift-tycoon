@@ -186,7 +186,7 @@ export class Game {
   }
 
   frame() {
-    const dt = Math.min(0.05, this.engine.getDeltaTime() / 1000);
+    const dt = Math.min(0.05, this.engine.getDeltaTime() / 1000) * (this.timeScale || 1);
     try {
       if (this.mode === 'play' && !this.paused) this.step(dt);
       else if (this.mode === 'play' && this.mission.finished) this.mission.animateLeaving(dt);

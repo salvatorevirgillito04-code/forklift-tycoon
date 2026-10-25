@@ -1,34 +1,45 @@
 import { MeshBuilder, TransformNode, Vector3 } from '@babylonjs/core';
 import { Forklift } from './forklift.js';
-import { createPalletModel, PALLET } from './models.js';
+import { createPalletModel, createTruckModel, PALLET, TRUCK } from './models.js';
 import { plotToWorld } from './world.js';
 import { rectsOverlap, toWorld, wrapAngle } from './physics.js';
 import { WAREHOUSES, vehicleById } from '../data.js';
 
-// Muletti degli operai al lavoro: spostano pallet tra due pile della loro zona, con manovre vere.
-// Solo i 3 piu' vicini al giocatore, per non pesare sul telefono.
+// Muletti degli operai al lavoro. Solo i 3 piu' vicini al giocatore, per non pesare sul telefono.
+// Nel piazzale ogni operaio ha il suo camion: lo carica o lo scarica, il camion riparte e ne arriva un altro.
+// Dentro il capannone gli operai riordinano due pile di pallet.
 const MAX_BOTS = 3;
 const VIEW_DIST = 75;
 const LOAD_H = 0.7;
 const PALLET_H = PALLET.height + LOAD_H;
 const POCKET = 0.045; // forche dentro le tasche del pallet, sopra il fondo
 const TRAVEL_Y = 0.15; // altezza forche in viaggio
+const CLEAR = 0.12; // forche alzate sopra l'appoggio prima di entrare/uscire
 const LIFT_SPEED = 0.45;
 const V_FWD = 2.0;
 const V_REV = 1.3;
-const BACK_OFF = 3.2; // retromarcia dopo aver preso/appoggiato un pallet
+const BACK_OFF = 3.2;
 
-// Zone di lavoro nel lotto (u lungo la strada, w verso il capannone). n = verso in cui guardano le pile.
+// Piazzale: camion lungo w con la cabina verso la strada, pallet a terra in fila davanti al camion.
+const TRUCK_AREA = {
+  truckU: 20.1, // centro del pianale (u)
+  bedW: 18.9, // centro del pianale (w)
+  bedU: 19.45, // centro dei pallet sul pianale, vicino al bordo dal lato del muletto
+  groundU: 12.0, // fila dei pallet a terra
+  slotsW: [15.0, 17.6, 20.2, 22.8],
+  mid: { u: 15.6, w: 11.6 }, // punto di manovra, muso verso il capannone
+  away: -16, // spostamento del camion quando e' fuori (sulla strada)
+};
 const AREAS = [
-  { u: 19.6, n: 1, wA: 12.5, wB: 25.5 }, // piazzale, lato destro
-  { u: -19.6, n: -1, wA: 12.5, wB: 25.5 }, // piazzale, lato sinistro (oltre il camion)
-  { u: 14.0, n: 1, wA: 34, wB: 48 }, // dentro il capannone, a destra
-  { u: -14.0, n: -1, wA: 34, wB: 48 }, // dentro il capannone, a sinistra
+  { type: 'truck', n: 1 },
+  { type: 'truck', n: -1 },
+  { type: 'stacks', u: 14.0, n: 1, wA: 34, wB: 48 },
+  { type: 'stacks', u: -14.0, n: -1, wA: 34, wB: 48 },
 ];
 
 const easeStep = (cur, goal, maxStep) => cur + Math.sign(goal - cur) * Math.min(maxStep, Math.abs(goal - cur));
 
-// Curva di Bezier campionata: punti con distanza percorsa, usata per seguire il percorso a velocita' variabile.
+// Curva di Bezier campionata con la distanza percorsa.
 function bezierPath(p0, p1, p2, p3, n = 48) {
   const pts = [];
   let len = 0;
@@ -65,6 +76,8 @@ function aabbOf(rects) {
   return r;
 }
 
+const aabbRect = (b) => ({ x: (b.minX + b.maxX) / 2, z: (b.minZ + b.maxZ) / 2, hw: (b.maxX - b.minX) / 2, hd: (b.maxZ - b.minZ) / 2, yaw: 0 });
+
 export class WorkerBots {
   constructor(scene, mats, env) {
     this.scene = scene;
@@ -93,7 +106,11 @@ export class WorkerBots {
       this.pickTimer = 0.5;
       this.pick(player);
     }
-    for (const bot of this.bots.values()) if (bot.ready) this.work(bot, dt, player);
+    for (const bot of this.bots.values()) {
+      if (!bot.ready) continue;
+      if (bot.truck) this.driveTruck(bot, dt, player);
+      this.work(bot, dt, player);
+    }
   }
 
   // Sceglie gli operai piu' vicini e crea/rimuove i loro muletti.
@@ -101,7 +118,7 @@ export class WorkerBots {
     const near = this.workers
       .map((w) => {
         const { wh, area } = this.areaOf(w);
-        const [x, z] = plotToWorld(wh, area.u, (area.wA + area.wB) / 2);
+        const [x, z] = area.type === 'truck' ? plotToWorld(wh, area.n * 16, 18) : plotToWorld(wh, area.u, (area.wA + area.wB) / 2);
         return { w, d: Math.hypot(x - player.x, z - player.z) };
       })
       .filter((e) => e.d < VIEW_DIST)
@@ -115,61 +132,172 @@ export class WorkerBots {
     for (const { w } of near) if (!this.bots.has(w.id)) this.spawn(w);
   }
 
+  // Punto di appoggio dei pallet: centro, direzione da cui il muletto entra, quota, pila e punto di manovra.
+  makeSlot(wh, u, w, faceN, base, cap, mid) {
+    const [x, z] = plotToWorld(wh, u, w);
+    const [dx, dz] = plotToWorld(wh, u + faceN, w);
+    const slot = {
+      x, z, yaw: Math.atan2(dx - x, dz - z), base, cap, stack: [], mid,
+      collider: { minX: x - 0.62, maxX: x + 0.62, minZ: z - 0.62, maxZ: z + 0.62, y0: base, y1: -1, tag: 'botPallet' },
+    };
+    if (!slot.mid) {
+      // Pile: si esce in retromarcia dritti
+      const hx = Math.sin(slot.yaw), hz = Math.cos(slot.yaw);
+      slot.midOff = BACK_OFF;
+      slot.mid = { x: x - hx * BACK_OFF, z: z - hz * BACK_OFF, yaw: slot.yaw, fromCenter: true };
+    }
+    return slot;
+  }
+
   spawn(worker) {
     const { wh, area } = this.areaOf(worker);
     const f = new Forklift(this.scene, this.mats, vehicleById(worker.vehicle));
-    const reach = f.geo.forkBase + PALLET.size / 2 + 0.02; // dal muso al centro del pallet infilato
-    // Le due pile in coordinate del mondo, con la direzione da cui il muletto le prende
-    const spot = (w) => {
-      const [x, z] = plotToWorld(wh, area.u, w);
-      const [dx, dz] = plotToWorld(wh, area.u + area.n, w);
-      const yaw = Math.atan2(dx - x, dz - z);
-      const hx = Math.sin(yaw), hz = Math.cos(yaw);
-      return {
-        x, z, yaw, stack: [],
-        pick: { x: x - hx * reach, z: z - hz * reach }, // posizione del muletto con le forche dentro il pallet
-        out: { x: x - hx * (reach + BACK_OFF), z: z - hz * (reach + BACK_OFF) }, // dopo la retromarcia
-        collider: { minX: x - 0.62, maxX: x + 0.62, minZ: z - 0.62, maxZ: z + 0.62, y0: 0, y1: -1, tag: 'botPallet' },
-      };
-    };
     const bot = {
-      f, wh, vehicleId: worker.vehicle, warehouse: worker.warehouse, ready: false,
-      spots: [spot(area.wA), spot(area.wB)], from: 0, carried: null,
-      task: null, path: null, s: 0, wait: 0,
+      f, wh, area, vehicleId: worker.vehicle, warehouse: worker.warehouse, ready: false,
+      slots: [], carried: null, task: null, path: null, s: 0, wait: 0, steer: 0,
       collider: { minX: 0, maxX: 0, minZ: 0, maxZ: 0, y0: 0, y1: -1, tag: 'bot' },
     };
+    let palletCount;
+    if (area.type === 'truck') {
+      const T = TRUCK_AREA, n = area.n;
+      const [mx, mz] = plotToWorld(wh, n * T.mid.u, T.mid.w);
+      const [mx2, mz2] = plotToWorld(wh, n * T.mid.u, T.mid.w + 1);
+      const mid = { x: mx, z: mz, yaw: Math.atan2(mx2 - mx, mz2 - mz) };
+      bot.ground = T.slotsW.map((w) => this.makeSlot(wh, n * T.groundU, w, -n, 0, 1, mid));
+      bot.bed = T.slotsW.map((w) => this.makeSlot(wh, n * T.bedU, w, n, TRUCK.bedHeight, 1, mid));
+      bot.slots = [...bot.ground, ...bot.bed];
+      bot.mode = 'load';
+      palletCount = bot.ground.length;
+    } else {
+      bot.stacks = [this.makeSlot(wh, area.u, area.wA, area.n, 0, 2), this.makeSlot(wh, area.u, area.wB, area.n, 0, 2)];
+      bot.slots = bot.stacks;
+      bot.from = 0;
+      palletCount = 2;
+    }
     this.bots.set(worker.id, bot);
-    this.env.colliders.push(bot.collider, ...bot.spots.map((s) => s.collider));
+    this.env.colliders.push(bot.collider, ...bot.slots.map((s) => s.collider));
+
     const build = async () => {
       await f.build(this.shadowGen);
       const pallets = [];
-      for (let i = 0; i < 2; i++) pallets.push(await createPalletModel(this.scene, this.mats, { loadHeight: LOAD_H }));
+      for (let i = 0; i < palletCount; i++) pallets.push(await createPalletModel(this.scene, this.mats, { loadHeight: LOAD_H }));
+      const truck = area.type === 'truck' ? await createTruckModel(this.scene, this.mats, '#2f6fb0') : null;
       if (this.bots.get(worker.id) !== bot) {
         f.dispose();
         pallets.forEach((p) => p.dispose());
+        truck?.dispose();
         return;
       }
-      for (const node of pallets) {
-        node.getChildMeshes().forEach((m) => { this.shadowGen?.addShadowCaster(m); m.receiveShadows = true; });
-        bot.spots[0].stack.push(node);
+      const shadow = (node) => node.getChildMeshes().forEach((m) => { this.shadowGen?.addShadowCaster(m); m.receiveShadows = true; });
+      pallets.forEach(shadow);
+      if (truck) {
+        shadow(truck);
+        this.setupTruck(bot, truck);
+        bot.ground.forEach((s, i) => s.stack.push(pallets[i]));
+      } else {
+        bot.stacks[0].stack.push(...pallets);
       }
-      bot.spots.forEach((s) => this.layStack(s));
+      bot.slots.forEach((s) => this.laySlot(s));
       f.tilt = 0.03;
       f.forkY = TRAVEL_Y;
       this.addDriver(f, worker.avatar);
-      // Parte gia' fuori dalla prima pila, pronto a prendere il pallet
-      const start = bot.spots[0];
-      f.x = start.out.x;
-      f.z = start.out.z;
+      const start = bot.slots[0].mid;
+      f.x = start.x;
+      f.z = start.z;
       f.yaw = start.yaw;
       bot.ready = true;
-      this.nextTask(bot);
-      this.place(bot, 0);
+      this.idle(bot);
+      this.place(bot);
     };
     build();
   }
 
-  // Operaio seduto al posto di guida, con i colori del suo avatar.
+  // ---------- Camion ----------
+  setupTruck(bot, root) {
+    const T = TRUCK_AREA, wh = bot.wh, n = bot.area.n;
+    const [x, z] = plotToWorld(wh, n * T.truckU, T.bedW);
+    // Cabina verso la strada: l'asse lungo del camion (x locale, cabina sul +x) punta verso -w
+    root.rotation.y = wh.side * Math.PI / 2;
+    const dir = { x: 0, z: -wh.side }; // verso la strada
+    bot.truck = {
+      root, home: { x, z }, dir, offset: T.away, state: 'arriving', wait: 1.5,
+      bedCol: { minX: 0, maxX: 0, minZ: 0, maxZ: 0, y0: 0, y1: TRUCK.bedHeight, tag: 'truck' },
+      cabCol: { minX: 0, maxX: 0, minZ: 0, maxZ: 0, y0: 0, y1: 4, tag: 'truck' },
+    };
+    this.env.colliders.push(bot.truck.bedCol, bot.truck.cabCol);
+    this.placeTruck(bot);
+  }
+
+  // Posizione del camion: offset 0 = fermo al suo posto, negativo = verso la strada.
+  truckBoxes(bot, offset) {
+    const tr = bot.truck;
+    const cx = tr.home.x - tr.dir.x * offset, cz = tr.home.z - tr.dir.z * offset;
+    const L = TRUCK.bedLength, W = TRUCK.bedWidth;
+    // lungo l'asse del camion: pianale da -L/2 a +L/2, cabina fino a +L/2 + 4 (verso la strada)
+    const along = (a0, a1) => {
+      const p0 = { x: cx + tr.dir.x * a0, z: cz + tr.dir.z * a0 };
+      const p1 = { x: cx + tr.dir.x * a1, z: cz + tr.dir.z * a1 };
+      return {
+        minX: Math.min(p0.x, p1.x) - (tr.dir.x ? 0 : W / 2), maxX: Math.max(p0.x, p1.x) + (tr.dir.x ? 0 : W / 2),
+        minZ: Math.min(p0.z, p1.z) - (tr.dir.z ? 0 : W / 2), maxZ: Math.max(p0.z, p1.z) + (tr.dir.z ? 0 : W / 2),
+      };
+    };
+    return { cx, cz, bed: along(-L / 2, L / 2), cab: along(L / 2, L / 2 + 4) };
+  }
+
+  placeTruck(bot) {
+    const tr = bot.truck;
+    const b = this.truckBoxes(bot, tr.offset);
+    tr.root.position.set(b.cx, 0, b.cz);
+    const hidden = tr.offset <= TRUCK_AREA.away + 0.01;
+    Object.assign(tr.bedCol, b.bed, { y1: hidden ? -1 : TRUCK.bedHeight });
+    Object.assign(tr.cabCol, b.cab, { y1: hidden ? -1 : 4 });
+    // Pallet sul pianale: seguono il camion
+    const dx = -tr.dir.x * tr.offset, dz = -tr.dir.z * tr.offset;
+    for (const s of bot.bed) {
+      s.stack.forEach((node) => node.position.set(s.x + dx, s.base, s.z + dz));
+      Object.assign(s.collider, { minX: s.x + dx - 0.62, maxX: s.x + dx + 0.62, minZ: s.z + dz - 0.62, maxZ: s.z + dz + 0.62 });
+      s.collider.y1 = s.stack.length && !hidden ? s.base + PALLET_H : -1;
+    }
+    // Entra e esce dalla strada sfumando
+    const vis = Math.min(1, Math.max(0, (tr.offset - TRUCK_AREA.away) / 4));
+    const meshes = [...tr.root.getChildMeshes(), ...bot.bed.flatMap((s) => s.stack.flatMap((n) => n.getChildMeshes()))];
+    for (const m of meshes) m.visibility = vis;
+    tr.root.setEnabled(vis > 0);
+    bot.bed.forEach((s) => s.stack.forEach((node) => node.setEnabled(vis > 0)));
+  }
+
+  // Arriva in retromarcia, aspetta il carico/scarico, riparte verso la strada.
+  driveTruck(bot, dt, player) {
+    const tr = bot.truck;
+    if (tr.state === 'arriving' || tr.state === 'leaving') {
+      if (tr.wait > 0) { tr.wait -= dt; return; }
+      const goal = tr.state === 'arriving' ? 0 : TRUCK_AREA.away;
+      const dist = Math.abs(goal - tr.offset);
+      const v = Math.min(3.5, 0.4 + dist * 0.6);
+      const next = easeStep(tr.offset, goal, v * dt);
+      const b = this.truckBoxes(bot, next);
+      // Non investe il giocatore
+      if (player && tr.offset > TRUCK_AREA.away + 1) {
+        const mine = [aabbRect(b.bed), aabbRect(b.cab)];
+        const his = [player.bodyRect(), ...player.forkRects()];
+        if (mine.some((m) => his.some((o) => rectsOverlap(m, o, 0.4)))) return;
+      }
+      tr.offset = next;
+      this.placeTruck(bot);
+      if (Math.abs(tr.offset - goal) < 1e-3) {
+        if (tr.state === 'arriving') tr.state = 'parked';
+        else {
+          // Fuori: il prossimo camion fa il contratto opposto (quello caricato torna pieno da scaricare)
+          bot.mode = bot.mode === 'load' ? 'unload' : 'load';
+          tr.state = 'arriving';
+          tr.wait = 3;
+        }
+      }
+    }
+  }
+
+  // ---------- Operaio ----------
   addDriver(f, a = {}) {
     const { scene, mats } = this;
     const [ex, ey, ez] = f.geo.eye;
@@ -200,8 +328,13 @@ export class WorkerBots {
     if (!bot) return;
     bot.f.dispose();
     bot.carried?.dispose();
-    for (const s of bot.spots) s.stack.forEach((n) => n.dispose());
-    for (const c of [bot.collider, ...bot.spots.map((s) => s.collider)]) {
+    for (const s of bot.slots) s.stack.forEach((n) => n.dispose());
+    const cols = [bot.collider, ...bot.slots.map((s) => s.collider)];
+    if (bot.truck) {
+      bot.truck.root.dispose();
+      cols.push(bot.truck.bedCol, bot.truck.cabCol);
+    }
+    for (const c of cols) {
       const i = this.env.colliders.indexOf(c);
       if (i >= 0) this.env.colliders.splice(i, 1);
     }
@@ -212,56 +345,94 @@ export class WorkerBots {
     for (const id of [...this.bots.keys()]) this.remove(id);
   }
 
-  // Pile ferme: posizione dei pallet e ingombro per le collisioni.
-  layStack(spot) {
-    spot.stack.forEach((node, i) => {
-      node.position.set(spot.x, i * PALLET_H, spot.z);
-      node.rotation.set(0, spot.yaw, 0);
+  // Pallet fermi in un punto di appoggio (pila) e loro ingombro.
+  laySlot(slot) {
+    slot.stack.forEach((node, i) => {
+      node.position.set(slot.x, slot.base + i * PALLET_H, slot.z);
+      node.rotation.set(0, slot.yaw, 0);
     });
-    spot.collider.y1 = spot.stack.length ? spot.stack.length * PALLET_H : -1;
+    slot.collider.y1 = slot.stack.length ? slot.base + slot.stack.length * PALLET_H : -1;
   }
 
-  // ---------- Lavoro ----------
-  // Prende il pallet in cima alla pila piu' piena e lo porta sull'altra; quando una pila e' vuota si inverte.
-  nextTask(bot) {
-    if (!bot.spots[bot.from].stack.length) bot.from = 1 - bot.from;
-    const src = bot.spots[bot.from];
-    bot.task = { step: 'toPick', spot: src, height: (src.stack.length - 1) * PALLET_H + POCKET };
-    bot.path = this.forwardPath(bot, src);
+  reach(bot) {
+    return bot.f.geo.forkBase + PALLET.size / 2 + 0.02;
+  }
+
+  // Muletto con le forche dentro il pallet di questo punto
+  pickPose(bot, slot) {
+    const r = this.reach(bot);
+    return { x: slot.x - Math.sin(slot.yaw) * r, z: slot.z - Math.cos(slot.yaw) * r, yaw: slot.yaw };
+  }
+
+  midPose(bot, slot) {
+    if (!slot.mid.fromCenter) return slot.mid;
+    const r = this.reach(bot) + BACK_OFF;
+    return { x: slot.x - Math.sin(slot.yaw) * r, z: slot.z - Math.cos(slot.yaw) * r, yaw: slot.yaw };
+  }
+
+  // Prossimo lavoro: nel piazzale da terra al camion (carico) o dal camion a terra (scarico); dentro, tra le pile.
+  idle(bot) {
+    bot.task = { step: 'wait' };
+    bot.path = null;
+  }
+
+  chooseMove(bot) {
+    if (bot.truck) {
+      if (bot.truck.state !== 'parked') return null;
+      const [src, dst] = bot.mode === 'load' ? [bot.ground, bot.bed] : [bot.bed, bot.ground];
+      const from = src.find((s) => s.stack.length);
+      const to = [...dst].reverse().find((s) => s.stack.length < s.cap);
+      if (!from || !to) {
+        // Contratto finito: il camion riparte
+        bot.truck.state = 'leaving';
+        bot.truck.wait = 1;
+        return null;
+      }
+      return { from, to };
+    }
+    if (!bot.stacks[bot.from].stack.length) bot.from = 1 - bot.from;
+    return { from: bot.stacks[bot.from], to: bot.stacks[1 - bot.from] };
+  }
+
+  startLeg(bot, step, slot, height) {
+    bot.task = { ...bot.task, step, spot: slot, height };
+    bot.path = this.forwardPath(bot, this.pickPose(bot, slot));
     bot.s = 0;
   }
 
-  // Percorso in avanti fino alla pila: curva a S dal punto in cui si trova, arrivando dritto davanti ai pallet.
-  forwardPath(bot, spot) {
+  // In avanti fino a una posa: curva a S che arriva dritta davanti al pallet.
+  forwardPath(bot, end) {
     const f = bot.f;
     const hx = Math.sin(f.yaw), hz = Math.cos(f.yaw);
-    const ex = Math.sin(spot.yaw), ez = Math.cos(spot.yaw);
-    const end = [spot.pick.x, spot.pick.z];
-    const d = Math.hypot(end[0] - f.x, end[1] - f.z);
-    const c = Math.min(4.5, Math.max(1, d * 0.45));
-    return bezierPath([f.x, f.z], [f.x + hx * c, f.z + hz * c], [end[0] - ex * c, end[1] - ez * c], end);
+    const ex = Math.sin(end.yaw), ez = Math.cos(end.yaw);
+    const d = Math.hypot(end.x - f.x, end.z - f.z);
+    const c = Math.min(4, Math.max(0.8, d * 0.45));
+    return bezierPath([f.x, f.z], [f.x + hx * c, f.z + hz * c], [end.x - ex * c, end.z - ez * c], [end.x, end.z]);
   }
 
-  // Retromarcia dritta per uscire dalla pila.
-  reversePath(bot, spot) {
-    return bezierPath([bot.f.x, bot.f.z], [bot.f.x, bot.f.z], [spot.out.x, spot.out.z], [spot.out.x, spot.out.z], 8);
+  // In retromarcia fino a una posa (la parte posteriore va avanti per prima).
+  reversePath(bot, end) {
+    const f = bot.f;
+    const hx = Math.sin(f.yaw), hz = Math.cos(f.yaw);
+    const ex = Math.sin(end.yaw), ez = Math.cos(end.yaw);
+    const d = Math.hypot(end.x - f.x, end.z - f.z);
+    const c = Math.min(3.5, Math.max(0.5, d * 0.45));
+    return bezierPath([f.x, f.z], [f.x - hx * c, f.z - hz * c], [end.x + ex * c, end.z + ez * c], [end.x, end.z]);
   }
 
-  // Pallet portato sulle forche: segue muletto e altezza delle forche.
   syncCarried(bot) {
     const { f, carried } = bot;
     if (!carried) return;
-    const [x, z] = toWorld(f.frame, 0, f.geo.forkBase + PALLET.size / 2 + 0.02);
+    const [x, z] = toWorld(f.frame, 0, this.reach(bot));
     carried.position.set(x, f.forkY - POCKET, z);
     carried.rotation.set(0, f.yaw, 0);
   }
 
-  // Forme del muletto (e del pallet portato) in una certa posizione, per non investire il giocatore.
   shapes(bot, x, z, yaw) {
     const f = bot.f;
     const list = [f.bodyRect(x, z, yaw), ...f.forkRects(x, z, yaw)];
     if (bot.carried) {
-      const [cx, cz] = toWorld({ x, z, yaw }, 0, f.geo.forkBase + PALLET.size / 2 + 0.02);
+      const [cx, cz] = toWorld({ x, z, yaw }, 0, this.reach(bot));
       list.push({ x: cx, z: cz, hw: PALLET.size / 2, hd: PALLET.size / 2, yaw });
     }
     return list;
@@ -269,9 +440,7 @@ export class WorkerBots {
 
   blocked(bot, x, z, yaw, player) {
     const mine = this.shapes(bot, x, z, yaw);
-    // Anche la scatola di collisione non deve finire addosso al giocatore, o lui resterebbe incastrato
-    const b = aabbOf(mine);
-    mine.push({ x: (b.minX + b.maxX) / 2, z: (b.minZ + b.maxZ) / 2, hw: (b.maxX - b.minX) / 2, hd: (b.maxZ - b.minZ) / 2, yaw: 0 });
+    mine.push(aabbRect(aabbOf(mine))); // la scatola di collisione non deve finire addosso al giocatore
     const others = [];
     if (player) {
       others.push(player.bodyRect(), ...player.forkRects());
@@ -281,7 +450,7 @@ export class WorkerBots {
     return mine.some((m) => others.some((o) => rectsOverlap(m, o, 0.35)));
   }
 
-  // Segue il percorso: piu' lento in curva e in fondo, sterzo delle ruote posteriori dalla curvatura.
+  // Segue il percorso: piu' lento in curva e in arrivo; sterzo delle ruote posteriori dalla curvatura.
   follow(bot, dt, player, reverse) {
     const f = bot.f;
     const path = bot.path;
@@ -300,7 +469,7 @@ export class WorkerBots {
     }
     const dYaw = wrapAngle(yaw - f.yaw);
     const signed = reverse ? -ds : ds;
-    bot.steer = ds > 1e-4 ? Math.atan((f.geo.wheelbase * dYaw) / signed) : (bot.steer || 0) * 0.9;
+    bot.steer = ds > 1e-4 ? Math.atan((f.geo.wheelbase * dYaw) / signed) : bot.steer * 0.9;
     f.x = p.x;
     f.z = p.z;
     f.yaw = wrapAngle(yaw);
@@ -317,72 +486,78 @@ export class WorkerBots {
       f.forkY = easeStep(f.forkY, goal, LIFT_SPEED * dt);
       return Math.abs(f.forkY - goal) < 1e-3;
     };
+    const backTo = (slot, step) => {
+      task.step = step;
+      bot.path = this.reversePath(bot, this.midPose(bot, slot));
+      bot.s = 0;
+    };
+    let moving = false;
     switch (task.step) {
-      case 'toPick': {
-        // Alza o abbassa le forche mentre si avvicina, entra nel pallet solo all'altezza giusta
-        const ready = lift(task.height);
+      case 'wait': {
+        lift(TRAVEL_Y);
+        const move = this.chooseMove(bot);
+        if (move) {
+          task.move = move;
+          const s = move.from;
+          this.startLeg(bot, 'toPick', s, s.base + (s.stack.length - 1) * PALLET_H + POCKET);
+        }
+        break;
+      }
+      case 'toPick':
+      case 'toDrop': {
+        // Forche all'altezza giusta prima di arrivare al pallet
+        const ready = lift(task.step === 'toPick' ? task.height : task.height + CLEAR);
         const nearEnd = bot.path.len - bot.s < 1.6;
-        if ((!nearEnd || ready) && this.follow(bot, dt, player, false) && ready) task.step = 'pickUp';
+        if (!nearEnd || ready) {
+          moving = true;
+          if (this.follow(bot, dt, player, false) && ready) task.step = task.step === 'toPick' ? 'pickUp' : 'putDown';
+        }
         break;
       }
       case 'pickUp':
-        if (lift(task.height + 0.12)) {
+        if (lift(task.height + CLEAR)) {
           bot.carried = task.spot.stack.pop();
-          this.layStack(task.spot);
-          task.step = 'backOut';
-          bot.path = this.reversePath(bot, task.spot);
-          bot.s = 0;
+          this.laySlot(task.spot);
+          backTo(task.spot, 'backOut');
         }
         break;
       case 'backOut':
+        moving = true;
         if (this.follow(bot, dt, player, true)) {
-          const dst = bot.spots[1 - bot.from];
-          task.step = 'toDrop';
-          task.spot = dst;
-          task.height = dst.stack.length * PALLET_H + POCKET;
-          bot.path = this.forwardPath(bot, dst);
-          bot.s = 0;
+          const dst = task.move.to;
+          this.startLeg(bot, 'toDrop', dst, dst.base + dst.stack.length * PALLET_H + POCKET);
         }
         break;
-      case 'toDrop': {
-        const ready = lift(task.height + 0.12);
-        const nearEnd = bot.path.len - bot.s < 1.6;
-        if ((!nearEnd || ready) && this.follow(bot, dt, player, false) && ready) task.step = 'putDown';
-        break;
-      }
       case 'putDown':
         if (lift(task.height)) {
           task.spot.stack.push(bot.carried);
           bot.carried = null;
-          this.layStack(task.spot);
-          task.step = 'leave';
-          bot.path = this.reversePath(bot, task.spot);
-          bot.s = 0;
+          this.laySlot(task.spot);
+          backTo(task.spot, 'leave');
           bot.wait = 0.4;
         }
         break;
       case 'leave':
         bot.wait -= dt;
-        if (bot.wait <= 0 && this.follow(bot, dt, player, true)) task.step = 'lower';
-        break;
-      case 'lower':
-        if (lift(TRAVEL_Y)) this.nextTask(bot);
+        if (bot.wait <= 0) {
+          moving = true;
+          if (this.follow(bot, dt, player, true)) this.idle(bot);
+        }
         break;
       default:
         break;
     }
-    if (task.step !== 'toPick' && task.step !== 'toDrop' && task.step !== 'backOut' && task.step !== 'leave') {
+    if (!moving) {
       f.v = 0;
-      bot.steer = (bot.steer || 0) * 0.9;
+      bot.steer *= 0.9;
     }
-    this.place(bot, bot.steer || 0);
+    this.place(bot);
   }
 
-  place(bot, steer) {
+  place(bot) {
     const f = bot.f;
-    f.sync(Math.max(-1.05, Math.min(1.05, steer)));
+    f.sync(Math.max(-1.05, Math.min(1.05, bot.steer)));
     this.syncCarried(bot);
-    // Ingombro per le collisioni del giocatore (scatola che contiene muletto, forche e pallet)
     Object.assign(bot.collider, aabbOf(this.shapes(bot, f.x, f.z, f.yaw)), { y1: 2.4 * f.geo.s });
   }
 }

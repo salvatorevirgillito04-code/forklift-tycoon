@@ -816,3 +816,8 @@ body.playing #hud, body.playing #controls { display: block; }
 .ios-steps li::before { counter-increment: step; content: counter(step); flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--blue); color: #fff; font-weight: 900; }
 .ios-steps svg { width: 22px; height: 22px; color: var(--blue-d); vertical-align: -5px; }
 a.pill-btn { text-decoration: none; }
+
+/* Menu sviluppatore */
+.pill-btn.purple { --c: var(--purple); --d: var(--purple-d); }
+.dev-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.dev-row input { width: 110px; padding: 8px 10px; border-radius: 10px; border: 2px solid #c9d6e2; font: inherit; font-weight: 900; user-select: text; -webkit-user-select: text; }

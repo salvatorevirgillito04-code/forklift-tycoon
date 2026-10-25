@@ -1,5 +1,6 @@
 import { t, fmt } from '../i18n.js';
 import { ICONS } from './icons.js';
+import { dev } from '../state.js';
 
 export const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -9,8 +10,10 @@ export function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+export const coinText = (coins) => (dev.on ? '∞' : fmt(coins));
+
 export function coinPill(coins) {
-  return `<div class="coin-pill">${ICONS.coin}<span>${fmt(coins)}</span></div>`;
+  return `<div class="coin-pill">${ICONS.coin}<span>${coinText(coins)}</span></div>`;
 }
 
 // Finestra modale; ritorna una funzione per chiuderla.
