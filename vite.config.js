@@ -6,6 +6,7 @@ export default defineConfig({
   build: {
     target: 'es2020',
     chunkSizeWarningLimit: 6000,
-    sourcemap: true,
+    // Mappe del codice solo per il sito (nell'app Android peserebbero 24 MB inutili)
+    sourcemap: !!process.env.BASE_PATH,
   },
 });

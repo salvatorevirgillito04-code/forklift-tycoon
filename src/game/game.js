@@ -46,16 +46,16 @@ export class Game {
     scene.skipPointerMovePicking = true;
     scene.imageProcessingConfiguration.toneMappingEnabled = true;
     scene.imageProcessingConfiguration.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_ACES;
-    scene.imageProcessingConfiguration.exposure = 1.1;
+    scene.imageProcessingConfiguration.exposure = 1.4;
     try {
       scene.environmentTexture = CubeTexture.CreateFromPrefilteredData(ENV_URL, scene);
-      scene.environmentIntensity = 0.55;
+      scene.environmentIntensity = 0.75;
     } catch (err) {
       Sentry.captureException(err);
     }
 
     const hemi = new HemisphericLight('hemi', new Vector3(0.2, 1, 0.1), scene);
-    hemi.intensity = 0.22;
+    hemi.intensity = 0.32;
     hemi.groundColor = new Color3(0.35, 0.33, 0.3);
     const sun = new DirectionalLight('sun', SUN_DIR, scene);
     sun.intensity = 3.2;
@@ -98,23 +98,26 @@ export class Game {
   applyQuality(q) {
     const dpr = window.devicePixelRatio || 1;
     // Sui telefoni con densita' di pixel alta non serve disegnare ogni pixel fisico
-    const scale = { high: Math.min(dpr, 1.5), medium: Math.min(dpr, 1.2), low: 1 }[q] || 1;
+    const scale = { high: Math.min(dpr, 1.25), medium: 1, low: 1 }[q] || 1;
     this.engine.setHardwareScalingLevel(1 / scale);
     const mode = q === 'low' ? null : q === 'high' && this.engine.webGLVersion >= 2 ? 'cascaded' : 'basic';
     if (mode !== this.shadowMode) {
       this.shadowMode = mode;
       let gen = null;
       if (mode === 'cascaded') {
-        gen = new CascadedShadowGenerator(2048, this.sun);
-        gen.numCascades = 3;
-        gen.lambda = 0.8;
-        gen.shadowMaxZ = 140;
+        // 2 cascate da 1024: nitide vicino al muletto, leggere per i telefoni
+        gen = new CascadedShadowGenerator(1024, this.sun);
+        gen.numCascades = 2;
+        gen.lambda = 0.85;
+        gen.shadowMaxZ = 90;
         gen.stabilizeCascades = true;
         gen.cascadeBlendPercentage = 0.08;
         gen.depthClamp = true;
-        gen.filteringQuality = ShadowGenerator.QUALITY_MEDIUM;
+        gen.filteringQuality = ShadowGenerator.QUALITY_LOW;
       } else if (mode === 'basic') {
         gen = new ShadowGenerator(1024, this.sun);
+        gen.filteringQuality = ShadowGenerator.QUALITY_LOW;
+        gen.getShadowMap().refreshRate = 2; // ombre aggiornate a fotogrammi alterni
       }
       if (gen) {
         gen.usePercentageCloserFiltering = true;

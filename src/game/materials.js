@@ -44,7 +44,7 @@ function pbr(scene, name, { color = '#ffffff', metal = 0, rough = 0.8, tex = nul
 function texturedPbr(scene, name, key, { color = '#ffffff', tile = 0, bump = 1, lowMetal = 0, lowRough = 0.85 } = {}) {
   const load = (suffix) => {
     const t = new Texture(`${TEX_URL}${key}_${suffix}.jpg`, scene);
-    t.anisotropicFilteringLevel = 8;
+    t.anisotropicFilteringLevel = 4;
     return t;
   };
   const m = new PBRMaterial(name, scene);
@@ -142,13 +142,13 @@ export function createMaterials(scene) {
   };
 }
 
-// Bassa qualita': niente normal map e ORM (shader piu' leggeri); Media/Alta: tutto.
+// Bassa: solo colore (shader leggeri); Media: anche ruvidita'/occlusione; Alta: anche i rilievi (normal map).
 export function setMaterialDetail(scene, quality) {
   const full = quality !== 'low';
   for (const m of scene.materials) {
     const md = m.metadata;
     if (!md?.nor) continue;
-    m.bumpTexture = full ? md.nor : null;
+    m.bumpTexture = quality === 'high' ? md.nor : null;
     m.metallicTexture = full ? md.orm : null;
     if (!full) {
       m.metallic = md.lowMetal ?? 0.2;
