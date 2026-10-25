@@ -1,9 +1,10 @@
 import {
   Engine, Scene, Vector3, Color3, Color4, HemisphericLight, DirectionalLight, ShadowGenerator,
-  FreeCamera, CubeTexture, ImageProcessingConfiguration, Ray, Scalar,
+  FreeCamera, CubeTexture, ImageProcessingConfiguration, Ray, Scalar, PhotoDome, CascadedShadowGenerator,
 } from '@babylonjs/core';
 import * as Sentry from '@sentry/browser';
-import { createMaterials } from './materials.js';
+import { createMaterials, setMaterialDetail } from './materials.js';
+import { ShadowCasters } from './shadows.js';
 import { World } from './world.js';
 import { PalletManager } from './pallets.js';
 import { Forklift } from './forklift.js';
@@ -16,7 +17,10 @@ import { WorkerBots } from './workerbots.js';
 import { vehicleById } from '../data.js';
 import { t } from '../i18n.js';
 
-const ENV_URL = 'https://assets.babylonjs.com/environments/environmentSpecular.env';
+// Cielo e luce ambiente dallo stesso HDRI (Poly Haven, CC0): riflessi coerenti con il cielo visibile
+const TEX_URL = `${import.meta.env.BASE_URL}textures/`;
+const ENV_URL = `${TEX_URL}sky.env`;
+const SKY_ROTATION = 2.36; // allinea il sole del panorama alla direzione della luce
 const SUN_DIR = new Vector3(-0.45, -1, -0.35).normalize();
 
 export class Game {
@@ -45,16 +49,16 @@ export class Game {
     scene.imageProcessingConfiguration.exposure = 1.1;
     try {
       scene.environmentTexture = CubeTexture.CreateFromPrefilteredData(ENV_URL, scene);
-      scene.environmentIntensity = 0.7;
+      scene.environmentIntensity = 0.55;
     } catch (err) {
       Sentry.captureException(err);
     }
 
     const hemi = new HemisphericLight('hemi', new Vector3(0.2, 1, 0.1), scene);
-    hemi.intensity = 0.45;
+    hemi.intensity = 0.22;
     hemi.groundColor = new Color3(0.35, 0.33, 0.3);
     const sun = new DirectionalLight('sun', SUN_DIR, scene);
-    sun.intensity = 2.6;
+    sun.intensity = 3.2;
     sun.diffuse = new Color3(1, 0.96, 0.88);
     sun.shadowMinZ = 1;
     sun.shadowMaxZ = 220;
@@ -68,13 +72,20 @@ export class Game {
     this.camera.fov = 0.95;
     this.camera.inputs.clear();
 
-    this.applyQuality(settings.quality);
+    // Oggetti che fanno ombra: il generatore cambia con la qualita' grafica
+    this.shadowGen = new ShadowCasters();
     this.mats = createMaterials(scene);
+    this.sky = new PhotoDome('sky', `${TEX_URL}sky.jpg`, { resolution: 32, size: 900 }, scene);
+    this.sky.mesh.applyFog = false;
+    this.sky.mesh.isPickable = false;
+    this.sky.rotation.y = SKY_ROTATION;
     this.world = new World(scene, this.mats, this.shadowGen, t('saleSign'));
     this.pallets = new PalletManager(scene, this.mats, this.shadowGen);
     this.env = { colliders: this.world.colliders, pallets: this.pallets, truckBedHeight: TRUCK.bedHeight };
     this.mission = new Mission(scene, this.mats, this.env, this.shadowGen);
     this.bots = new WorkerBots(scene, this.mats, this.env);
+    this.bots.shadowGen = this.shadowGen;
+    this.applyQuality(settings.quality);
     this.world.freezeStatics();
     this.bindLook();
 
@@ -82,23 +93,39 @@ export class Game {
     this.engine.runRenderLoop(() => this.frame());
   }
 
+  // Bassa: come prima (niente ombre, niente rilievi); Media: texture complete e ombre;
+  // Alta: anche ombre a cascata (nitide vicino, ampie lontano) e piu' pixel.
   applyQuality(q) {
     const dpr = window.devicePixelRatio || 1;
     // Sui telefoni con densita' di pixel alta non serve disegnare ogni pixel fisico
-    this.engine.setHardwareScalingLevel(q === 'high' ? 1 / Math.min(dpr, 1.5) : 1);
-    if (q === 'high' && !this.shadowGen) {
-      this.shadowGen = new ShadowGenerator(1024, this.sun);
-      this.shadowGen.usePercentageCloserFiltering = true;
-      this.shadowGen.bias = 0.0015;
-      this.shadowGen.normalBias = 0.02;
-      this.scene.meshes.forEach((m) => {
-        if (m.metadata === 'wall' || m.name.startsWith('crown')) this.shadowGen.addShadowCaster(m);
-      });
+    const scale = { high: Math.min(dpr, 1.5), medium: Math.min(dpr, 1.2), low: 1 }[q] || 1;
+    this.engine.setHardwareScalingLevel(1 / scale);
+    const mode = q === 'low' ? null : q === 'high' && this.engine.webGLVersion >= 2 ? 'cascaded' : 'basic';
+    if (mode !== this.shadowMode) {
+      this.shadowMode = mode;
+      let gen = null;
+      if (mode === 'cascaded') {
+        gen = new CascadedShadowGenerator(2048, this.sun);
+        gen.numCascades = 3;
+        gen.lambda = 0.8;
+        gen.shadowMaxZ = 140;
+        gen.stabilizeCascades = true;
+        gen.cascadeBlendPercentage = 0.08;
+        gen.depthClamp = true;
+        gen.filteringQuality = ShadowGenerator.QUALITY_MEDIUM;
+      } else if (mode === 'basic') {
+        gen = new ShadowGenerator(1024, this.sun);
+      }
+      if (gen) {
+        gen.usePercentageCloserFiltering = true;
+        gen.bias = 0.0015;
+        gen.normalBias = 0.02;
+      }
+      this.shadowGen.attach(gen);
     }
-    if (this.shadowGen) this.shadowGen.getShadowMap().refreshRate = q === 'high' ? 1 : 0;
-    if (this.pallets) this.pallets.shadowGen = this.shadowGen;
-    if (this.mission) this.mission.shadowGen = this.shadowGen;
-    this.sun.shadowEnabled = q === 'high';
+    this.sun.shadowEnabled = !!mode;
+    setMaterialDetail(this.scene, q);
+    this.sky.setEnabled(q !== 'low');
   }
 
   setSettings(settings) {
@@ -140,10 +167,9 @@ export class Game {
     this.mode = 'loading';
     const vehicle = vehicleById(vehicleId);
     this.forklift = new Forklift(this.scene, this.mats, vehicle);
-    await this.forklift.build(this.settings.quality === 'high' ? this.shadowGen : null);
+    await this.forklift.build(this.shadowGen);
     const start = await this.mission.start(contract);
     this.forklift.place(start.x, start.z, start.yaw);
-    this.bots.shadowGen = this.settings.quality === 'high' ? this.shadowGen : null;
     this.bots.setWorkers(workers);
     this.cabHidden = null;
     this.hud = new Hud(hudRoot, { onSettings, onMap, onCamera, coins });

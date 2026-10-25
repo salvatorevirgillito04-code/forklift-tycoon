@@ -1,5 +1,7 @@
 import { DynamicTexture, PBRMaterial, Color3, Texture } from '@babylonjs/core';
 
+const TEX_URL = `${import.meta.env.BASE_URL}textures/`;
+
 // Texture procedurali disegnate su canvas: nessun asset esterno da scaricare.
 function canvasTexture(scene, name, size, draw, uScale = 1, vScale = 1) {
   const tex = new DynamicTexture(name, { width: size, height: size }, scene, true);
@@ -37,66 +39,33 @@ function pbr(scene, name, { color = '#ffffff', metal = 0, rough = 0.8, tex = nul
   return m;
 }
 
+// Materiale PBR con texture vere (CC0, Poly Haven / ambientCG): colore, rilievo (normal map)
+// e ORM (occlusione R, ruvidita' G, metallo B). tile = metri coperti da una ripetizione (UV calcolati sul mondo).
+function texturedPbr(scene, name, key, { color = '#ffffff', tile = 0, bump = 1, lowMetal = 0, lowRough = 0.85 } = {}) {
+  const load = (suffix) => {
+    const t = new Texture(`${TEX_URL}${key}_${suffix}.jpg`, scene);
+    t.anisotropicFilteringLevel = 8;
+    return t;
+  };
+  const m = new PBRMaterial(name, scene);
+  m.albedoTexture = load('col');
+  m.albedoColor = Color3.FromHexString(color).toLinearSpace();
+  const nor = load('nor');
+  nor.level = bump;
+  const orm = load('orm');
+  m.metallic = 1;
+  m.roughness = 1;
+  m.useAmbientOcclusionFromMetallicTextureRed = true;
+  m.useRoughnessFromMetallicTextureGreen = true;
+  m.useMetallnessFromMetallicTextureBlue = true;
+  // Normal map in convenzione OpenGL su scena "mano sinistra" (come fa il loader glTF)
+  m.invertNormalMapX = true;
+  m.environmentIntensity = 0.6;
+  m.metadata = { tile, nor, orm, lowMetal, lowRough };
+  return m;
+}
+
 export function createMaterials(scene) {
-  const asphaltTex = canvasTexture(scene, 'asphaltTex', 512, (ctx, s) => {
-    noise(ctx, s, '#3b3d40', 140, 9000, 0.35);
-    ctx.strokeStyle = 'rgba(20,20,20,0.35)';
-    for (let i = 0; i < 6; i++) {
-      ctx.beginPath();
-      let x = Math.random() * s, y = Math.random() * s;
-      ctx.moveTo(x, y);
-      for (let k = 0; k < 6; k++) { x += (Math.random() - 0.5) * 60; y += Math.random() * 40; ctx.lineTo(x, y); }
-      ctx.stroke();
-    }
-  }, 40, 12);
-
-  const concreteTex = canvasTexture(scene, 'concreteTex', 512, (ctx, s) => {
-    noise(ctx, s, '#9a9890', 200, 7000, 0.18);
-    ctx.strokeStyle = 'rgba(60,60,60,0.35)';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(0, 0, s, s);
-  }, 12, 12);
-
-  const metalWallTex = canvasTexture(scene, 'metalWallTex', 256, (ctx, s) => {
-    const g = ctx.createLinearGradient(0, 0, s, 0);
-    for (let i = 0; i <= 16; i++) {
-      g.addColorStop(i / 16, i % 2 ? '#c9ced3' : '#a6adb4');
-    }
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, s, s);
-    for (let i = 0; i < 1500; i++) {
-      ctx.fillStyle = `rgba(90,80,70,${Math.random() * 0.08})`;
-      ctx.fillRect(Math.random() * s, Math.random() * s, 2, 6);
-    }
-  }, 8, 1);
-
-  const woodTex = canvasTexture(scene, 'woodTex', 256, (ctx, s) => {
-    ctx.fillStyle = '#b48a58';
-    ctx.fillRect(0, 0, s, s);
-    for (let y = 0; y < s; y += 2) {
-      ctx.fillStyle = `rgba(110,70,30,${0.08 + Math.random() * 0.12})`;
-      ctx.fillRect(0, y, s, 1);
-    }
-    for (let i = 0; i < 8; i++) {
-      ctx.fillStyle = 'rgba(80,50,20,0.4)';
-      ctx.beginPath();
-      ctx.ellipse(Math.random() * s, Math.random() * s, 6, 3, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  });
-
-  const cardboardTex = canvasTexture(scene, 'cardboardTex', 256, (ctx, s) => {
-    noise(ctx, s, '#b98d57', 80, 2500, 0.12);
-    ctx.fillStyle = 'rgba(200,160,100,0.9)';
-    ctx.fillRect(0, s * 0.46, s, s * 0.08); // nastro adesivo
-    ctx.strokeStyle = 'rgba(90,60,30,0.6)';
-    ctx.lineWidth = 3;
-    ctx.strokeRect(1, 1, s - 2, s - 2);
-    ctx.fillStyle = 'rgba(30,30,30,0.7)';
-    ctx.font = 'bold 26px sans-serif';
-    ctx.fillText('↑↑', 20, 50);
-  });
-
   const grassTex = canvasTexture(scene, 'grassTex', 256, (ctx, s) => {
     noise(ctx, s, '#4f7a35', 90, 6000, 0.25);
   }, 30, 30);
@@ -116,10 +85,11 @@ export function createMaterials(scene) {
     chain,
     chrome: pbr(scene, 'chrome', { color: '#d9dde2', metal: 1, rough: 0.12 }),
     display: pbr(scene, 'display', { color: '#3b5f3b', rough: 0.3, emissive: '#2f6b3a' }),
-    asphalt: pbr(scene, 'asphalt', { color: '#ffffff', rough: 0.95, tex: asphaltTex }),
-    concrete: pbr(scene, 'concrete', { color: '#ffffff', rough: 0.9, tex: concreteTex }),
+    asphalt: texturedPbr(scene, 'asphalt', 'asphalt', { tile: 5 }),
+    concrete: texturedPbr(scene, 'concrete', 'concrete', { tile: 4 }),
+    floor: texturedPbr(scene, 'floor', 'floor', { tile: 6 }),
     grass: pbr(scene, 'grass', { color: '#ffffff', rough: 1, tex: grassTex }),
-    metalWall: pbr(scene, 'metalWall', { color: '#ffffff', metal: 0.5, rough: 0.5, tex: metalWallTex }),
+    metalWall: texturedPbr(scene, 'metalWall', 'corrugated', { tile: 3, color: '#dfe5ea', lowMetal: 0.5, lowRough: 0.5 }),
     roof: pbr(scene, 'roof', { color: '#6b7178', metal: 0.6, rough: 0.55 }),
     trim: pbr(scene, 'trim', { color: '#25507a', metal: 0.4, rough: 0.5 }),
     doorClosed: pbr(scene, 'doorClosed', { color: '#8a9096', metal: 0.6, rough: 0.45 }),
@@ -129,9 +99,9 @@ export function createMaterials(scene) {
     rubber: pbr(scene, 'rubber', { color: '#161616', rough: 0.95 }),
     glass: pbr(scene, 'glass', { color: '#9fc4d8', metal: 0.1, rough: 0.05, alpha: 0.35 }),
     seat: pbr(scene, 'seat', { color: '#1e1e1e', rough: 0.7 }),
-    wood: pbr(scene, 'wood', { color: '#ffffff', rough: 0.85, tex: woodTex }),
-    cardboard: pbr(scene, 'cardboard', { color: '#ffffff', rough: 0.9, tex: cardboardTex }),
-    fragileBox: pbr(scene, 'fragileBox', { color: '#d9534f', rough: 0.85, tex: cardboardTex }),
+    wood: texturedPbr(scene, 'wood', 'wood', { bump: 0.6 }),
+    cardboard: texturedPbr(scene, 'cardboard', 'cardboard'),
+    fragileBox: texturedPbr(scene, 'fragileBox', 'cardboard', { color: '#e0605a' }),
     wrap: pbr(scene, 'wrap', { color: '#e8eef2', metal: 0, rough: 0.25, alpha: 0.55 }),
     rack: pbr(scene, 'rack', { color: '#e0601e', metal: 0.5, rough: 0.5 }),
     rackBeam: pbr(scene, 'rackBeam', { color: '#2f62a8', metal: 0.5, rough: 0.5 }),
@@ -170,6 +140,24 @@ export function createMaterials(scene) {
       return m;
     }),
   };
+}
+
+// Bassa qualita': niente normal map e ORM (shader piu' leggeri); Media/Alta: tutto.
+export function setMaterialDetail(scene, quality) {
+  const full = quality !== 'low';
+  for (const m of scene.materials) {
+    const md = m.metadata;
+    if (!md?.nor) continue;
+    m.bumpTexture = full ? md.nor : null;
+    m.metallicTexture = full ? md.orm : null;
+    if (!full) {
+      m.metallic = md.lowMetal ?? 0.2;
+      m.roughness = md.lowRough ?? 0.8;
+    } else {
+      m.metallic = 1;
+      m.roughness = 1;
+    }
+  }
 }
 
 function memo(fn) {

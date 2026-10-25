@@ -1,4 +1,4 @@
-import { MeshBuilder, Vector3, TransformNode, Mesh } from '@babylonjs/core';
+import { MeshBuilder, Vector3, TransformNode, Mesh, VertexBuffer } from '@babylonjs/core';
 import { WAREHOUSES, WORLD } from '../data.js';
 
 // Geometria di un lotto in coordinate locali (u lungo X, w = distanza dalla strada).
@@ -24,6 +24,24 @@ export function zoneRect(wh) {
   return rangeToBox(wh, PLOT.zone.u[0], PLOT.zone.u[1], PLOT.zone.w[0], PLOT.zone.w[1]);
 }
 
+// UV calcolati dalle coordinate del mondo: la texture si ripete ogni 'tile' metri su ogni faccia,
+// qualunque sia la dimensione dell'oggetto (niente texture stirate su muri e pavimenti grandi).
+function worldUV(mesh, tile) {
+  const pos = mesh.getVerticesData(VertexBuffer.PositionKind);
+  const nor = mesh.getVerticesData(VertexBuffer.NormalKind);
+  if (!pos || !nor) return;
+  const o = mesh.position;
+  const uv = new Float32Array((pos.length / 3) * 2);
+  for (let i = 0, j = 0; i < pos.length; i += 3, j += 2) {
+    const x = pos[i] + o.x, y = pos[i + 1] + o.y, z = pos[i + 2] + o.z;
+    const ax = Math.abs(nor[i]), ay = Math.abs(nor[i + 1]), az = Math.abs(nor[i + 2]);
+    if (ay >= ax && ay >= az) { uv[j] = x / tile; uv[j + 1] = z / tile; }
+    else if (ax >= az) { uv[j] = z / tile; uv[j + 1] = y / tile; }
+    else { uv[j] = x / tile; uv[j + 1] = y / tile; }
+  }
+  mesh.setVerticesData(VertexBuffer.UVKind, uv);
+}
+
 export class World {
   constructor(scene, mats, shadowGen, saleLabel = 'SALE') {
     this.saleLabel = saleLabel;
@@ -41,6 +59,7 @@ export class World {
     const m = MeshBuilder.CreateBox(name, { width: maxX - minX, height: y1 - y0, depth: maxZ - minZ }, this.scene);
     m.position.set((minX + maxX) / 2, (y0 + y1) / 2, (minZ + maxZ) / 2);
     m.material = mat;
+    if (mat.metadata?.tile) worldUV(m, mat.metadata.tile);
     m.receiveShadows = receive;
     m.isPickable = collide && y1 - y0 > 2.5;
     if (m.isPickable) m.metadata = 'wall';
@@ -59,6 +78,7 @@ export class World {
     const g = MeshBuilder.CreateGround(name, { width: maxX - minX, height: maxZ - minZ }, this.scene);
     g.position.set((minX + maxX) / 2, y, (minZ + maxZ) / 2);
     g.material = mat;
+    if (mat.metadata?.tile) worldUV(g, mat.metadata.tile);
     g.receiveShadows = true;
     g.isPickable = false;
     this.statics.push(g);
@@ -117,7 +137,7 @@ export class World {
     }
     // Pavimento interno
     const fl = rangeToBox(wh, B.u[0], B.u[1], B.w[0], B.w[1]);
-    this.ground('floor' + wh.id, fl.minX, fl.maxX, fl.minZ, fl.maxZ, 0.005, mats.concrete);
+    this.ground('floor' + wh.id, fl.minX, fl.maxX, fl.minZ, fl.maxZ, 0.005, mats.floor);
     // Pareti
     box('wallBack', B.u[0], B.u[1], 0, B.height, B.w[1] - t, B.w[1], mats.metalWall);
     box('wallL', B.u[0], B.u[0] + t, 0, B.height, B.w[0], B.w[1], mats.metalWall);

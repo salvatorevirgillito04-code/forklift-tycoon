@@ -1,0 +1,4 @@
+Texture e cielo con licenza CC0 (pubblico dominio), ridotte per il web:
+- Poly Haven (polyhaven.com): concrete_floor_02, hangar_concrete_floor, asphalt_02, corrugated_iron_02,
+  raw_plank_wall, kloofendal_48d_partly_cloudy_puresky (cielo e mappa d'ambiente)
+- ambientCG (ambientcg.com): Cardboard004

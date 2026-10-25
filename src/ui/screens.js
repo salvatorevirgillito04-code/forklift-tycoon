@@ -477,7 +477,7 @@ export function openSettings(app, { inGame = false, onClose } = {}) {
       <input type="checkbox" ${s.invertGyro ? 'checked' : ''}></label>
     <div class="setting"><span>${t('sensitivity')} <b data-sens-val>${s.sensitivity.toFixed(1)}</b></span>
       <input type="range" min="0.4" max="2" step="0.1" value="${s.sensitivity}" data-sens></div>
-    <div class="setting"><span>${t('graphics')}</span>${seg('quality', [['low', t('low')], ['high', t('high')]])}</div>
+    <div class="setting"><span>${t('graphics')}</span>${seg('quality', [['low', t('low')], ['medium', t('medium')], ['high', t('high')]])}</div>
     <label class="setting check" data-mirrors><span>${t('mirrors')}</span>
       <input type="checkbox" ${s.mirrors !== false ? 'checked' : ''}></label>
     ${dev.on ? `<button class="pill-btn purple" data-dev>${ICONS.gear}${t('devMenu')}</button>` : ''}
