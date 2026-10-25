@@ -1,5 +1,6 @@
 const STRINGS = {
   it: {
+    loginDone: 'Accesso effettuato',
     devMenu: 'Menu sviluppatore', devOn: 'Modalità sviluppatore attiva', playerLevel: 'Livello giocatore', apply: 'Applica',
     workersTime: 'Fai lavorare gli operai', timeSpeed: 'Velocità del tempo', completeContract: 'Completa contratto', teleport: 'Teletrasporto',
     downloadApk: 'Scarica l\'app Android',
@@ -54,6 +55,7 @@ const STRINGS = {
     starter: 'Mezzo iniziale', rewardMult: 'Paga x{n}',
   },
   es: {
+    loginDone: 'Sesión iniciada',
     devMenu: 'Menú desarrollador', devOn: 'Modo desarrollador activo', playerLevel: 'Nivel del jugador', apply: 'Aplicar',
     workersTime: 'Hacer trabajar a los operarios', timeSpeed: 'Velocidad del tiempo', completeContract: 'Completar contrato', teleport: 'Teletransporte',
     downloadApk: 'Descargar app Android',
@@ -108,6 +110,7 @@ const STRINGS = {
     starter: 'Vehículo inicial', rewardMult: 'Pago x{n}',
   },
   en: {
+    loginDone: 'Signed in',
     devMenu: 'Developer menu', devOn: 'Developer mode on', playerLevel: 'Player level', apply: 'Apply',
     workersTime: 'Let workers work', timeSpeed: 'Time speed', completeContract: 'Complete contract', teleport: 'Teleport',
     downloadApk: 'Get the Android app',

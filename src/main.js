@@ -3,7 +3,7 @@ import './style.css';
 import { SENTRY_DSN, APP_VERSION, IS_NATIVE } from './config.js';
 import { setLang, t, fmt } from './i18n.js';
 import { save, loadLocal, syncFromCloud, addRewards, persist, accrueWorkers, dev } from './state.js';
-import { initAuth, onAuthChange, checkDeveloper } from './cloud.js';
+import { initAuth, onAuthChange, checkDeveloper, handleLoginUrl } from './cloud.js';
 import { Game } from './game/game.js';
 import { Controls } from './game/controls.js';
 import { $, openModal, toast, coinText } from './ui/ui.js';
@@ -153,7 +153,20 @@ async function boot() {
     game.setOwnedWarehouses(save.warehouses);
     if (game.mode !== 'play' && !document.querySelector('.modal-backdrop')) app.go(app.current);
   });
-  initAuth();
+  await initAuth();
+  if (IS_NATIVE) listenLoginLinks();
+}
+
+// App Android: il link di conferma dell'email riapre l'app e completa il login qui.
+async function listenLoginLinks() {
+  const { App } = await import('@capacitor/app');
+  const open = async (url) => {
+    const err = await handleLoginUrl(url);
+    toast(err || t('loginDone'), err ? 'bad' : 'good');
+  };
+  App.addListener('appUrlOpen', ({ url }) => open(url));
+  const launch = await App.getLaunchUrl();
+  if (launch?.url) open(launch.url);
 }
 
 window.addEventListener('error', (e) => {

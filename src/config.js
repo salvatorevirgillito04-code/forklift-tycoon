@@ -7,5 +7,7 @@ export const APP_VERSION = '0.1.0';
 
 // App nativa Android (Capacitor) e indirizzi pubblici del gioco
 export const IS_NATIVE = !!window.Capacitor?.isNativePlatform?.();
+// Indirizzo che riapre l'app Android dal link dell'email (registrato nell'AndroidManifest)
+export const APP_LOGIN_URL = 'forklifttycoon://login';
 export const WEB_URL = 'https://salvatorevirgillito04-code.github.io/forklift-tycoon/';
 export const APK_URL = `${WEB_URL}forklift-tycoon.apk`;
