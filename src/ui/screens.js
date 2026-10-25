@@ -38,7 +38,7 @@ export function renderHome(app) {
         <h1 class="logo-1">${t('title1')}</h1>
         <h2 class="logo-2">${t('title2')}</h2>
       </div>
-      ${app.installPrompt ? `<button class="pill-btn blue install-btn" data-act="install">${t('installApp')}</button>` : ''}
+      ${app.installPrompt || needsIosInstall() ? `<button class="pill-btn blue install-btn" data-act="install">${t('installApp')}</button>` : ''}
       <div class="home-buttons">
         <button class="big-btn green" data-go="hub">${t('play')}</button>
         <button class="big-btn blue" data-go="profile">${ICONS.user}<span>${t('profile')}</span></button>
@@ -63,12 +63,32 @@ export function renderHome(app) {
   el.querySelector('[data-act="login"]').addEventListener('click', () => openLogin(app));
   el.querySelector('[data-act="install"]')?.addEventListener('click', async () => {
     const prompt = app.installPrompt;
-    if (!prompt) return;
+    if (!prompt) return openIosInstall();
     prompt.prompt();
     await prompt.userChoice;
     app.installPrompt = null;
     renderHome(app);
   });
+}
+
+// iPhone/iPad: Safari non ha il pulsante di installazione, si spiega come aggiungere l'icona alla Home.
+const isIos = () => /iPhone|iPad|iPod/.test(navigator.userAgent)
+  || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const needsIosInstall = () => isIos() && !navigator.standalone && !matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches;
+
+const SHARE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7.5 7.5 12 3l4.5 4.5"/><path d="M8 10H6a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-9a1 1 0 0 0-1-1h-2"/></svg>';
+const ADD_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M12 8v8M8 12h8"/></svg>';
+
+function openIosInstall() {
+  openModal(`
+    <h2 class="modal-title">${t('iosTitle')}</h2>
+    <ol class="ios-steps">
+      <li>${t('iosStep1')}</li>
+      <li><span>${t('iosStep2', { i: SHARE_ICON })}</span></li>
+      <li><span>${t('iosStep3', { i: ADD_ICON })}</span></li>
+      <li>${t('iosStep4')}</li>
+    </ol>
+    <p class="modal-text small">${t('iosNote')}</p>`, { className: 'small' });
 }
 
 // ---------- HUB ----------

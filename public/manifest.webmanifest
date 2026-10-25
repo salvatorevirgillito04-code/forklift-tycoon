@@ -1,7 +1,7 @@
 {
   "id": "./",
   "name": "Forklift Tycoon",
-  "short_name": "Forklift",
+  "short_name": "Forklift Tycoon",
   "description": "Simulatore di carrelli elevatori: carica e scarica camion, compra magazzini e muletti.",
   "start_url": "./?source=pwa",
   "scope": "./",

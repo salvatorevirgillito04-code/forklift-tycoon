@@ -31,6 +31,7 @@ html, body {
   color: var(--ink);
   user-select: none;
   -webkit-user-select: none;
+  -webkit-touch-callout: none; /* niente menu con la pressione prolungata su iPhone */
   touch-action: none;
   overscroll-behavior: none;
 }
@@ -808,3 +809,9 @@ body.playing #hud, body.playing #controls { display: block; }
 .candidate .pill-btn { margin-top: 6px; width: 100%; }
 @media (max-width: 560px) { .candidate-list { grid-template-columns: 1fr; } }
 .lang-btn small { margin-left: auto; font-size: 13px; color: var(--green-d); }
+
+/* Istruzioni di installazione su iPhone */
+.ios-steps { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; counter-reset: step; }
+.ios-steps li { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 14px; background: #fff; font-weight: 800; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1); }
+.ios-steps li::before { counter-increment: step; content: counter(step); flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--blue); color: #fff; font-weight: 900; }
+.ios-steps svg { width: 22px; height: 22px; color: var(--blue-d); vertical-align: -5px; }

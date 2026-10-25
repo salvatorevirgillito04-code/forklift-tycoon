@@ -5,6 +5,7 @@ import { setLang, t, fmt } from './i18n.js';
 import { save, loadLocal, syncFromCloud, addRewards, persist, accrueWorkers } from './state.js';
 import { initAuth, onAuthChange } from './cloud.js';
 import { Game } from './game/game.js';
+import { Controls } from './game/controls.js';
 import { $, openModal, toast } from './ui/ui.js';
 import { mapHtml, bindMap } from './ui/screens.js';
 import * as S from './ui/screens.js';
@@ -39,12 +40,15 @@ const app = {
   },
 
   async startMission(contract) {
+    // iPhone: il permesso del giroscopio va chiesto dentro il tocco, prima di qualsiasi attesa
+    const gyro = save.settings.steering === 'gyro' ? Controls.requestGyroPermission() : null;
     $('#screen').style.display = 'none';
     $('#loading').classList.add('show');
     document.body.classList.add('playing');
     // In app installata (schermo intero) blocca l'orizzontale; nel browser puo' fallire senza problemi
     screen.orientation?.lock?.('landscape').catch(() => {});
     try {
+      await gyro;
       await this.game.startMission(contract, {
         vehicleId: save.activeVehicle,
         owned: save.warehouses,

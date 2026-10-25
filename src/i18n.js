@@ -1,5 +1,8 @@
 const STRINGS = {
   it: {
+    iosTitle: 'Installa su iPhone', iosStep1: 'Apri questa pagina con Safari', iosStep2: 'Tocca Condividi {i} in basso',
+    iosStep3: 'Scegli "Aggiungi alla schermata Home" {i}', iosStep4: 'Tocca Aggiungi, poi apri il gioco dall\'icona',
+    iosNote: 'Dall\'icona il gioco va a schermo intero. Salvataggi separati da Safari: gioca sempre dall\'icona.',
     perHour: '{n}/h', hire: 'Assumi', hireFor: 'Assumi per {n}', emptySlot: 'Posto libero', train: 'Forma', fire: 'Licenzia',
     confirmFire: 'Licenziare {n}?', salary: 'Stipendio', income: 'Guadagno', net: 'Netto', candidates: 'Candidati',
     chooseForklift: 'Muletto assegnato', noFreeForklift: 'Nessun muletto libero: comprane un altro nel garage.',
@@ -48,6 +51,9 @@ const STRINGS = {
     starter: 'Mezzo iniziale', rewardMult: 'Paga x{n}',
   },
   es: {
+    iosTitle: 'Instalar en iPhone', iosStep1: 'Abre esta página con Safari', iosStep2: 'Toca Compartir {i} abajo',
+    iosStep3: 'Elige "Añadir a pantalla de inicio" {i}', iosStep4: 'Toca Añadir y abre el juego desde el icono',
+    iosNote: 'Desde el icono el juego va a pantalla completa. Partidas separadas de Safari: juega siempre desde el icono.',
     perHour: '{n}/h', hire: 'Contratar', hireFor: 'Contratar por {n}', emptySlot: 'Puesto libre', train: 'Formar', fire: 'Despedir',
     confirmFire: '¿Despedir a {n}?', salary: 'Sueldo', income: 'Ingresos', net: 'Neto', candidates: 'Candidatos',
     chooseForklift: 'Carretilla asignada', noFreeForklift: 'No hay carretillas libres: compra otra en el garaje.',
@@ -96,6 +102,9 @@ const STRINGS = {
     starter: 'Vehículo inicial', rewardMult: 'Pago x{n}',
   },
   en: {
+    iosTitle: 'Install on iPhone', iosStep1: 'Open this page in Safari', iosStep2: 'Tap Share {i} at the bottom',
+    iosStep3: 'Choose "Add to Home Screen" {i}', iosStep4: 'Tap Add, then open the game from the icon',
+    iosNote: 'From the icon the game runs full screen. Saves are separate from Safari: always play from the icon.',
     perHour: '{n}/h', hire: 'Hire', hireFor: 'Hire for {n}', emptySlot: 'Free slot', train: 'Train', fire: 'Fire',
     confirmFire: 'Fire {n}?', salary: 'Salary', income: 'Income', net: 'Net', candidates: 'Candidates',
     chooseForklift: 'Assigned forklift', noFreeForklift: 'No free forklift: buy another one in the garage.',
