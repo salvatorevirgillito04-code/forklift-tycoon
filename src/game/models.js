@@ -392,6 +392,21 @@ export async function createForkliftModel(scene, mats, vehicle) {
   const forkL = makeFork('forkL');
   const forkR = makeFork('forkR');
 
+  // Un solo oggetto per ogni gruppo che si muove insieme (meno chiamate di disegno, anche nelle ombre)
+  for (const node of [outer, middle?.getChildren()[0], inner.getChildren()[0], carriage, forkL, forkR, steerSpin]) {
+    if (!node) continue;
+    const parts = node.getChildMeshes(true).filter((m) => !m.metadata?.cabShell);
+    if (parts.length < 2) continue;
+    root.computeWorldMatrix(true);
+    const inv = node.computeWorldMatrix(true).clone().invert();
+    const merged = Mesh.MergeMeshes(parts, true, true, undefined, false, true);
+    if (merged) {
+      merged.name = node.name + 'Merged';
+      merged.bakeTransformIntoVertices(inv);
+      merged.parent = node;
+    }
+  }
+
   const all = root.getChildMeshes();
   const cabShell = all.filter((m) => m.metadata?.cabShell);
   return { root, mastPivot, middle, inner, carriage, chains, steerSpin, forkL, forkR, frontWheels, rearWheels, cabShell, meshes: all };

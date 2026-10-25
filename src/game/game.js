@@ -1,6 +1,7 @@
 import {
   Engine, Scene, Vector3, Color3, Color4, HemisphericLight, DirectionalLight, ShadowGenerator,
-  FreeCamera, CubeTexture, ImageProcessingConfiguration, Ray, Scalar, PhotoDome, CascadedShadowGenerator,
+  FreeCamera, CubeTexture, ImageProcessingConfiguration, Ray, Scalar, PhotoDome,
+  SceneInstrumentation,
 } from '@babylonjs/core';
 import * as Sentry from '@sentry/browser';
 import { createMaterials, setMaterialDetail } from './materials.js';
@@ -75,7 +76,8 @@ export class Game {
     // Oggetti che fanno ombra: il generatore cambia con la qualita' grafica
     this.shadowGen = new ShadowCasters();
     this.mats = createMaterials(scene);
-    this.sky = new PhotoDome('sky', `${TEX_URL}sky.jpg`, { resolution: 32, size: 900 }, scene);
+    // Con le mipmap: senza, il telefono campiona l'immagine intera a ogni pixel (molto lento)
+    this.sky = new PhotoDome('sky', `${TEX_URL}sky.jpg`, { resolution: 24, size: 900, generateMipMaps: true }, scene);
     this.sky.mesh.applyFog = false;
     this.sky.mesh.isPickable = false;
     this.sky.rotation.y = SKY_ROTATION;
@@ -94,41 +96,59 @@ export class Game {
   }
 
   // Bassa: come prima (niente ombre, niente rilievi); Media: texture complete e ombre;
-  // Alta: anche ombre a cascata (nitide vicino, ampie lontano) e piu' pixel.
+  // Alta: ombre piu' definite, rilievi delle superfici e piu' pixel.
   applyQuality(q) {
+    this.quality = q;
+    const dev = this.devToggles || { sky: true, shadows: true, orm: true };
     const dpr = window.devicePixelRatio || 1;
     // Sui telefoni con densita' di pixel alta non serve disegnare ogni pixel fisico
     const scale = { high: Math.min(dpr, 1.25), medium: 1, low: 1 }[q] || 1;
     this.engine.setHardwareScalingLevel(1 / scale);
-    const mode = q === 'low' ? null : q === 'high' && this.engine.webGLVersion >= 2 ? 'cascaded' : 'basic';
+    const mode = q === 'low' || !dev.shadows ? null : q;
     if (mode !== this.shadowMode) {
       this.shadowMode = mode;
       let gen = null;
-      if (mode === 'cascaded') {
-        // 2 cascate da 1024: nitide vicino al muletto, leggere per i telefoni
-        gen = new CascadedShadowGenerator(1024, this.sun);
-        gen.numCascades = 2;
-        gen.lambda = 0.85;
-        gen.shadowMaxZ = 90;
-        gen.stabilizeCascades = true;
-        gen.cascadeBlendPercentage = 0.08;
-        gen.depthClamp = true;
-        gen.filteringQuality = ShadowGenerator.QUALITY_LOW;
-      } else if (mode === 'basic') {
-        gen = new ShadowGenerator(1024, this.sun);
-        gen.filteringQuality = ShadowGenerator.QUALITY_LOW;
-        gen.getShadowMap().refreshRate = 2; // ombre aggiornate a fotogrammi alterni
-      }
-      if (gen) {
+      if (mode) {
+        // Una sola mappa d'ombra attorno al muletto: Alta piu' definita e aggiornata sempre,
+        // Media piu' leggera e aggiornata a fotogrammi alterni
+        gen = new ShadowGenerator(mode === 'high' ? 2048 : 1024, this.sun);
         gen.usePercentageCloserFiltering = true;
+        gen.filteringQuality = ShadowGenerator.QUALITY_LOW;
         gen.bias = 0.0015;
         gen.normalBias = 0.02;
+        gen.getShadowMap().refreshRate = mode === 'high' ? 1 : 2;
       }
       this.shadowGen.attach(gen);
+      this.shadowCull = 0; // al prossimo passo solo gli oggetti vicini
     }
     this.sun.shadowEnabled = !!mode;
-    setMaterialDetail(this.scene, q);
-    this.sky.setEnabled(q !== 'low');
+    setMaterialDetail(this.scene, q, dev.orm);
+    this.sky.setEnabled(q !== 'low' && dev.sky);
+  }
+
+  // Menu sviluppatore: spegne singoli effetti per capire cosa pesa sul telefono
+  setDevToggles(toggles) {
+    this.devToggles = toggles;
+    this.applyQuality(this.quality);
+  }
+
+  // Contatore prestazioni (solo menu sviluppatore): FPS, chiamate di disegno, oggetti visibili
+  setPerfOverlay(on) {
+    this.perfEl?.remove();
+    this.perfEl = null;
+    clearInterval(this.perfTimer);
+    if (!on) return;
+    this.instr ||= new SceneInstrumentation(this.scene);
+    this.instr.captureFrameTime = true;
+    const el = document.createElement('div');
+    el.className = 'perf-overlay';
+    document.querySelector('#app').appendChild(el);
+    this.perfEl = el;
+    this.perfTimer = setInterval(() => {
+      const ms = this.instr.frameTimeCounter.lastSecAverage;
+      el.textContent = `${this.engine.getFps().toFixed(0)} FPS · ${ms.toFixed(1)} ms · draw ${this.instr.drawCallsCounter.current}`
+        + ` · mesh ${this.scene.getActiveMeshes().length} · ${this.quality} ×${(1 / this.engine.getHardwareScalingLevel()).toFixed(2)}`;
+    }, 500);
   }
 
   setSettings(settings) {
@@ -232,6 +252,11 @@ export class Game {
     const input = this.controls.update(dt);
     const f = this.forklift;
     f.update(dt, input, this.env);
+    this.shadowCull = (this.shadowCull || 0) - dt;
+    if (this.shadowCull <= 0) {
+      this.shadowCull = 0.5;
+      this.shadowGen.cull(f.x, f.z, 70);
+    }
     this.bots.update(dt, f);
     this.pallets.update(dt);
     for (const ev of f.events) {

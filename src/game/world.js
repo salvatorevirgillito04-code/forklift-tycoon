@@ -88,7 +88,8 @@ export class World {
   build() {
     const { mats } = this;
     const W = WORLD;
-    this.ground('grass', W.minX - 60, W.maxX + 60, W.minZ - 60, W.maxZ + 60, -0.02, mats.grass);
+    // L'erba sta ben sotto il piazzale: con 1-2 cm di differenza da lontano "tremava" sopra il cemento
+    this.ground('grass', W.minX - 60, W.maxX + 60, W.minZ - 60, W.maxZ + 60, -0.15, mats.grass);
     this.ground('yardGround', W.minX, W.maxX, W.minZ, W.maxZ, -0.01, mats.concrete);
     this.ground('road', W.minX, W.maxX, -W.roadHalf, W.roadHalf, 0, mats.asphalt);
     // Segnaletica stradale

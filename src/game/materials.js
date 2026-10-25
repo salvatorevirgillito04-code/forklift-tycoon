@@ -143,12 +143,12 @@ export function createMaterials(scene) {
 }
 
 // Bassa: solo colore (shader leggeri); Media: anche ruvidita'/occlusione; Alta: anche i rilievi (normal map).
-export function setMaterialDetail(scene, quality) {
-  const full = quality !== 'low';
+export function setMaterialDetail(scene, quality, orm = true) {
+  const full = quality !== 'low' && orm;
   for (const m of scene.materials) {
     const md = m.metadata;
     if (!md?.nor) continue;
-    m.bumpTexture = quality === 'high' ? md.nor : null;
+    m.bumpTexture = quality === 'high' && orm ? md.nor : null;
     m.metallicTexture = full ? md.orm : null;
     if (!full) {
       m.metallic = md.lowMetal ?? 0.2;

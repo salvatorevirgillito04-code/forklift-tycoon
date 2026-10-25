@@ -545,6 +545,9 @@ function openDevMenu(app, inGame, closeSettings) {
     <button class="pill-btn blue small" data-apply>${t('apply')}</button>
     <div class="setting"><span>${t('workersTime')}</span>
       <div class="segmented">${[1, 8, 24].map((h) => `<button data-hours="${h}">+${h} h</button>`).join('')}</div></div>
+    <label class="setting check"><span>${t('perfOverlay')}</span><input type="checkbox" data-perf ${g.perfEl ? 'checked' : ''}></label>
+    ${['sky', 'shadows', 'orm'].map((k) => `<label class="setting check"><span>${t('devToggle_' + k)}</span>
+      <input type="checkbox" data-toggle="${k}" ${(g.devToggles?.[k] ?? true) ? 'checked' : ''}></label>`).join('')}
     <div class="setting"><span>${t('timeSpeed')}</span>
       <div class="segmented">${speeds.map((x) => `<button class="${(g.timeScale || 1) === x ? 'on' : ''}" data-speed="${x}">×${x}</button>`).join('')}</div></div>
     ${inGame ? `
@@ -563,6 +566,12 @@ function openDevMenu(app, inGame, closeSettings) {
     save.workersPaidAt -= +b.dataset.hours * 3600000;
     const coins = accrueWorkers();
     toast(t('offlineEarned', { n: fmt(coins) }), 'good');
+  }));
+  el.querySelector('[data-perf]').addEventListener('change', (e) => g.setPerfOverlay(e.target.checked));
+  el.querySelectorAll('[data-toggle]').forEach((c) => c.addEventListener('change', () => {
+    const toggles = { sky: true, shadows: true, orm: true, ...g.devToggles };
+    toggles[c.dataset.toggle] = c.checked;
+    g.setDevToggles(toggles);
   }));
   el.querySelectorAll('[data-speed]').forEach((b) => b.addEventListener('click', () => {
     g.timeScale = +b.dataset.speed;
