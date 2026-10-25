@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import * as Sentry from '@sentry/browser';
-import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
+import { SUPABASE_URL, SUPABASE_KEY, IS_NATIVE, WEB_URL } from './config.js';
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
@@ -47,7 +47,8 @@ export async function initAuth() {
 // Ospite -> collega l'email all'utente anonimo (i progressi restano).
 // Gia' collegato altrove -> magic link per entrare con quell'account.
 export async function linkEmail(email) {
-  const redirectTo = window.location.origin + import.meta.env.BASE_URL;
+  // Nell'app il link dell'email apre il sito del gioco (l'app non ha un indirizzo web proprio)
+  const redirectTo = IS_NATIVE ? WEB_URL : window.location.origin + import.meta.env.BASE_URL;
   if (user && user.is_anonymous) {
     const { error } = await supabase.auth.updateUser({ email }, { emailRedirectTo: redirectTo });
     if (error) throw error;

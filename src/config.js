@@ -4,3 +4,8 @@ export const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_KEY || 'sb_publishable
 export const SENTRY_DSN = import.meta.env.VITE_SENTRY_DSN
   || 'https://6f3dfce0ff1632c88ef2cb09068dc166@o4512301577076736.ingest.de.sentry.io/4512308270989392';
 export const APP_VERSION = '0.1.0';
+
+// App nativa Android (Capacitor) e indirizzi pubblici del gioco
+export const IS_NATIVE = !!window.Capacitor?.isNativePlatform?.();
+export const WEB_URL = 'https://salvatorevirgillito04-code.github.io/forklift-tycoon/';
+export const APK_URL = 'https://github.com/salvatorevirgillito04-code/forklift-tycoon/releases/download/android/forklift-tycoon.apk';

@@ -11,10 +11,13 @@
   "dependencies": {
     "@babylonjs/core": "9.32.0",
     "@babylonjs/loaders": "9.32.0",
+    "@capacitor/android": "8.5.3",
+    "@capacitor/core": "8.5.3",
     "@sentry/browser": "11.9.0",
     "@supabase/supabase-js": "2.118.0"
   },
   "devDependencies": {
+    "@capacitor/cli": "8.5.3",
     "vite": "8.3.5"
   }
 }

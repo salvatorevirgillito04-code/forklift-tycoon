@@ -1,6 +1,6 @@
 import * as Sentry from '@sentry/browser';
 import './style.css';
-import { SENTRY_DSN, APP_VERSION } from './config.js';
+import { SENTRY_DSN, APP_VERSION, IS_NATIVE } from './config.js';
 import { setLang, t, fmt } from './i18n.js';
 import { save, loadLocal, syncFromCloud, addRewards, persist, accrueWorkers } from './state.js';
 import { initAuth, onAuthChange } from './cloud.js';
@@ -13,7 +13,7 @@ import * as S from './ui/screens.js';
 Sentry.init({
   dsn: SENTRY_DSN,
   release: `forklift-tycoon@${APP_VERSION}`,
-  environment: import.meta.env.MODE,
+  environment: IS_NATIVE ? 'android' : import.meta.env.MODE,
   tracesSampleRate: 0.1,
   enabled: import.meta.env.PROD,
 });
@@ -159,7 +159,7 @@ window.addEventListener('error', (e) => {
 });
 
 // PWA: service worker (solo build pubblicata) e prompt di installazione Android
-if ('serviceWorker' in navigator && import.meta.env.PROD) {
+if ('serviceWorker' in navigator && import.meta.env.PROD && !IS_NATIVE) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch((err) => Sentry.captureException(err));
   });

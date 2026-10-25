@@ -1,5 +1,6 @@
 const STRINGS = {
   it: {
+    downloadApk: 'Scarica l\'app Android',
     iosTitle: 'Installa su iPhone', iosStep1: 'Apri questa pagina con Safari', iosStep2: 'Tocca Condividi {i} in basso',
     iosStep3: 'Scegli "Aggiungi alla schermata Home" {i}', iosStep4: 'Tocca Aggiungi, poi apri il gioco dall\'icona',
     iosNote: 'Dall\'icona il gioco va a schermo intero. Salvataggi separati da Safari: gioca sempre dall\'icona.',
@@ -51,6 +52,7 @@ const STRINGS = {
     starter: 'Mezzo iniziale', rewardMult: 'Paga x{n}',
   },
   es: {
+    downloadApk: 'Descargar app Android',
     iosTitle: 'Instalar en iPhone', iosStep1: 'Abre esta página con Safari', iosStep2: 'Toca Compartir {i} abajo',
     iosStep3: 'Elige "Añadir a pantalla de inicio" {i}', iosStep4: 'Toca Añadir y abre el juego desde el icono',
     iosNote: 'Desde el icono el juego va a pantalla completa. Partidas separadas de Safari: juega siempre desde el icono.',
@@ -102,6 +104,7 @@ const STRINGS = {
     starter: 'Vehículo inicial', rewardMult: 'Pago x{n}',
   },
   en: {
+    downloadApk: 'Get the Android app',
     iosTitle: 'Install on iPhone', iosStep1: 'Open this page in Safari', iosStep2: 'Tap Share {i} at the bottom',
     iosStep3: 'Choose "Add to Home Screen" {i}', iosStep4: 'Tap Add, then open the game from the icon',
     iosNote: 'From the icon the game runs full screen. Saves are separate from Safari: always play from the icon.',

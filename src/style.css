@@ -815,3 +815,4 @@ body.playing #hud, body.playing #controls { display: block; }
 .ios-steps li { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 14px; background: #fff; font-weight: 800; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1); }
 .ios-steps li::before { counter-increment: step; content: counter(step); flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--blue); color: #fff; font-weight: 900; }
 .ios-steps svg { width: 22px; height: 22px; color: var(--blue-d); vertical-align: -5px; }
+a.pill-btn { text-decoration: none; }

@@ -1,0 +1,8 @@
+{
+  "appId": "io.github.salvatorevirgillito.forklifttycoon",
+  "appName": "Forklift Tycoon",
+  "webDir": "dist",
+  "android": {
+    "backgroundColor": "#5b4bd6"
+  }
+}

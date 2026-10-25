@@ -1,5 +1,6 @@
 import { t, fmt, LANGS, getLang, setLang } from '../i18n.js';
 import { ICONS } from './icons.js';
+import { IS_NATIVE, APK_URL } from '../config.js';
 import { $, esc, coinPill, openModal, confirmDialog, toast } from './ui.js';
 import {
   save, buyVehicle, buyWarehouse, resetSave, persist, equipVehicle, ownedCount, assignedCount, freeUnits,
@@ -38,7 +39,8 @@ export function renderHome(app) {
         <h1 class="logo-1">${t('title1')}</h1>
         <h2 class="logo-2">${t('title2')}</h2>
       </div>
-      ${app.installPrompt || needsIosInstall() ? `<button class="pill-btn blue install-btn" data-act="install">${t('installApp')}</button>` : ''}
+      ${isAndroidWeb() ? `<a class="pill-btn blue install-btn" href="${APK_URL}" download>${t('downloadApk')}</a>`
+    : app.installPrompt || needsIosInstall() ? `<button class="pill-btn blue install-btn" data-act="install">${t('installApp')}</button>` : ''}
       <div class="home-buttons">
         <button class="big-btn green" data-go="hub">${t('play')}</button>
         <button class="big-btn blue" data-go="profile">${ICONS.user}<span>${t('profile')}</span></button>
@@ -74,6 +76,7 @@ export function renderHome(app) {
 // iPhone/iPad: Safari non ha il pulsante di installazione, si spiega come aggiungere l'icona alla Home.
 const isIos = () => /iPhone|iPad|iPod/.test(navigator.userAgent)
   || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isAndroidWeb = () => !IS_NATIVE && /Android/i.test(navigator.userAgent);
 const needsIosInstall = () => isIos() && !navigator.standalone && !matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches;
 
 const SHARE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7.5 7.5 12 3l4.5 4.5"/><path d="M8 10H6a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-9a1 1 0 0 0-1-1h-2"/></svg>';
