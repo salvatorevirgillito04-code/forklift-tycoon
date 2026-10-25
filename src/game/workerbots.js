@@ -16,8 +16,13 @@ const POCKET = 0.045; // forche dentro le tasche del pallet, sopra il fondo
 const TRAVEL_Y = 0.15; // altezza forche in viaggio
 const CLEAR = 0.12; // forche alzate sopra l'appoggio prima di entrare/uscire
 const LIFT_SPEED = 0.45;
+const LIFT_ACC = 0.9; // accelerazione delle forche (m/s^2)
 const V_FWD = 2.0;
 const V_REV = 1.3;
+const ACC = 0.9; // accelerazione del muletto (m/s^2)
+const DEC = 1.3; // frenata dolce
+const STEER_RATE = 1.6; // velocita' massima di rotazione delle ruote sterzanti (rad/s)
+const TRUCK_ACC = 1.0;
 const BACK_OFF = 3.2;
 
 // Piazzale: camion lungo w con la cabina verso la strada, pallet a terra in fila davanti al camion.
@@ -39,27 +44,39 @@ const AREAS = [
 
 const easeStep = (cur, goal, maxStep) => cur + Math.sign(goal - cur) * Math.min(maxStep, Math.abs(goal - cur));
 
-// Curva di Bezier campionata con la distanza percorsa.
-function bezierPath(p0, p1, p2, p3, n = 48) {
-  const pts = [];
-  let len = 0;
-  for (let i = 0; i <= n; i++) {
-    const t = i / n, a = 1 - t;
-    const x = a * a * a * p0[0] + 3 * a * a * t * p1[0] + 3 * a * t * t * p2[0] + t * t * t * p3[0];
-    const z = a * a * a * p0[1] + 3 * a * a * t * p1[1] + 3 * a * t * t * p2[1] + t * t * t * p3[1];
-    if (i) len += Math.hypot(x - pts[i - 1].x, z - pts[i - 1].z);
-    pts.push({ x, z, s: len });
+// Curva di Bezier: tabella distanza -> parametro t, poi posizione e direzione calcolate esatte (niente spigoli).
+function bezierPath(p0, p1, p2, p3, n = 96) {
+  const P = [p0, p1, p2, p3];
+  const pos = (t) => {
+    const a = 1 - t;
+    const w = [a * a * a, 3 * a * a * t, 3 * a * t * t, t * t * t];
+    return [0, 1].map((k) => w[0] * P[0][k] + w[1] * P[1][k] + w[2] * P[2][k] + w[3] * P[3][k]);
+  };
+  const tbl = [{ t: 0, s: 0 }];
+  let prev = pos(0), len = 0;
+  for (let i = 1; i <= n; i++) {
+    const t = i / n, q = pos(t);
+    len += Math.hypot(q[0] - prev[0], q[1] - prev[1]);
+    tbl.push({ t, s: len });
+    prev = q;
   }
-  return { pts, len };
+  return { P, pos, tbl, len };
 }
 
 function pointAt(path, s) {
-  const { pts } = path;
+  const { tbl, P } = path;
+  s = Math.max(0, Math.min(path.len, s));
   let i = 1;
-  while (i < pts.length - 1 && pts[i].s < s) i++;
-  const a = pts[i - 1], b = pts[i];
-  const k = b.s > a.s ? Math.min(1, Math.max(0, (s - a.s) / (b.s - a.s))) : 0;
-  return { x: a.x + (b.x - a.x) * k, z: a.z + (b.z - a.z) * k, dx: b.x - a.x, dz: b.z - a.z };
+  while (i < tbl.length - 1 && tbl[i].s < s) i++;
+  const a = tbl[i - 1], b = tbl[i];
+  const t = a.t + (b.t - a.t) * (b.s > a.s ? (s - a.s) / (b.s - a.s) : 0);
+  const [x, z] = path.pos(t);
+  // Derivata della Bezier: direzione del moto (agli estremi di un tratto dritto e' nulla: si usa la corda)
+  const u = 1 - t;
+  let dx = 3 * u * u * (P[1][0] - P[0][0]) + 6 * u * t * (P[2][0] - P[1][0]) + 3 * t * t * (P[3][0] - P[2][0]);
+  let dz = 3 * u * u * (P[1][1] - P[0][1]) + 6 * u * t * (P[2][1] - P[1][1]) + 3 * t * t * (P[3][1] - P[2][1]);
+  if (Math.hypot(dx, dz) < 1e-6) { dx = P[3][0] - P[0][0]; dz = P[3][1] - P[0][1]; }
+  return { x, z, dx, dz, h: Math.atan2(dx, dz) };
 }
 
 // Scatola allineata agli assi che contiene dei rettangoli orientati.
@@ -154,7 +171,7 @@ export class WorkerBots {
     const f = new Forklift(this.scene, this.mats, vehicleById(worker.vehicle));
     const bot = {
       f, wh, area, vehicleId: worker.vehicle, warehouse: worker.warehouse, ready: false,
-      slots: [], carried: null, task: null, path: null, s: 0, wait: 0, steer: 0,
+      slots: [], carried: null, task: null, path: null, s: 0, wait: 0, steer: 0, v: 0, liftV: 0,
       collider: { minX: 0, maxX: 0, minZ: 0, maxZ: 0, y0: 0, y1: -1, tag: 'bot' },
     };
     let palletCount;
@@ -274,18 +291,23 @@ export class WorkerBots {
       if (tr.wait > 0) { tr.wait -= dt; return; }
       const goal = tr.state === 'arriving' ? 0 : TRUCK_AREA.away;
       const dist = Math.abs(goal - tr.offset);
-      const v = Math.min(3.5, 0.4 + dist * 0.6);
-      const next = easeStep(tr.offset, goal, v * dt);
+      const want = Math.max(0.15, Math.min(3.5, Math.sqrt(2 * TRUCK_ACC * dist)));
+      tr.v = easeStep(tr.v || 0, want, TRUCK_ACC * dt);
+      const next = easeStep(tr.offset, goal, tr.v * dt);
       const b = this.truckBoxes(bot, next);
       // Non investe il giocatore
       if (player && tr.offset > TRUCK_AREA.away + 1) {
         const mine = [aabbRect(b.bed), aabbRect(b.cab)];
         const his = [player.bodyRect(), ...player.forkRects()];
-        if (mine.some((m) => his.some((o) => rectsOverlap(m, o, 0.4)))) return;
+        if (mine.some((m) => his.some((o) => rectsOverlap(m, o, 0.4)))) {
+          tr.v = 0;
+          return;
+        }
       }
       tr.offset = next;
       this.placeTruck(bot);
       if (Math.abs(tr.offset - goal) < 1e-3) {
+        tr.v = 0;
         if (tr.state === 'arriving') tr.state = 'parked';
         else {
           // Fuori: il prossimo camion fa il contratto opposto (quello caricato torna pieno da scaricare)
@@ -406,7 +428,7 @@ export class WorkerBots {
     const hx = Math.sin(f.yaw), hz = Math.cos(f.yaw);
     const ex = Math.sin(end.yaw), ez = Math.cos(end.yaw);
     const d = Math.hypot(end.x - f.x, end.z - f.z);
-    const c = Math.min(4, Math.max(0.8, d * 0.45));
+    const c = Math.min(4.5, Math.max(1.2, d * 0.5));
     return bezierPath([f.x, f.z], [f.x + hx * c, f.z + hz * c], [end.x - ex * c, end.z - ez * c], [end.x, end.z]);
   }
 
@@ -416,7 +438,7 @@ export class WorkerBots {
     const hx = Math.sin(f.yaw), hz = Math.cos(f.yaw);
     const ex = Math.sin(end.yaw), ez = Math.cos(end.yaw);
     const d = Math.hypot(end.x - f.x, end.z - f.z);
-    const c = Math.min(3.5, Math.max(0.5, d * 0.45));
+    const c = Math.min(3.5, Math.max(0.8, d * 0.45));
     return bezierPath([f.x, f.z], [f.x - hx * c, f.z - hz * c], [end.x + ex * c, end.z + ez * c], [end.x, end.z]);
   }
 
@@ -450,41 +472,72 @@ export class WorkerBots {
     return mine.some((m) => others.some((o) => rectsOverlap(m, o, 0.35)));
   }
 
-  // Segue il percorso: piu' lento in curva e in arrivo; sterzo delle ruote posteriori dalla curvatura.
+  // Segue il percorso come un muletto vero: accelera e frena con gradualita', rallenta prima delle curve,
+  // le ruote posteriori girano progressivamente. Ritorna true a fine percorso.
   follow(bot, dt, player, reverse) {
     const f = bot.f;
     const path = bot.path;
     const left = path.len - bot.s;
-    const ahead = pointAt(path, Math.min(path.len, bot.s + 1.2));
+    if (left < 0.003) {
+      bot.v = 0;
+      return true;
+    }
     const here = pointAt(path, bot.s);
-    const turn = Math.abs(wrapAngle(Math.atan2(ahead.dx, ahead.dz) - Math.atan2(here.dx, here.dz)));
-    const vmax = (reverse ? V_REV : V_FWD) / (1 + turn * 2.5);
-    const target = Math.min(vmax, Math.sqrt(2 * 1.2 * Math.max(0, left)) + 0.15);
-    const ds = Math.min(left, target * dt);
-    const p = pointAt(path, bot.s + ds);
-    const yaw = Math.atan2(p.dx, p.dz) + (reverse ? Math.PI : 0);
-    if (ds > 0 && this.blocked(bot, p.x, p.z, yaw, player)) {
+    // Curva piu' stretta nei prossimi metri: velocita' adatta
+    let turn = 0;
+    for (const d of [0.6, 1.2, 1.8, 2.4]) {
+      const q = pointAt(path, bot.s + d);
+      turn = Math.max(turn, Math.abs(wrapAngle(q.h - here.h)) / d);
+    }
+    let target = Math.min((reverse ? V_REV : V_FWD) / (1 + turn * 2.2), Math.sqrt(2 * DEC * left));
+    target = Math.max(target, 0.12); // ultimo tratto a passo d'uomo, senza fermarsi prima dell'arrivo
+    // Ostacolo entro lo spazio di frenata: frena dolcemente
+    const look = Math.min(left, 0.4 + (bot.v * bot.v) / (2 * DEC));
+    const probe = pointAt(path, bot.s + look);
+    if (this.blocked(bot, probe.x, probe.z, probe.h + (reverse ? Math.PI : 0), player)) target = 0;
+    bot.v = target > bot.v ? Math.min(target, bot.v + ACC * dt) : Math.max(target, bot.v - DEC * 2 * dt);
+    const ds = Math.min(left, bot.v * dt);
+    if (ds <= 0) {
       f.v = 0;
       return false;
     }
-    const dYaw = wrapAngle(yaw - f.yaw);
+    const p = pointAt(path, bot.s + ds);
+    const yaw = p.h + (reverse ? Math.PI : 0);
+    if (this.blocked(bot, p.x, p.z, yaw, player)) {
+      bot.v = 0;
+      f.v = 0;
+      return false;
+    }
+    // Sterzo dalla curvatura del percorso poco piu' avanti (ruote posteriori)
+    const q = pointAt(path, bot.s + ds + 0.3);
+    const k = wrapAngle(q.h - p.h) / 0.3;
+    const want = Math.atan(f.geo.wheelbase * k) * (reverse ? -1 : 1);
+    bot.steer += Math.max(-STEER_RATE * dt, Math.min(STEER_RATE * dt, want - bot.steer));
     const signed = reverse ? -ds : ds;
-    bot.steer = ds > 1e-4 ? Math.atan((f.geo.wheelbase * dYaw) / signed) : bot.steer * 0.9;
     f.x = p.x;
     f.z = p.z;
     f.yaw = wrapAngle(yaw);
     f.v = signed / Math.max(dt, 1e-4);
     f.wheelSpin += signed / 0.33;
     bot.s += ds;
-    return bot.s >= path.len - 1e-3;
+    return path.len - bot.s < 0.003;
   }
 
   work(bot, dt, player) {
     const f = bot.f;
     const task = bot.task;
+    // Forche con accelerazione e frenata (come l'idraulica vera)
     const lift = (goal) => {
-      f.forkY = easeStep(f.forkY, goal, LIFT_SPEED * dt);
-      return Math.abs(f.forkY - goal) < 1e-3;
+      const dist = goal - f.forkY;
+      if (Math.abs(dist) < 1e-3) {
+        f.forkY = goal;
+        bot.liftV = 0;
+        return true;
+      }
+      const want = Math.sign(dist) * Math.min(LIFT_SPEED, Math.sqrt(2 * LIFT_ACC * Math.abs(dist)) + 0.02);
+      bot.liftV = easeStep(bot.liftV || 0, want, LIFT_ACC * dt);
+      f.forkY = Math.abs(bot.liftV * dt) >= Math.abs(dist) ? goal : f.forkY + bot.liftV * dt;
+      return false;
     };
     const backTo = (slot, step) => {
       task.step = step;
@@ -549,7 +602,7 @@ export class WorkerBots {
     }
     if (!moving) {
       f.v = 0;
-      bot.steer *= 0.9;
+      bot.v = 0;
     }
     this.place(bot);
   }

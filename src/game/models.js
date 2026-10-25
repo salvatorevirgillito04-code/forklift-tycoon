@@ -95,6 +95,8 @@ export function vehicleGeometry(vehicle) {
     mastHeight: 2.41 * s,
     freeLift: 1.6 * s,
     innerLen: 2.2 * s,
+    // Alzata alta: montante triplo (sezione intermedia), cosi' le sezioni restano sempre sovrapposte
+    triplex: (vehicle.lift || 0) - 1.6 * s > 0.75 * 2.2 * s,
     eye: [0.05 * s, 2.0 * s, -0.75 * s],
   };
 }
@@ -285,17 +287,8 @@ export async function createForkliftModel(scene, mats, vehicle) {
     }
 
     if (st.cab === 'closed') {
-      // Cabina chiusa: tetto pieno, pannelli bassi e vetri. Visibile solo da fuori (prima persona pulita).
-      const cabMat = trim;
-      const shell = [
-        box(scene, 'cabRoof', 1.16, 0.1, 1.9, new Vector3(0, 2.4, -0.7), cabMat, body),
-        box(scene, 'cabDoorL', 0.04, 0.75, 1.65, new Vector3(-0.56, 1.5, -0.7), cabMat, body),
-        box(scene, 'cabDoorR', 0.04, 0.75, 1.65, new Vector3(0.56, 1.5, -0.7), cabMat, body),
-        box(scene, 'cabGlassL', 0.02, 0.75, 1.6, new Vector3(-0.56, 2.0, -0.7), mats.glass, body),
-        box(scene, 'cabGlassR', 0.02, 0.75, 1.6, new Vector3(0.56, 2.0, -0.7), mats.glass, body),
-        box(scene, 'cabGlassF', 1.05, 1.15, 0.02, new Vector3(0, 1.75, 0.15), mats.glass, body),
-        box(scene, 'cabGlassB', 1.05, 1.0, 0.02, new Vector3(0, 1.85, -1.56), mats.glass, body),
-      ];
+      // Cabina aperta: niente vetri ne' portiere, resta il tetto pieno sopra i montanti.
+      const shell = [box(scene, 'cabRoof', 1.16, 0.1, 1.9, new Vector3(0, 2.4, -0.7), trim, body)];
       for (const m of shell) m.metadata = { cabShell: true };
     }
   }
@@ -345,6 +338,18 @@ export async function createForkliftModel(scene, mats, vehicle) {
   }
   box(scene, 'mastTop', 0.78, 0.1, 0.1, new Vector3(0, 2.15, 0), mats.darkSteel, outer);
   box(scene, 'mastCross', 0.78, 0.06, 0.06, new Vector3(0, 0.22, -0.02), mats.darkSteel, outer);
+  // Sezione intermedia del montante triplo: sale a meta' della corsa dello sfilo interno
+  let middle = null;
+  if (geo.triplex) {
+    middle = new TransformNode('middleMast', scene);
+    middle.parent = mastPivot;
+    const midBody = new TransformNode('middleMastBody', scene);
+    midBody.parent = middle;
+    midBody.scaling.setAll(geo.s);
+    for (const side of [-1, 1]) box(scene, 'middleRail', 0.05, 2.2, 0.09, new Vector3(side * 0.29, 1.12, 0.0), mats.darkSteel, midBody);
+    box(scene, 'middleTop', 0.63, 0.07, 0.07, new Vector3(0, 2.18, 0.0), mats.darkSteel, midBody);
+    box(scene, 'middleLow', 0.63, 0.05, 0.05, new Vector3(0, 0.1, 0.0), mats.darkSteel, midBody);
+  }
   const inner = new TransformNode('innerMast', scene);
   inner.parent = mastPivot;
   const innerBody = new TransformNode('innerMastBody', scene);
@@ -389,7 +394,7 @@ export async function createForkliftModel(scene, mats, vehicle) {
 
   const all = root.getChildMeshes();
   const cabShell = all.filter((m) => m.metadata?.cabShell);
-  return { root, mastPivot, inner, carriage, chains, steerSpin, forkL, forkR, frontWheels, rearWheels, cabShell, meshes: all };
+  return { root, mastPivot, middle, inner, carriage, chains, steerSpin, forkL, forkR, frontWheels, rearWheels, cabShell, meshes: all };
 }
 
 export async function createTruckModel(scene, mats, color = '#d63a2f') {

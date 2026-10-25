@@ -560,6 +560,7 @@ export class Forklift {
     m.mastPivot.rotation.x = -this.tilt;
     m.carriage.position.y = this.forkY - m.mastPivot.position.y;
     m.inner.position.y = Math.max(0, this.forkY - this.geo.freeLift);
+    if (m.middle) m.middle.position.y = m.inner.position.y / 2;
     // Catene: dal carrello alla puleggia in cima allo sfilo interno
     const bottom = this.forkY - m.mastPivot.position.y + 0.55;
     const top = m.inner.position.y + this.geo.innerLen;
