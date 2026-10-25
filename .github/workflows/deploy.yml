@@ -28,8 +28,8 @@ jobs:
       - run: npm run build
         env:
           BASE_PATH: /${{ github.event.repository.name }}/
-      # App Android e iOS scaricabili dal sito (fuori da public/, cosi' non finisce dentro l'app stessa)
-      - run: cp downloads/forklift-tycoon.apk downloads/forklift-tycoon.ipa dist/
+      # App Android scaricabile dal sito (fuori da public/, cosi' non finisce dentro l'app stessa)
+      - run: cp downloads/forklift-tycoon.apk dist/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
