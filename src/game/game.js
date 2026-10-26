@@ -207,6 +207,9 @@ export class Game {
     const start = await this.mission.start(contract);
     this.forklift.place(start.x, start.z, start.yaw);
     this.bots.setWorkers(workers);
+    // Operai vicini creati ora, durante il caricamento: crearli mentre si gioca bloccava il gioco un attimo
+    await this.bots.prewarm(this.forklift);
+    this.shadowGen.cull(this.forklift.x, this.forklift.z, 28);
     this.cabHidden = null;
     this.hud = new Hud(hudRoot, { onSettings, onMap, onCamera, coins });
     this.rearview = createRearview(this.scene, this.camera);
@@ -219,6 +222,8 @@ export class Game {
     this.lookPitch = 0;
     this.camPos = null;
     this.paused = false;
+    // Materiali e shader compilati prima di iniziare (la prima comparsa di un materiale costa un attimo)
+    await Promise.race([this.scene.whenReadyAsync(), new Promise((r) => setTimeout(r, 4000))]);
     this.mode = 'play';
     Sentry.addBreadcrumb({ category: 'mission', message: `start ${contract.type} lv${contract.level}` });
   }
@@ -249,12 +254,21 @@ export class Game {
 
   // Risoluzione dinamica (mai sopra il massimo del livello grafico, mai sotto i punti CSS dello schermo)
   adaptResolution(realDt) {
-    // Controllo ogni secondo: sotto 45 FPS scende subito, sotto 52 per 2 secondi scende un po',
+    // Controllo ogni secondo sulla mediana: sotto 45 FPS scende subito, sotto 52 per 2 secondi scende un po',
     // sopra 58 per 4 secondi sale un po'. La nitidezza raggiunta viene ricordata per la prossima volta.
+    this.frameTimes ||= [];
+    this.frameTimes.push(realDt);
     this.resTimer = (this.resTimer || 0) + realDt;
-    if (this.resTimer < 1 || this.mode !== 'play' || this.paused) return;
+    if (this.resTimer < 1 || this.mode !== 'play' || this.paused) {
+      if (this.mode !== 'play' || this.paused) this.frameTimes.length = 0;
+      return;
+    }
     this.resTimer = 0;
-    const fps = this.engine.getFps();
+    // Mediana del secondo appena passato: un singolo fotogramma lento (un attimo) non conta,
+    // conta solo un rallentamento che dura (e che una nitidezza minore puo' davvero risolvere)
+    const sorted = this.frameTimes.sort((x, y) => x - y);
+    const fps = 1 / Math.max(1e-3, sorted[Math.floor(sorted.length / 2)]);
+    this.frameTimes.length = 0;
     this.lowCount = fps < 52 ? this.lowCount + 1 : 0;
     this.highCount = fps > 58 ? this.highCount + 1 : 0;
     let next = this.scale;

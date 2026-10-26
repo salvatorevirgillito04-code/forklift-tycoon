@@ -1,5 +1,6 @@
 const STRINGS = {
   it: {
+    version: 'Versione',
     perfOverlay: 'Contatore FPS', devToggle_sky: 'Cielo panoramico', devToggle_shadows: 'Ombre',
     loginDone: 'Accesso effettuato',
     devMenu: 'Menu sviluppatore', devOn: 'Modalità sviluppatore attiva', playerLevel: 'Livello giocatore', apply: 'Applica',
@@ -56,6 +57,7 @@ const STRINGS = {
     starter: 'Mezzo iniziale', rewardMult: 'Paga x{n}',
   },
   es: {
+    version: 'Versión',
     perfOverlay: 'Contador FPS', devToggle_sky: 'Cielo panorámico', devToggle_shadows: 'Sombras',
     loginDone: 'Sesión iniciada',
     devMenu: 'Menú desarrollador', devOn: 'Modo desarrollador activo', playerLevel: 'Nivel del jugador', apply: 'Aplicar',
@@ -112,6 +114,7 @@ const STRINGS = {
     starter: 'Vehículo inicial', rewardMult: 'Pago x{n}',
   },
   en: {
+    version: 'Version',
     perfOverlay: 'FPS counter', devToggle_sky: 'Panoramic sky', devToggle_shadows: 'Shadows',
     loginDone: 'Signed in',
     devMenu: 'Developer menu', devOn: 'Developer mode on', playerLevel: 'Player level', apply: 'Apply',

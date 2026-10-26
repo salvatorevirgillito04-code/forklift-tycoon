@@ -1,6 +1,6 @@
 import { t, fmt, LANGS, getLang, setLang } from '../i18n.js';
 import { ICONS } from './icons.js';
-import { IS_NATIVE, APK_URL } from '../config.js';
+import { IS_NATIVE, APK_URL, APP_VERSION, BUILD_DATE } from '../config.js';
 import { $, esc, coinPill, coinText, openModal, confirmDialog, toast } from './ui.js';
 import {
   save, buyVehicle, buyWarehouse, resetSave, persist, equipVehicle, ownedCount, assignedCount, freeUnits,
@@ -538,6 +538,7 @@ function openDevMenu(app, inGame, closeSettings) {
   const speeds = [1, 2, 4];
   const { el, close } = openModal(`
     <h2 class="modal-title">${t('devMenu')}</h2>
+    <p class="dev-version">${t('version')} ${APP_VERSION} · ${IS_NATIVE ? 'Android' : 'Web'} · ${BUILD_DATE} UTC</p>
     <div class="setting dev-row"><span>${t('playerLevel')}</span>
       <input type="number" min="1" max="999" value="${save.level}" data-lvl></div>
     <div class="setting dev-row"><span>${t('contractLevel', { n: '' }).trim()}</span>

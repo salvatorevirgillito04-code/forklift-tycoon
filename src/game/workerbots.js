@@ -101,7 +101,8 @@ export class WorkerBots {
     this.mats = mats;
     this.env = env;
     this.workers = [];
-    this.bots = new Map(); // id operaio -> bot
+    this.bots = new Map(); // id operaio -> bot attivo
+    this.parked = new Map(); // id operaio -> bot nascosto (pronto da riaccendere senza ricrearlo)
     this.pickTimer = 0;
     this.shadowGen = null;
   }
@@ -152,11 +153,65 @@ export class WorkerBots {
       .sort((a, b) => a.d - b.d)
       .slice(0, MAX_BOTS);
     const keep = new Set(near.map((e) => e.w.id));
+    const same = (bot, w) => w && w.vehicle === bot.vehicleId && w.warehouse === bot.warehouse;
     for (const [id, bot] of this.bots) {
+      if (keep.has(id)) continue;
       const w = this.workers.find((x) => x.id === id);
-      if (!keep.has(id) || !w || w.vehicle !== bot.vehicleId || w.warehouse !== bot.warehouse) this.remove(id);
+      // Lontano: si nasconde (ricrearlo dopo bloccherebbe il gioco per un attimo)
+      if (same(bot, w) && bot.ready) this.park(id);
+      else this.remove(id);
     }
-    for (const { w } of near) if (!this.bots.has(w.id)) this.spawn(w);
+    const builds = [];
+    for (const { w } of near) {
+      if (this.bots.has(w.id)) continue;
+      const parked = this.parked.get(w.id);
+      if (parked && same(parked, w)) this.unpark(w.id);
+      else {
+        if (parked) this.remove(w.id);
+        builds.push(this.spawn(w));
+      }
+    }
+    // Al massimo 6 nascosti: oltre si libera la memoria dei piu' vecchi
+    while (this.parked.size > 6) this.remove(this.parked.keys().next().value);
+    return builds;
+  }
+
+  // Prepara gli operai vicini durante il caricamento della partita (niente blocchi dopo)
+  async prewarm(player) {
+    this.pickTimer = 0.5;
+    await Promise.all(this.pick(player));
+  }
+
+  botNodes(bot) {
+    const nodes = [bot.f.model?.root, bot.truck?.root, bot.carried, ...bot.slots.flatMap((s) => s.stack)];
+    return nodes.filter(Boolean);
+  }
+
+  botColliders(bot) {
+    const cols = [bot.collider, ...bot.slots.map((s) => s.collider)];
+    if (bot.truck) cols.push(bot.truck.bedCol, bot.truck.cabCol);
+    return cols;
+  }
+
+  park(id) {
+    const bot = this.bots.get(id);
+    this.bots.delete(id);
+    this.parked.set(id, bot);
+    for (const n of this.botNodes(bot)) n.setEnabled(false);
+    for (const c of this.botColliders(bot)) {
+      const i = this.env.colliders.indexOf(c);
+      if (i >= 0) this.env.colliders.splice(i, 1);
+    }
+  }
+
+  unpark(id) {
+    const bot = this.parked.get(id);
+    this.parked.delete(id);
+    this.bots.set(id, bot);
+    for (const n of this.botNodes(bot)) n.setEnabled(true);
+    this.env.colliders.push(...this.botColliders(bot));
+    bot.far = undefined; // ricalcola i dettagli in base alla distanza
+    if (bot.truck) this.placeTruck(bot); // il camion puo' essere fuori sulla strada (nascosto)
   }
 
   // Punto di appoggio dei pallet: centro, direzione da cui il muletto entra, quota, pila e punto di manovra.
@@ -236,7 +291,7 @@ export class WorkerBots {
       this.idle(bot);
       this.place(bot);
     };
-    build();
+    return build();
   }
 
   // ---------- Camion ----------
@@ -357,8 +412,9 @@ export class WorkerBots {
   }
 
   remove(id) {
-    const bot = this.bots.get(id);
+    const bot = this.bots.get(id) || this.parked.get(id);
     if (!bot) return;
+    this.parked.delete(id);
     bot.f.dispose();
     bot.carried?.dispose();
     for (const s of bot.slots) s.stack.forEach((n) => n.dispose());
@@ -375,7 +431,7 @@ export class WorkerBots {
   }
 
   clear() {
-    for (const id of [...this.bots.keys()]) this.remove(id);
+    for (const id of [...this.bots.keys(), ...this.parked.keys()]) this.remove(id);
   }
 
   // Pallet fermi in un punto di appoggio (pila) e loro ingombro.
