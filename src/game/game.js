@@ -107,8 +107,14 @@ export class Game {
     const dpr = window.devicePixelRatio || 1;
     // Risoluzione: Media e Alta vicine a quella reale dello schermo (immagine nitida);
     // il costo e' compensato da materiali leggeri e ombre solo vicino al muletto
-    this.maxScale = { high: Math.min(dpr, 2), medium: Math.min(dpr, 1.6), low: 1 }[q] || 1;
-    this.scale = this.maxScale;
+    // Si parte prudenti e si sale solo se il telefono regge; la nitidezza trovata si ricorda
+    this.maxScale = { high: Math.min(dpr, 1.8), medium: Math.min(dpr, 1.5), low: 1 }[q] || 1;
+    const start = { high: Math.min(dpr, 1.5), medium: Math.min(dpr, 1.3), low: 1 }[q] || 1;
+    let saved = NaN;
+    try { saved = parseFloat(localStorage.getItem(`forklift-res-${q}`)); } catch { /* storage non disponibile */ }
+    this.scale = Math.min(this.maxScale, Number.isFinite(saved) ? saved : start);
+    this.lowCount = 0;
+    this.highCount = 0;
     this.engine.setHardwareScalingLevel(1 / this.scale);
     const mode = q === 'low' || !dev.shadows ? null : q;
     if (mode !== this.shadowMode) {
@@ -116,9 +122,10 @@ export class Game {
       let gen = null;
       if (mode) {
         // Una sola mappa d'ombra attorno al muletto: Alta piu' definita, Media piu' leggera
-        gen = new ShadowGenerator(mode === 'high' ? 2048 : 1024, this.sun);
+        // 1024 basta per ombre entro ~30 m; Alta ha i bordi piu' morbidi
+        gen = new ShadowGenerator(1024, this.sun);
         gen.usePercentageCloserFiltering = true;
-        gen.filteringQuality = ShadowGenerator.QUALITY_LOW;
+        gen.filteringQuality = mode === 'high' ? ShadowGenerator.QUALITY_MEDIUM : ShadowGenerator.QUALITY_LOW;
         gen.bias = 0.0015;
         gen.normalBias = 0.02;
         // Aggiornate a ogni fotogramma: lavoro costante = niente scatti (a fotogrammi alterni
@@ -240,27 +247,27 @@ export class Game {
     this.paused = p;
   }
 
-  // Risoluzione dinamica: se gli FPS restano sotto 52 abbassa un po' la nitidezza, sopra 58 la rialza
-  // (mai sopra il massimo del livello grafico, mai sotto la risoluzione dello schermo in punti CSS).
+  // Risoluzione dinamica (mai sopra il massimo del livello grafico, mai sotto i punti CSS dello schermo)
   adaptResolution(realDt) {
-    // Cambiare risoluzione costa un piccolo scatto: si decide su 2 secondi e serve conferma
+    // Controllo ogni secondo: sotto 45 FPS scende subito, sotto 52 per 2 secondi scende un po',
+    // sopra 58 per 4 secondi sale un po'. La nitidezza raggiunta viene ricordata per la prossima volta.
     this.resTimer = (this.resTimer || 0) + realDt;
-    if (this.resTimer < 2 || this.mode !== 'play' || this.paused) return;
+    if (this.resTimer < 1 || this.mode !== 'play' || this.paused) return;
     this.resTimer = 0;
     const fps = this.engine.getFps();
-    this.lowCount = fps < 52 ? (this.lowCount || 0) + 1 : 0;
-    this.highCount = fps > 58 ? (this.highCount || 0) + 1 : 0;
+    this.lowCount = fps < 52 ? this.lowCount + 1 : 0;
+    this.highCount = fps > 58 ? this.highCount + 1 : 0;
     let next = this.scale;
-    if (this.lowCount >= 2 || fps < 44) {
-      next = Math.max(1, this.scale - (fps < 44 ? 0.25 : 0.15));
-      this.lowCount = 0;
-    } else if (this.highCount >= 3) {
-      next = Math.min(this.maxScale, this.scale + 0.1);
-      this.highCount = 0;
-    }
+    if (fps < 45) next = this.scale - 0.2;
+    else if (this.lowCount >= 2) next = this.scale - 0.1;
+    else if (this.highCount >= 4) next = this.scale + 0.1;
+    next = Math.max(1, Math.min(this.maxScale, next));
     if (Math.abs(next - this.scale) > 0.01) {
       this.scale = next;
+      this.lowCount = 0;
+      this.highCount = 0;
       this.engine.setHardwareScalingLevel(1 / next);
+      try { localStorage.setItem(`forklift-res-${this.quality}`, next.toFixed(2)); } catch { /* storage non disponibile */ }
     }
   }
 
