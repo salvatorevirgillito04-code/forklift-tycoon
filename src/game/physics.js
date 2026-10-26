@@ -11,36 +11,58 @@ export function rectCorners(r) {
   return pts;
 }
 
-function axesOf(r) {
-  const c = Math.cos(r.yaw), s = Math.sin(r.yaw);
-  return [[c, -s], [s, c]];
-}
-
-function project(pts, ax) {
-  let min = Infinity, max = -Infinity;
-  for (const p of pts) {
-    const d = p[0] * ax[0] + p[1] * ax[1];
-    if (d < min) min = d;
-    if (d > max) max = d;
-  }
-  return [min, max];
-}
-
 // Separating Axis Theorem tra due rettangoli orientati.
-export function rectsOverlap(a, b, margin = 0) {
-  const pa = rectCorners(a), pb = rectCorners(b);
-  for (const ax of [...axesOf(a), ...axesOf(b)]) {
-    const [a0, a1] = project(pa, ax);
-    const [b0, b1] = project(pb, ax);
-    if (a1 + margin <= b0 || b1 + margin <= a0) return false;
+// Senza creare oggetti: e' chiamata centinaia di volte per fotogramma e la memoria temporanea
+// faceva fermare il gioco per la pulizia (scatti casuali sui telefoni).
+const CA = new Float64Array(8);
+const CB = new Float64Array(8);
+
+function cornersInto(r, out) {
+  const c = Math.cos(r.yaw), s = Math.sin(r.yaw);
+  const ax = r.hw * c, az = -r.hw * s; // asse X locale scalato
+  const bx = r.hd * s, bz = r.hd * c; // asse Z locale scalato
+  out[0] = r.x - ax - bx; out[1] = r.z - az - bz;
+  out[2] = r.x + ax - bx; out[3] = r.z + az - bz;
+  out[4] = r.x + ax + bx; out[5] = r.z + az + bz;
+  out[6] = r.x - ax + bx; out[7] = r.z - az + bz;
+}
+
+// true se sull'asse (ux, uz) le proiezioni dei due rettangoli sono separate
+function separated(ux, uz, margin) {
+  let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;
+  for (let i = 0; i < 8; i += 2) {
+    const da = CA[i] * ux + CA[i + 1] * uz;
+    if (da < a0) a0 = da;
+    if (da > a1) a1 = da;
+    const db = CB[i] * ux + CB[i + 1] * uz;
+    if (db < b0) b0 = db;
+    if (db > b1) b1 = db;
   }
-  return true;
+  return a1 + margin <= b0 || b1 + margin <= a0;
+}
+
+export function rectsOverlap(a, b, margin = 0) {
+  cornersInto(a, CA);
+  cornersInto(b, CB);
+  const ca = Math.cos(a.yaw), sa = Math.sin(a.yaw), cb = Math.cos(b.yaw), sb = Math.sin(b.yaw);
+  return !(separated(ca, -sa, margin) || separated(sa, ca, margin)
+    || separated(cb, -sb, margin) || separated(sb, cb, margin));
 }
 
 export const aabbToRect = (b) => ({
   x: (b.minX + b.maxX) / 2, z: (b.minZ + b.maxZ) / 2,
   hw: (b.maxX - b.minX) / 2, hd: (b.maxZ - b.minZ) / 2, yaw: 0,
 });
+
+// Come aabbToRect ma riempie un rettangolo gia' esistente (niente memoria nuova nei cicli caldi)
+export function aabbIntoRect(b, out) {
+  out.x = (b.minX + b.maxX) / 2;
+  out.z = (b.minZ + b.maxZ) / 2;
+  out.hw = (b.maxX - b.minX) / 2;
+  out.hd = (b.maxZ - b.minZ) / 2;
+  out.yaw = 0;
+  return out;
+}
 
 export const verticalOverlap = (a0, a1, b0, b1) => a0 < b1 && b0 < a1;
 

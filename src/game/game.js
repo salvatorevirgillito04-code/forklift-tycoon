@@ -41,9 +41,12 @@ export class Game {
     const scene = new Scene(this.engine);
     this.scene = scene;
     scene.clearColor = new Color4(0.62, 0.77, 0.92, 1);
-    scene.fogMode = Scene.FOGMODE_EXP2;
-    scene.fogDensity = 0.0055;
-    scene.fogColor = new Color3(0.68, 0.8, 0.92);
+    // Foschia lineare: oltre 160 m tutto e' coperto e non viene piu' disegnato (camera.maxZ),
+    // colore preso dall'orizzonte del cielo panoramico
+    scene.fogMode = Scene.FOGMODE_LINEAR;
+    scene.fogStart = 70;
+    scene.fogEnd = 160;
+    scene.fogColor = new Color3(0.62, 0.66, 0.74);
     scene.skipPointerMovePicking = true;
     scene.imageProcessingConfiguration.toneMappingEnabled = true;
     scene.imageProcessingConfiguration.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_ACES;
@@ -64,12 +67,12 @@ export class Game {
     sun.shadowMinZ = 1;
     sun.shadowMaxZ = 220;
     sun.autoUpdateExtends = false;
-    sun.shadowFrustumSize = 80;
+    sun.shadowFrustumSize = 60; // ombre entro ~30 m: mappa piu' piccola = ombre piu' nitide
     this.sun = sun;
 
     this.camera = new FreeCamera('cam', new Vector3(0, 30, -60), scene);
     this.camera.minZ = 0.05;
-    this.camera.maxZ = 600;
+    this.camera.maxZ = 170;
     this.camera.fov = 0.95;
     this.camera.inputs.clear();
 
@@ -77,7 +80,8 @@ export class Game {
     this.shadowGen = new ShadowCasters();
     this.mats = createMaterials(scene);
     // Con le mipmap: senza, il telefono campiona l'immagine intera a ogni pixel (molto lento)
-    this.sky = new PhotoDome('sky', `${TEX_URL}sky.jpg`, { resolution: 24, size: 900, generateMipMaps: true }, scene);
+    this.sky = new PhotoDome('sky', `${TEX_URL}sky.jpg`, { resolution: 24, size: 320, generateMipMaps: true }, scene);
+    this.sky.mesh.infiniteDistance = true; // segue la camera: sempre dentro la distanza di disegno
     this.sky.mesh.applyFog = false;
     this.sky.mesh.isPickable = false;
     this.sky.rotation.y = SKY_ROTATION;
@@ -236,7 +240,7 @@ export class Game {
     this.paused = p;
   }
 
-  // Risoluzione dinamica: se gli FPS scendono sotto 45 abbassa un po' la nitidezza, sopra 57 la rialza
+  // Risoluzione dinamica: se gli FPS restano sotto 52 abbassa un po' la nitidezza, sopra 58 la rialza
   // (mai sopra il massimo del livello grafico, mai sotto la risoluzione dello schermo in punti CSS).
   adaptResolution(realDt) {
     // Cambiare risoluzione costa un piccolo scatto: si decide su 2 secondi e serve conferma
@@ -244,11 +248,11 @@ export class Game {
     if (this.resTimer < 2 || this.mode !== 'play' || this.paused) return;
     this.resTimer = 0;
     const fps = this.engine.getFps();
-    this.lowCount = fps < 46 ? (this.lowCount || 0) + 1 : 0;
+    this.lowCount = fps < 52 ? (this.lowCount || 0) + 1 : 0;
     this.highCount = fps > 58 ? (this.highCount || 0) + 1 : 0;
     let next = this.scale;
-    if (this.lowCount >= 2 || fps < 36) {
-      next = Math.max(1, this.scale - (fps < 36 ? 0.25 : 0.15));
+    if (this.lowCount >= 2 || fps < 44) {
+      next = Math.max(1, this.scale - (fps < 44 ? 0.25 : 0.15));
       this.lowCount = 0;
     } else if (this.highCount >= 3) {
       next = Math.min(this.maxScale, this.scale + 0.1);
@@ -283,7 +287,7 @@ export class Game {
     this.shadowCull = (this.shadowCull || 0) - dt;
     if (this.shadowCull <= 0) {
       this.shadowCull = 0.5;
-      this.shadowGen.cull(f.x, f.z, 40);
+      this.shadowGen.cull(f.x, f.z, 28);
     }
     this.bots.update(dt, f);
     this.pallets.update(dt);
@@ -346,11 +350,15 @@ export class Game {
       const origin = base.add(new Vector3(0, 1.6, 0));
       const dir = desired.subtract(origin);
       const len = dir.length();
-      const hits = this.scene.multiPickWithRay(new Ray(origin, dir.scale(1 / len), len + 0.5), (m) => m.metadata === 'wall') || [];
-      const faded = new Set(hits.map((h) => h.pickedMesh));
-      for (const m of this.fadedWalls || []) if (!faded.has(m)) m.visibility = 1;
-      for (const m of faded) m.visibility = 0.25;
-      this.fadedWalls = faded;
+      // Muri che coprono la camera: controllati ogni 4 fotogrammi (il raggio crea molta memoria temporanea)
+      this.wallCheck = ((this.wallCheck || 0) + 1) % 4;
+      if (this.wallCheck === 0 || !this.fadedWalls) {
+        const hits = this.scene.multiPickWithRay(new Ray(origin, dir.scale(1 / len), len + 0.5), (m) => m.metadata === 'wall') || [];
+        const faded = new Set(hits.map((h) => h.pickedMesh));
+        for (const m of this.fadedWalls || []) if (!faded.has(m)) m.visibility = 1;
+        for (const m of faded) m.visibility = 0.25;
+        this.fadedWalls = faded;
+      }
       const goal = desired;
       if (!this.camPos) this.camPos = goal.clone();
       this.camPos = Vector3.Lerp(this.camPos, goal, 1 - Math.exp(-dt * 7));

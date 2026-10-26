@@ -1,5 +1,7 @@
 import { createForkliftModel, vehicleGeometry, FORK, PALLET } from './models.js';
-import { rectsOverlap, aabbToRect, verticalOverlap, toLocal, toWorld, wrapAngle } from './physics.js';
+import { rectsOverlap, aabbToRect, aabbIntoRect, verticalOverlap, toLocal, toWorld, wrapAngle } from './physics.js';
+
+const TMP_RECT = { x: 0, z: 0, hw: 0, hd: 0, yaw: 0 };
 
 const MAX_STEER = 1.05; // rad, angolo massimo ruote posteriori
 const SPREAD = [0.25, 1.0];
@@ -123,9 +125,9 @@ export class Forklift {
       if (c.y1 <= 0) continue;
       // Scarta subito gli ostacoli lontani (il muletto con forche e carico sta in ~5 m)
       if (c.maxX < x - 5 || c.minX > x + 5 || c.maxZ < z - 5 || c.minZ > z + 5) continue;
-      const r = aabbToRect(c);
+      const r = aabbIntoRect(c, TMP_RECT);
       if (verticalOverlap(0.05, this.geo.body.height, c.y0, c.y1) && rectsOverlap(body, r)) return null;
-      if (verticalOverlap(fy0, fy1, c.y0, c.y1) && forks.some((f) => rectsOverlap(f, r))) return null;
+      if (verticalOverlap(fy0, fy1, c.y0, c.y1) && (rectsOverlap(forks[0], r) || rectsOverlap(forks[1], r))) return null;
       if (verticalOverlap(forkY - 0.05, forkY + 1.32, c.y0, c.y1) && rectsOverlap(carriage, r)) return null;
       if (mastTop > this.geo.body.height && verticalOverlap(this.geo.body.height, mastTop, c.y0, c.y1) && rectsOverlap(mast, r)) return null;
       if (cRect && verticalOverlap(carried.bottom + 0.01, cTop, c.y0, c.y1) && rectsOverlap(cRect, r, 0.0)) return null;

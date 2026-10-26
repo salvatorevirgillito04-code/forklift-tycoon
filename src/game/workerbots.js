@@ -125,9 +125,19 @@ export class WorkerBots {
     }
     for (const bot of this.bots.values()) {
       if (!bot.ready) continue;
+      if (this.pickTimer === 0.5) this.lod(bot, player);
       if (bot.truck) this.driveTruck(bot, dt, player);
       this.work(bot, dt, player);
     }
+  }
+
+  // Oltre 25 m i pezzi piccoli (ruote, volante, autista, griglia...) non si notano: spenti
+  lod(bot, player) {
+    const far = Math.hypot(bot.f.x - player.x, bot.f.z - player.z) > 25;
+    if (far === bot.far) return;
+    bot.far = far;
+    bot.small ||= bot.f.model.root.getChildMeshes().filter((m) => m.getBoundingInfo().boundingSphere.radius < 0.45);
+    for (const m of bot.small) m.setEnabled(!far);
   }
 
   // Sceglie gli operai piu' vicini e crea/rimuove i loro muletti.
