@@ -7,14 +7,14 @@ import {
 // gli oggetti vicini dietro al muletto (escluso il muletto stesso).
 const TEX_W = 96; // verticale: piu' alto che largo
 const TEX_H = 144;
-const RANGE = 45; // metri disegnati nello specchietto
+const RANGE = 30; // metri disegnati nello specchietto
 const GAP_PX = 10; // distanza dalla minimappa
 const TOP_PX = 8;
 const DIST = 0.5; // distanza del pannello davanti alla camera principale
 
 export function createRearview(scene, mainCam) {
   const rtt = new RenderTargetTexture('rearviewRTT', { width: TEX_W, height: TEX_H }, scene, false);
-  rtt.refreshRate = 3; // sfasato dalle ombre (ogni 2): i due aggiornamenti cadono insieme solo ogni 6 fotogrammi
+  rtt.refreshRate = 1; // a ogni fotogramma ma piccolo e con pochi oggetti: lavoro costante, niente scatti
   rtt.renderParticles = false;
   rtt.renderSprites = false;
   rtt.wrapU = Texture.WRAP_ADDRESSMODE;
@@ -38,6 +38,7 @@ export function createRearview(scene, mainCam) {
       if (m.metadata?.rearview || !m.isEnabled() || !m.isVisible || m.visibility < 1) continue;
       if (root && m.isDescendantOf(root)) continue;
       const bs = m.getBoundingInfo().boundingSphere;
+      if (bs.radiusWorld < 0.3) continue; // pezzi piccoli: invisibili nello specchietto
       const dx = bs.centerWorld.x - camPos.x, dz = bs.centerWorld.z - camPos.z;
       const dist = Math.hypot(dx, dz) - bs.radiusWorld;
       if (dist > RANGE) continue;

@@ -117,7 +117,9 @@ export class Game {
         gen.filteringQuality = ShadowGenerator.QUALITY_LOW;
         gen.bias = 0.0015;
         gen.normalBias = 0.02;
-        gen.getShadowMap().refreshRate = 2; // ombre aggiornate a fotogrammi alterni (a 60 FPS non si nota)
+        // Aggiornate a ogni fotogramma: lavoro costante = niente scatti (a fotogrammi alterni
+        // un fotogramma era leggero e il successivo pesante, e il gioco sembrava a scatti)
+        gen.getShadowMap().refreshRate = 1;
       }
       this.shadowGen.attach(gen);
       this.shadowCull = 0; // al prossimo passo solo gli oggetti vicini
@@ -237,13 +239,21 @@ export class Game {
   // Risoluzione dinamica: se gli FPS scendono sotto 45 abbassa un po' la nitidezza, sopra 57 la rialza
   // (mai sopra il massimo del livello grafico, mai sotto la risoluzione dello schermo in punti CSS).
   adaptResolution(realDt) {
+    // Cambiare risoluzione costa un piccolo scatto: si decide su 2 secondi e serve conferma
     this.resTimer = (this.resTimer || 0) + realDt;
-    if (this.resTimer < 1 || this.mode !== 'play' || this.paused) return;
+    if (this.resTimer < 2 || this.mode !== 'play' || this.paused) return;
     this.resTimer = 0;
     const fps = this.engine.getFps();
+    this.lowCount = fps < 46 ? (this.lowCount || 0) + 1 : 0;
+    this.highCount = fps > 58 ? (this.highCount || 0) + 1 : 0;
     let next = this.scale;
-    if (fps < 45) next = Math.max(1, this.scale - (fps < 35 ? 0.25 : 0.12));
-    else if (fps > 57) next = Math.min(this.maxScale, this.scale + 0.08);
+    if (this.lowCount >= 2 || fps < 36) {
+      next = Math.max(1, this.scale - (fps < 36 ? 0.25 : 0.15));
+      this.lowCount = 0;
+    } else if (this.highCount >= 3) {
+      next = Math.min(this.maxScale, this.scale + 0.1);
+      this.highCount = 0;
+    }
     if (Math.abs(next - this.scale) > 0.01) {
       this.scale = next;
       this.engine.setHardwareScalingLevel(1 / next);
@@ -273,7 +283,7 @@ export class Game {
     this.shadowCull = (this.shadowCull || 0) - dt;
     if (this.shadowCull <= 0) {
       this.shadowCull = 0.5;
-      this.shadowGen.cull(f.x, f.z, 50);
+      this.shadowGen.cull(f.x, f.z, 40);
     }
     this.bots.update(dt, f);
     this.pallets.update(dt);

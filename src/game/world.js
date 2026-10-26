@@ -62,7 +62,10 @@ export class World {
     if (mat.metadata?.tile) worldUV(m, mat.metadata.tile);
     m.receiveShadows = receive;
     m.isPickable = fade && collide && y1 - y0 > 2.5; // muri alti: trasparenti se coprono la camera
-    if (m.isPickable) m.metadata = 'wall';
+    if (m.isPickable) {
+      m.metadata = 'wall';
+      m.wallGroup = this.group;
+    }
     if (shadow && this.shadowGen) this.shadowGen.addShadowCaster(m);
     if (shadow && !m.metadata) m.metadata = { caster: true };
     this.statics.push(m);
@@ -107,6 +110,7 @@ export class World {
     this.fence(W.maxX - f, W.maxX, W.minZ, W.maxZ);
 
     WAREHOUSES.forEach((wh) => this.buildPlot(wh));
+    this.group = undefined;
     this.buildDecor();
   }
 
@@ -128,6 +132,7 @@ export class World {
 
   buildPlot(wh) {
     const { mats } = this;
+    this.group = wh.id; // le pareti di questo magazzino verranno unite in un'unica mesh
     const B = PLOT.building;
     const D = PLOT.door;
     const t = 0.35;
@@ -282,6 +287,25 @@ export class World {
       if (m.isDisposed() || m.isPickable || keep.has(m) || !m.material || m.parent) continue;
       if (!groups.has(m.material)) groups.set(m.material, []);
       groups.get(m.material).push(m);
+    }
+    // Pareti alte (che diventano trasparenti davanti alla camera): unite per magazzino e materiale
+    const walls = new Map();
+    for (const m of this.statics) {
+      if (m.isDisposed() || m.metadata !== 'wall' || keep.has(m) || m.wallGroup === undefined) continue;
+      const k = `${m.wallGroup}|${m.material.uniqueId}`;
+      if (!walls.has(k)) walls.set(k, []);
+      walls.get(k).push(m);
+    }
+    for (const list of walls.values()) {
+      if (list.length < 2) continue;
+      const mat = list[0].material;
+      const out = Mesh.MergeMeshes(list, true, true);
+      if (!out) continue;
+      out.material = mat;
+      out.isPickable = true;
+      out.metadata = 'wall';
+      this.shadowGen?.addShadowCaster(out);
+      this.statics.push(out);
     }
     const merged = [];
     for (const [mat, list] of groups) {

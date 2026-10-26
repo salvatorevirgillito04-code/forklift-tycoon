@@ -468,6 +468,7 @@ export async function createTruckModel(scene, mats, color = '#d63a2f') {
 
 // Pallet EPAL a 4 vie: una base in legno condivisa + un carico scalabile.
 let palletTemplate = null;
+let loadTemplates = null;
 export async function createPalletModel(scene, mats, { loadHeight = 1, fragile = false } = {}) {
   const glb = await tryLoadGLB(scene, 'pallet.glb');
   const root = new TransformNode('pallet', scene);
@@ -489,13 +490,21 @@ export async function createPalletModel(scene, mats, { loadHeight = 1, fragile =
     }
     palletTemplate = Mesh.MergeMeshes(parts, true, true);
     palletTemplate.name = 'palletTemplate';
-    palletTemplate.setEnabled(false);
+    // Modelli "sorgente" delle istanze: tenuti sotto terra, li disegnano solo le istanze
+    loadTemplates = [mats.cardboard, mats.fragileBox].map((mat) => box(scene, 'loadTemplate', 1.1, 1, 1.1, new Vector3(0, 0, 0), mat));
+    for (const t of [palletTemplate, ...loadTemplates]) {
+      t.position.y = -500;
+      t.isPickable = false;
+      t.metadata = { rearview: true };
+    }
   }
-  const base = palletTemplate.clone('palletBase', root);
-  base.setEnabled(true);
+  // Istanze: tutti i pallet (e tutti i carichi) del gioco in un'unica chiamata di disegno
+  const base = palletTemplate.createInstance('palletBase');
+  base.parent = root;
   base.position.set(0, 0, 0);
-  const boxes = box(scene, 'load', 1.1, loadHeight, 1.1, new Vector3(0, PALLET.height + loadHeight / 2, 0),
-    fragile ? mats.fragileBox : mats.cardboard, root);
-  boxes.scaling.set(1, 1, 1);
+  const load = loadTemplates[fragile ? 1 : 0].createInstance('load');
+  load.parent = root;
+  load.scaling.y = loadHeight;
+  load.position.set(0, PALLET.height + loadHeight / 2, 0);
   return root;
 }

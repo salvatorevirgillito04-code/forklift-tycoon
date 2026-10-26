@@ -23,6 +23,8 @@ export class ShadowCasters {
       if (!m.isWorldMatrixFrozen) m.computeWorldMatrix(true); // posizione aggiornata (muletti e pallet si muovono)
       const s = m.getBoundingInfo().boundingSphere;
       const c = s.centerWorld;
+      // i pezzi piccoli (ruote, volante, bulloni) non si notano nelle ombre: si risparmiano disegni
+      if (s.radiusWorld < 0.35) continue;
       if (Math.hypot(c.x - x, c.z - z) - s.radiusWorld < radius) list.push(m);
     }
   }
