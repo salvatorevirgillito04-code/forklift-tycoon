@@ -103,21 +103,21 @@ export class Game {
     const dpr = window.devicePixelRatio || 1;
     // Risoluzione: Media e Alta vicine a quella reale dello schermo (immagine nitida);
     // il costo e' compensato da materiali leggeri e ombre solo vicino al muletto
-    const scale = { high: Math.min(dpr, 2), medium: Math.min(dpr, 1.6), low: 1 }[q] || 1;
-    this.engine.setHardwareScalingLevel(1 / scale);
+    this.maxScale = { high: Math.min(dpr, 2), medium: Math.min(dpr, 1.6), low: 1 }[q] || 1;
+    this.scale = this.maxScale;
+    this.engine.setHardwareScalingLevel(1 / this.scale);
     const mode = q === 'low' || !dev.shadows ? null : q;
     if (mode !== this.shadowMode) {
       this.shadowMode = mode;
       let gen = null;
       if (mode) {
-        // Una sola mappa d'ombra attorno al muletto: Alta piu' definita e aggiornata sempre,
-        // Media piu' leggera e aggiornata a fotogrammi alterni
+        // Una sola mappa d'ombra attorno al muletto: Alta piu' definita, Media piu' leggera
         gen = new ShadowGenerator(mode === 'high' ? 2048 : 1024, this.sun);
         gen.usePercentageCloserFiltering = true;
         gen.filteringQuality = ShadowGenerator.QUALITY_LOW;
         gen.bias = 0.0015;
         gen.normalBias = 0.02;
-        gen.getShadowMap().refreshRate = mode === 'high' ? 1 : 2;
+        gen.getShadowMap().refreshRate = 2; // ombre aggiornate a fotogrammi alterni (a 60 FPS non si nota)
       }
       this.shadowGen.attach(gen);
       this.shadowCull = 0; // al prossimo passo solo gli oggetti vicini
@@ -234,7 +234,25 @@ export class Game {
     this.paused = p;
   }
 
+  // Risoluzione dinamica: se gli FPS scendono sotto 45 abbassa un po' la nitidezza, sopra 57 la rialza
+  // (mai sopra il massimo del livello grafico, mai sotto la risoluzione dello schermo in punti CSS).
+  adaptResolution(realDt) {
+    this.resTimer = (this.resTimer || 0) + realDt;
+    if (this.resTimer < 1 || this.mode !== 'play' || this.paused) return;
+    this.resTimer = 0;
+    const fps = this.engine.getFps();
+    let next = this.scale;
+    if (fps < 45) next = Math.max(1, this.scale - (fps < 35 ? 0.25 : 0.12));
+    else if (fps > 57) next = Math.min(this.maxScale, this.scale + 0.08);
+    if (Math.abs(next - this.scale) > 0.01) {
+      this.scale = next;
+      this.engine.setHardwareScalingLevel(1 / next);
+    }
+  }
+
   frame() {
+    const realDt = Math.min(0.25, this.engine.getDeltaTime() / 1000);
+    this.adaptResolution(realDt);
     const dt = Math.min(0.05, this.engine.getDeltaTime() / 1000) * (this.timeScale || 1);
     try {
       if (this.mode === 'play' && !this.paused) this.step(dt);
@@ -255,7 +273,7 @@ export class Game {
     this.shadowCull = (this.shadowCull || 0) - dt;
     if (this.shadowCull <= 0) {
       this.shadowCull = 0.5;
-      this.shadowGen.cull(f.x, f.z, 70);
+      this.shadowGen.cull(f.x, f.z, 50);
     }
     this.bots.update(dt, f);
     this.pallets.update(dt);

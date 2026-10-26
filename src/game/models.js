@@ -29,6 +29,34 @@ function cyl(scene, name, diameter, height, pos, mat, parent, tess = 20) {
 
 // Ruota: gomma con tasselli, cerchio con bulloni e mozzo, unita in un'unica mesh.
 // node.spin e' il nodo che ruota col movimento.
+// Unisce dei pezzi in UNA mesh per materiale, figlia di 'parent' (vertici riportati nelle sue coordinate).
+// Una mesh per materiale = una sola chiamata di disegno; l'unione "multi-materiale" di Babylon
+// invece tiene un sotto-pezzo per ogni pezzo originale e non fa risparmiare nulla.
+export function mergeByMaterial(pieces, parent, name) {
+  const groups = new Map();
+  for (const m of pieces) {
+    if (m.isDisposed() || !m.material) continue;
+    if (!groups.has(m.material)) groups.set(m.material, []);
+    groups.get(m.material).push(m);
+  }
+  parent.computeWorldMatrix(true);
+  const inv = parent.getWorldMatrix().clone().invert();
+  const out = [];
+  for (const [mat, list] of groups) {
+    list.forEach((m) => m.computeWorldMatrix(true));
+    const merged = list.length > 1 ? Mesh.MergeMeshes(list, true, true) : list[0];
+    if (!merged) continue;
+    if (list.length > 1) {
+      merged.bakeTransformIntoVertices(inv);
+      merged.parent = parent;
+      merged.material = mat;
+    }
+    merged.name = `${name}_${mat.name}`;
+    out.push(merged);
+  }
+  return out;
+}
+
 function wheel(scene, name, radius, width, pos, mats, parent, rimMat = mats.steel) {
   const node = new TransformNode(name, scene);
   node.parent = parent;
@@ -56,26 +84,19 @@ function wheel(scene, name, radius, width, pos, mats, parent, rimMat = mats.stee
   rim.rotation.z = Math.PI / 2;
   pieces.push(rim);
   for (const side of [-1, 1]) {
-    const hub = cyl(scene, name + 'Hub', radius * 0.42, 0.03, new Vector3(side * (width / 2 + 0.02), 0, 0), mats.darkSteel, spin, 14);
+    // Mozzo e bulloni con il materiale del cerchio: 2 materiali per ruota = 2 sole chiamate di disegno
+    const hub = cyl(scene, name + 'Hub', radius * 0.42, 0.03, new Vector3(side * (width / 2 + 0.02), 0, 0), rimMat, spin, 14);
     hub.rotation.z = Math.PI / 2;
     pieces.push(hub);
     for (let b = 0; b < 6; b++) {
       const a = (b / 6) * Math.PI * 2;
       const bolt = cyl(scene, name + 'Bolt', 0.035, 0.03,
-        new Vector3(side * (width / 2 + 0.025), Math.cos(a) * radius * 0.3, Math.sin(a) * radius * 0.3), mats.chrome, spin, 6);
+        new Vector3(side * (width / 2 + 0.025), Math.cos(a) * radius * 0.3, Math.sin(a) * radius * 0.3), rimMat, spin, 6);
       bolt.rotation.z = Math.PI / 2;
       pieces.push(bolt);
     }
   }
-  spin.computeWorldMatrix(true);
-  const merged = Mesh.MergeMeshes(pieces, true, true, undefined, false, true);
-  if (merged) {
-    // MergeMeshes porta i vertici in coordinate mondo: li riporto in quelle del nodo che ruota
-    merged.name = name + 'Wheel';
-    const inv = spin.getWorldMatrix().clone().invert();
-    merged.bakeTransformIntoVertices(inv);
-    merged.parent = spin;
-  }
+  mergeByMaterial(pieces, spin, name + 'Wheel');
   return node;
 }
 
@@ -295,13 +316,8 @@ export async function createForkliftModel(scene, mats, vehicle) {
 
   // Parti fisse del corpo unite in un'unica mesh (piu' leggera da disegnare)
   if (parts.length > 1) {
-    root.computeWorldMatrix(true);
-    body.computeWorldMatrix(true);
-    const merged = Mesh.MergeMeshes(parts.filter((m) => !m.isDisposed()), true, true, undefined, false, true);
-    if (merged) {
-      merged.name = 'forkliftBodyMerged';
-      merged.parent = root; // vertici gia' in coordinate del muletto (scala inclusa)
-    }
+    // le parti con cabShell restano separate (si nascondono in prima persona)
+    mergeByMaterial(parts.filter((m) => !m.metadata?.cabShell), root, 'forkliftBody');
   }
 
   // Ruote: anteriori motrici fisse, posteriori sterzanti
@@ -396,15 +412,7 @@ export async function createForkliftModel(scene, mats, vehicle) {
   for (const node of [outer, middle?.getChildren()[0], inner.getChildren()[0], carriage, forkL, forkR, steerSpin]) {
     if (!node) continue;
     const parts = node.getChildMeshes(true).filter((m) => !m.metadata?.cabShell);
-    if (parts.length < 2) continue;
-    root.computeWorldMatrix(true);
-    const inv = node.computeWorldMatrix(true).clone().invert();
-    const merged = Mesh.MergeMeshes(parts, true, true, undefined, false, true);
-    if (merged) {
-      merged.name = node.name + 'Merged';
-      merged.bakeTransformIntoVertices(inv);
-      merged.parent = node;
-    }
+    if (parts.length > 1) mergeByMaterial(parts, node, node.name);
   }
 
   const all = root.getChildMeshes();
@@ -454,6 +462,7 @@ export async function createTruckModel(scene, mats, color = '#d63a2f') {
       w.rotation.y = Math.PI / 2;
     }
   }
+  mergeByMaterial(root.getChildMeshes(), root, 'truck');
   return root;
 }
 
@@ -488,7 +497,5 @@ export async function createPalletModel(scene, mats, { loadHeight = 1, fragile =
   const boxes = box(scene, 'load', 1.1, loadHeight, 1.1, new Vector3(0, PALLET.height + loadHeight / 2, 0),
     fragile ? mats.fragileBox : mats.cardboard, root);
   boxes.scaling.set(1, 1, 1);
-  const wrap = box(scene, 'wrap', 1.13, loadHeight + 0.03, 1.13, new Vector3(0, PALLET.height + loadHeight / 2, 0), mats.wrap, root);
-  wrap.isPickable = false;
   return root;
 }

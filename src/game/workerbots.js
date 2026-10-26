@@ -1,6 +1,6 @@
 import { MeshBuilder, TransformNode, Vector3 } from '@babylonjs/core';
 import { Forklift } from './forklift.js';
-import { createPalletModel, createTruckModel, PALLET, TRUCK } from './models.js';
+import { createPalletModel, createTruckModel, mergeByMaterial, PALLET, TRUCK } from './models.js';
 import { plotToWorld } from './world.js';
 import { rectsOverlap, toWorld, wrapAngle } from './physics.js';
 import { WAREHOUSES, vehicleById } from '../data.js';
@@ -343,6 +343,7 @@ export class WorkerBots {
     part(MeshBuilder.CreateSphere('head', { diameter: 0.24, segments: 8 }, scene), mats.paint(a.skin || '#e8b892'), 0, -0.04, 0);
     const helmet = part(MeshBuilder.CreateSphere('helmet', { diameter: 0.28, segments: 8, slice: 0.5 }, scene), mats.paint(a.helmet || '#f2c200'), 0, 0.0, 0);
     helmet.scaling.y = 0.85;
+    mergeByMaterial(d.getChildMeshes(), d, 'driver').forEach((m) => this.shadowGen?.addShadowCaster(m));
   }
 
   remove(id) {

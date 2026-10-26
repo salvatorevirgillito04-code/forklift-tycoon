@@ -14,7 +14,7 @@ const DIST = 0.5; // distanza del pannello davanti alla camera principale
 
 export function createRearview(scene, mainCam) {
   const rtt = new RenderTargetTexture('rearviewRTT', { width: TEX_W, height: TEX_H }, scene, false);
-  rtt.refreshRate = 2;
+  rtt.refreshRate = 3; // sfasato dalle ombre (ogni 2): i due aggiornamenti cadono insieme solo ogni 6 fotogrammi
   rtt.renderParticles = false;
   rtt.renderSprites = false;
   rtt.wrapU = Texture.WRAP_ADDRESSMODE;

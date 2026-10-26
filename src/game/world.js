@@ -55,13 +55,13 @@ export class World {
     this.build();
   }
 
-  addBox(name, minX, maxX, y0, y1, minZ, maxZ, mat, { collide = true, shadow = true, receive = false, tag = '' } = {}) {
+  addBox(name, minX, maxX, y0, y1, minZ, maxZ, mat, { collide = true, shadow = true, receive = false, tag = '', fade = true } = {}) {
     const m = MeshBuilder.CreateBox(name, { width: maxX - minX, height: y1 - y0, depth: maxZ - minZ }, this.scene);
     m.position.set((minX + maxX) / 2, (y0 + y1) / 2, (minZ + maxZ) / 2);
     m.material = mat;
     if (mat.metadata?.tile) worldUV(m, mat.metadata.tile);
     m.receiveShadows = receive;
-    m.isPickable = collide && y1 - y0 > 2.5;
+    m.isPickable = fade && collide && y1 - y0 > 2.5; // muri alti: trasparenti se coprono la camera
     if (m.isPickable) m.metadata = 'wall';
     if (shadow && this.shadowGen) this.shadowGen.addShadowCaster(m);
     if (shadow && !m.metadata) m.metadata = { caster: true };
@@ -115,9 +115,13 @@ export class World {
     this.addBox('fenceBase', minX, maxX, 0, 0.3, minZ, maxZ, mats.concrete, { shadow: false });
     const mesh = MeshBuilder.CreateBox('fenceMesh', { width: maxX - minX, height: 1.9, depth: Math.max(0.03, maxZ - minZ) }, this.scene);
     mesh.position.set((minX + maxX) / 2, 1.25, (minZ + maxZ) / 2);
-    const mat = mats.fence.clone('fenceMat');
-    mat.alpha = 0.35;
-    mesh.material = mat;
+    // Un solo materiale per tutte le recinzioni: vengono unite in un'unica mesh
+    if (!mats.fenceGlass) {
+      mats.fenceGlass = mats.fence.clone('fenceMat');
+      mats.fenceGlass.alpha = 0.35;
+    }
+    mesh.material = mats.fenceGlass;
+    mesh.isPickable = false;
     this.statics.push(mesh);
     this.colliders.push({ minX, maxX, minZ, maxZ, y0: 0, y1: 2.2, tag: 'fence' });
   }
@@ -211,7 +215,7 @@ export class World {
     // Lampioni lungo la strada
     for (let x = WORLD.minX + 10; x < WORLD.maxX; x += 22) {
       for (const z of [-7.6, 7.6]) {
-        this.addBox('lampPost', x - 0.1, x + 0.1, 0, 7, z - 0.1, z + 0.1, mats.darkSteel, { shadow: false });
+        this.addBox('lampPost', x - 0.1, x + 0.1, 0, 7, z - 0.1, z + 0.1, mats.darkSteel, { shadow: false, fade: false });
         const dir = z > 0 ? -1 : 1;
         this.addBox('lampArm', x - 0.06, x + 0.06, 6.9, 7.0, Math.min(z, z + dir * 1.6), Math.max(z, z + dir * 1.6), mats.darkSteel, { shadow: false });
         this.addBox('lampHead', x - 0.25, x + 0.25, 6.75, 6.9, z + dir * 1.4 - 0.4, z + dir * 1.4 + 0.4, mats.light, { shadow: false });
@@ -223,8 +227,8 @@ export class World {
       const [x, z] = plotToWorld(wh, -18.5, 40);
       const c = colors[i % colors.length];
       const r = { minX: x - 1.25, maxX: x + 1.25, minZ: z - 6, maxZ: z + 6 };
-      this.addBox('container', r.minX, r.maxX, 0, 2.6, r.minZ, r.maxZ, mats.container(c));
-      if (i % 3 === 0) this.addBox('container2', r.minX, r.maxX, 2.6, 5.2, r.minZ + 0.5, r.maxZ - 0.5, mats.container(colors[(i + 2) % 5]));
+      this.addBox('container', r.minX, r.maxX, 0, 2.6, r.minZ, r.maxZ, mats.container(c), { fade: false });
+      if (i % 3 === 0) this.addBox('container2', r.minX, r.maxX, 2.6, 5.2, r.minZ + 0.5, r.maxZ - 0.5, mats.container(colors[(i + 2) % 5]), { fade: false });
       const [tx, tz] = plotToWorld(wh, 18, 60);
       this.tree(tx, tz);
     });
