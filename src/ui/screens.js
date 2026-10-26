@@ -546,7 +546,7 @@ function openDevMenu(app, inGame, closeSettings) {
     <div class="setting"><span>${t('workersTime')}</span>
       <div class="segmented">${[1, 8, 24].map((h) => `<button data-hours="${h}">+${h} h</button>`).join('')}</div></div>
     <label class="setting check"><span>${t('perfOverlay')}</span><input type="checkbox" data-perf ${g.perfEl ? 'checked' : ''}></label>
-    ${['sky', 'shadows', 'orm'].map((k) => `<label class="setting check"><span>${t('devToggle_' + k)}</span>
+    ${['sky', 'shadows'].map((k) => `<label class="setting check"><span>${t('devToggle_' + k)}</span>
       <input type="checkbox" data-toggle="${k}" ${(g.devToggles?.[k] ?? true) ? 'checked' : ''}></label>`).join('')}
     <div class="setting"><span>${t('timeSpeed')}</span>
       <div class="segmented">${speeds.map((x) => `<button class="${(g.timeScale || 1) === x ? 'on' : ''}" data-speed="${x}">×${x}</button>`).join('')}</div></div>
@@ -569,7 +569,7 @@ function openDevMenu(app, inGame, closeSettings) {
   }));
   el.querySelector('[data-perf]').addEventListener('change', (e) => g.setPerfOverlay(e.target.checked));
   el.querySelectorAll('[data-toggle]').forEach((c) => c.addEventListener('change', () => {
-    const toggles = { sky: true, shadows: true, orm: true, ...g.devToggles };
+    const toggles = { sky: true, shadows: true, ...g.devToggles };
     toggles[c.dataset.toggle] = c.checked;
     g.setDevToggles(toggles);
   }));

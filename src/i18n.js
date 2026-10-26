@@ -1,6 +1,6 @@
 const STRINGS = {
   it: {
-    perfOverlay: 'Contatore FPS', devToggle_sky: 'Cielo panoramico', devToggle_shadows: 'Ombre', devToggle_orm: 'Texture di ruvidità e rilievo',
+    perfOverlay: 'Contatore FPS', devToggle_sky: 'Cielo panoramico', devToggle_shadows: 'Ombre',
     loginDone: 'Accesso effettuato',
     devMenu: 'Menu sviluppatore', devOn: 'Modalità sviluppatore attiva', playerLevel: 'Livello giocatore', apply: 'Applica',
     workersTime: 'Fai lavorare gli operai', timeSpeed: 'Velocità del tempo', completeContract: 'Completa contratto', teleport: 'Teletrasporto',
@@ -56,7 +56,7 @@ const STRINGS = {
     starter: 'Mezzo iniziale', rewardMult: 'Paga x{n}',
   },
   es: {
-    perfOverlay: 'Contador FPS', devToggle_sky: 'Cielo panorámico', devToggle_shadows: 'Sombras', devToggle_orm: 'Texturas de rugosidad y relieve',
+    perfOverlay: 'Contador FPS', devToggle_sky: 'Cielo panorámico', devToggle_shadows: 'Sombras',
     loginDone: 'Sesión iniciada',
     devMenu: 'Menú desarrollador', devOn: 'Modo desarrollador activo', playerLevel: 'Nivel del jugador', apply: 'Aplicar',
     workersTime: 'Hacer trabajar a los operarios', timeSpeed: 'Velocidad del tiempo', completeContract: 'Completar contrato', teleport: 'Teletransporte',
@@ -112,7 +112,7 @@ const STRINGS = {
     starter: 'Vehículo inicial', rewardMult: 'Pago x{n}',
   },
   en: {
-    perfOverlay: 'FPS counter', devToggle_sky: 'Panoramic sky', devToggle_shadows: 'Shadows', devToggle_orm: 'Roughness and relief textures',
+    perfOverlay: 'FPS counter', devToggle_sky: 'Panoramic sky', devToggle_shadows: 'Shadows',
     loginDone: 'Signed in',
     devMenu: 'Developer menu', devOn: 'Developer mode on', playerLevel: 'Player level', apply: 'Apply',
     workersTime: 'Let workers work', timeSpeed: 'Time speed', completeContract: 'Complete contract', teleport: 'Teleport',

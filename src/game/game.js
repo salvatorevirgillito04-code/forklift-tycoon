@@ -4,7 +4,7 @@ import {
   SceneInstrumentation,
 } from '@babylonjs/core';
 import * as Sentry from '@sentry/browser';
-import { createMaterials, setMaterialDetail } from './materials.js';
+import { createMaterials } from './materials.js';
 import { ShadowCasters } from './shadows.js';
 import { World } from './world.js';
 import { PalletManager } from './pallets.js';
@@ -37,7 +37,7 @@ export class Game {
 
   async init(settings) {
     this.settings = settings;
-    this.engine = new Engine(this.canvas, true, { stencil: true, preserveDrawingBuffer: false, powerPreference: 'high-performance' }, true);
+    this.engine = new Engine(this.canvas, true, { stencil: false, preserveDrawingBuffer: false, powerPreference: 'high-performance' }, true);
     const scene = new Scene(this.engine);
     this.scene = scene;
     scene.clearColor = new Color4(0.62, 0.77, 0.92, 1);
@@ -95,14 +95,15 @@ export class Game {
     this.engine.runRenderLoop(() => this.frame());
   }
 
-  // Bassa: come prima (niente ombre, niente rilievi); Media: texture complete e ombre;
-  // Alta: ombre piu' definite, rilievi delle superfici e piu' pixel.
+  // Bassa: niente ombre ne' cielo, risoluzione ridotta; Media: nitida, ombre leggere;
+  // Alta: piu' nitida, ombre piu' definite.
   applyQuality(q) {
     this.quality = q;
-    const dev = this.devToggles || { sky: true, shadows: true, orm: true };
+    const dev = this.devToggles || { sky: true, shadows: true };
     const dpr = window.devicePixelRatio || 1;
-    // Sui telefoni con densita' di pixel alta non serve disegnare ogni pixel fisico
-    const scale = { high: Math.min(dpr, 1.25), medium: 1, low: 1 }[q] || 1;
+    // Risoluzione: Media e Alta vicine a quella reale dello schermo (immagine nitida);
+    // il costo e' compensato da materiali leggeri e ombre solo vicino al muletto
+    const scale = { high: Math.min(dpr, 2), medium: Math.min(dpr, 1.6), low: 1 }[q] || 1;
     this.engine.setHardwareScalingLevel(1 / scale);
     const mode = q === 'low' || !dev.shadows ? null : q;
     if (mode !== this.shadowMode) {
@@ -122,7 +123,6 @@ export class Game {
       this.shadowCull = 0; // al prossimo passo solo gli oggetti vicini
     }
     this.sun.shadowEnabled = !!mode;
-    setMaterialDetail(this.scene, q, dev.orm);
     this.sky.setEnabled(q !== 'low' && dev.sky);
   }
 

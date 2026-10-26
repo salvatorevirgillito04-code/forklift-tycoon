@@ -39,29 +39,14 @@ function pbr(scene, name, { color = '#ffffff', metal = 0, rough = 0.8, tex = nul
   return m;
 }
 
-// Materiale PBR con texture vere (CC0, Poly Haven / ambientCG): colore, rilievo (normal map)
-// e ORM (occlusione R, ruvidita' G, metallo B). tile = metri coperti da una ripetizione (UV calcolati sul mondo).
-function texturedPbr(scene, name, key, { color = '#ffffff', tile = 0, bump = 1, lowMetal = 0, lowRough = 0.85 } = {}) {
-  const load = (suffix) => {
-    const t = new Texture(`${TEX_URL}${key}_${suffix}.jpg`, scene);
-    t.anisotropicFilteringLevel = 4;
-    return t;
-  };
-  const m = new PBRMaterial(name, scene);
-  m.albedoTexture = load('col');
-  m.albedoColor = Color3.FromHexString(color).toLinearSpace();
-  const nor = load('nor');
-  nor.level = bump;
-  const orm = load('orm');
-  m.metallic = 1;
-  m.roughness = 1;
-  m.useAmbientOcclusionFromMetallicTextureRed = true;
-  m.useRoughnessFromMetallicTextureGreen = true;
-  m.useMetallnessFromMetallicTextureBlue = true;
-  // Normal map in convenzione OpenGL su scena "mano sinistra" (come fa il loader glTF)
-  m.invertNormalMapX = true;
-  m.environmentIntensity = 0.6;
-  m.metadata = { tile, nor, orm, lowMetal, lowRough };
+// Materiale PBR con texture fotografica (CC0, Poly Haven / ambientCG) e ruvidita' fissa:
+// niente normal map / ORM, che sul telefono costano molto e si notano poco.
+// tile = metri coperti da una ripetizione (UV calcolati sul mondo).
+function texturedPbr(scene, name, key, { color = '#ffffff', tile = 0, metal = 0, rough = 0.85 } = {}) {
+  const tex = new Texture(`${TEX_URL}${key}_col.jpg`, scene);
+  tex.anisotropicFilteringLevel = 4;
+  const m = pbr(scene, name, { color, metal, rough, tex });
+  m.metadata = { tile };
   return m;
 }
 
@@ -85,11 +70,11 @@ export function createMaterials(scene) {
     chain,
     chrome: pbr(scene, 'chrome', { color: '#d9dde2', metal: 1, rough: 0.12 }),
     display: pbr(scene, 'display', { color: '#3b5f3b', rough: 0.3, emissive: '#2f6b3a' }),
-    asphalt: texturedPbr(scene, 'asphalt', 'asphalt', { tile: 5 }),
+    asphalt: texturedPbr(scene, 'asphalt', 'asphalt', { tile: 5, rough: 0.95 }),
     concrete: texturedPbr(scene, 'concrete', 'concrete', { tile: 4 }),
     floor: texturedPbr(scene, 'floor', 'floor', { tile: 6 }),
     grass: pbr(scene, 'grass', { color: '#ffffff', rough: 1, tex: grassTex }),
-    metalWall: texturedPbr(scene, 'metalWall', 'corrugated', { tile: 3, color: '#dfe5ea', lowMetal: 0.5, lowRough: 0.5 }),
+    metalWall: texturedPbr(scene, 'metalWall', 'corrugated', { tile: 3, color: '#dfe5ea', metal: 0.5, rough: 0.5 }),
     roof: pbr(scene, 'roof', { color: '#6b7178', metal: 0.6, rough: 0.55 }),
     trim: pbr(scene, 'trim', { color: '#25507a', metal: 0.4, rough: 0.5 }),
     doorClosed: pbr(scene, 'doorClosed', { color: '#8a9096', metal: 0.6, rough: 0.45 }),
@@ -99,7 +84,7 @@ export function createMaterials(scene) {
     rubber: pbr(scene, 'rubber', { color: '#161616', rough: 0.95 }),
     glass: pbr(scene, 'glass', { color: '#9fc4d8', metal: 0.1, rough: 0.05, alpha: 0.35 }),
     seat: pbr(scene, 'seat', { color: '#1e1e1e', rough: 0.7 }),
-    wood: texturedPbr(scene, 'wood', 'wood', { bump: 0.6 }),
+    wood: texturedPbr(scene, 'wood', 'wood'),
     cardboard: texturedPbr(scene, 'cardboard', 'cardboard'),
     fragileBox: texturedPbr(scene, 'fragileBox', 'cardboard', { color: '#e0605a' }),
     wrap: pbr(scene, 'wrap', { color: '#e8eef2', metal: 0, rough: 0.25, alpha: 0.55 }),
@@ -140,24 +125,6 @@ export function createMaterials(scene) {
       return m;
     }),
   };
-}
-
-// Bassa: solo colore (shader leggeri); Media: anche ruvidita'/occlusione; Alta: anche i rilievi (normal map).
-export function setMaterialDetail(scene, quality, orm = true) {
-  const full = quality !== 'low' && orm;
-  for (const m of scene.materials) {
-    const md = m.metadata;
-    if (!md?.nor) continue;
-    m.bumpTexture = quality === 'high' && orm ? md.nor : null;
-    m.metallicTexture = full ? md.orm : null;
-    if (!full) {
-      m.metallic = md.lowMetal ?? 0.2;
-      m.roughness = md.lowRough ?? 0.8;
-    } else {
-      m.metallic = 1;
-      m.roughness = 1;
-    }
-  }
 }
 
 function memo(fn) {
