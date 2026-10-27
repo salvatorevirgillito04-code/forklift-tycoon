@@ -88,7 +88,7 @@ const app = {
     bindMap(el, () => {
       this.game.setOwnedWarehouses(save.warehouses);
       this.game.hud?.setCoins(save.coins);
-    }, { x: f.x, z: f.z });
+    }, { x: f.x, z: f.z, yaw: f.yaw });
   },
 
   finishMission(outcome, result, contract) {

@@ -365,7 +365,7 @@ function openWorkerVehicle(workerId, onDone) {
 
 // ---------- MAPPA / MAGAZZINI ----------
 export function mapHtml() {
-  return `<div class="map-wrap"><canvas class="map-canvas"></canvas><div class="map-pins"></div></div>`;
+  return `<div class="map-wrap" style="--map-ar:${(MAP_W / MAP_H).toFixed(4)}"><canvas class="map-canvas"></canvas><div class="map-pins"></div></div>`;
 }
 
 export function bindMap(root, onChange, playerPos = null) {
@@ -378,18 +378,30 @@ export function bindMap(root, onChange, playerPos = null) {
     const ctx = canvas.getContext('2d');
     drawStaticMap(ctx, scale, save.warehouses);
     if (playerPos) {
+      // Freccia del muletto: punta dove guarda (nord in alto, come la minimappa)
       const [x, y] = worldToMap(playerPos.x, playerPos.z, scale);
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(playerPos.yaw || 0);
+      ctx.scale(1.5, 1.5);
       ctx.fillStyle = '#35d07f';
       ctx.strokeStyle = '#fff';
       ctx.lineWidth = 3;
+      ctx.lineJoin = 'round';
       ctx.beginPath();
-      ctx.arc(x, y, 9, 0, Math.PI * 2);
+      ctx.moveTo(0, -16);
+      ctx.lineTo(11, 12);
+      ctx.lineTo(0, 6);
+      ctx.lineTo(-11, 12);
+      ctx.closePath();
       ctx.fill();
       ctx.stroke();
+      ctx.restore();
     }
     pins.innerHTML = WAREHOUSES.map((wh) => {
       const owned = save.warehouses.includes(wh.id);
-      const [x, z] = plotToWorld(wh, 0, PLOT.yard[0] + 8);
+      // etichetta sopra il capannone: il piazzale (dove sta il muletto) resta libero
+      const [x, z] = plotToWorld(wh, 0, (PLOT.building.w[0] + PLOT.building.w[1]) / 2);
       const [px, py] = worldToMap(x, z, 1);
       return `<button class="map-pin ${owned ? 'owned' : ''}" data-wh="${wh.id}"
           style="left:${(px / MAP_W) * 100}%;top:${(py / MAP_H) * 100}%">

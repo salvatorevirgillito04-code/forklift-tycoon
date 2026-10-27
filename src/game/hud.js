@@ -65,15 +65,11 @@ export class Hud {
         <button class="round-btn small" data-act="settings" aria-label="${t('settings')}">${ICONS.gear}</button>
       </div>
       <button class="hud-cam" data-act="camera" aria-label="${t('view')}">${ICONS.camera}</button>
-      <div class="task-panel" role="button" aria-label="${t('tasks')}">
+      <div class="task-panel">
         <div class="task-stats">
           <div class="task-stat" data-stat="time">${ICONS.clock}<b class="timer">--:--</b></div>
           <div class="task-stat" data-stat="pallets">${ICONS.pallets}<b class="pallets">0/0</b></div>
           <div class="task-stat" data-stat="drops">${ICONS.drop}<b class="drops">0</b></div>
-        </div>
-        <div class="task-box">
-          <div class="task-title">${t('tasks')}<span class="task-chevron">▾</span></div>
-          <ul class="task-list"></ul>
         </div>
       </div>
       <div class="gauges">
@@ -83,18 +79,10 @@ export class Hud {
     root.querySelector('[data-act="settings"]').addEventListener('click', onSettings);
     root.querySelector('[data-act="map"]').addEventListener('click', onMap);
     root.querySelector('[data-act="camera"]').addEventListener('click', onCamera);
-    // Un tocco sul pannello lo comprime/espande; la scelta viene ricordata
-    const panel = root.querySelector('.task-panel');
-    try { panel.classList.toggle('collapsed', localStorage.getItem('ft-tasks-collapsed') === '1'); } catch { /* storage bloccato */ }
-    panel.addEventListener('click', () => {
-      const collapsed = panel.classList.toggle('collapsed');
-      try { localStorage.setItem('ft-tasks-collapsed', collapsed ? '1' : '0'); } catch { /* storage bloccato */ }
-    });
     this.canvas = root.querySelector('.minimap canvas');
     this.ctx = this.canvas.getContext('2d');
     this.els = {
       panel: root.querySelector('.task-panel'),
-      tasks: root.querySelector('.task-list'),
       timer: root.querySelector('.timer'),
       pallets: root.querySelector('.pallets'),
       drops: root.querySelector('.drops'),
@@ -126,15 +114,6 @@ export class Hud {
     this.contract = contract;
     const timed = contract && contract.type !== 'free';
     this.els.panel.classList.toggle('free', !timed);
-    this.renderTasks(timed ? [] : [{ text: t('objFree'), state: 'todo' }]);
-  }
-
-  renderTasks(tasks) {
-    const key = JSON.stringify(tasks);
-    if (key === this.lastTasks) return;
-    this.lastTasks = key;
-    const mark = { todo: '○', done: '✓', fail: '✕' };
-    this.els.tasks.innerHTML = tasks.map((x) => `<li class="${x.state}"><i>${mark[x.state]}</i>${x.text}</li>`).join('');
   }
 
   toast(text, kind = 'info') {
@@ -159,11 +138,6 @@ export class Hud {
       els.pallets.textContent = `${done}/${total}`;
       els.drops.textContent = String(mission.drops);
       els.drops.classList.toggle('warn', mission.drops > 0);
-      this.renderTasks([
-        { text: t({ truck: 'taskLoad', zone: 'taskUnload', rack: 'taskRack' }[mission.route?.to] || 'taskUnload', { n: total, d: done }), state: done >= total ? 'done' : 'todo' },
-        { text: t('taskNoDrop'), state: mission.drops > 0 ? 'fail' : done >= total ? 'done' : 'todo' },
-        { text: t('taskTime'), state: mission.timeLeft <= 0 ? 'fail' : done >= total ? 'done' : 'todo' },
-      ]);
     }
     els.speed.textContent = `${Math.abs(forklift.v * 3.6).toFixed(0)} km/h`;
     els.height.textContent = `↕ ${forklift.forkY.toFixed(2)} m`;

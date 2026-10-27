@@ -391,9 +391,14 @@ b.bad { color: var(--red-d); }
 }
 
 /* Mappa */
-.map-wrap { position: relative; margin: 0 auto; width: min(100% - 32px, 900px); border-radius: 18px; overflow: hidden; box-shadow: 0 0 0 4px #fff, 0 8px 16px rgba(0, 0, 0, 0.3); }
-.modal .map-wrap { width: 100%; }
-.map-canvas { display: block; width: 100%; height: auto; }
+/* La mappa sta sempre tutta nello schermo: larghezza limitata anche dall'altezza disponibile (proporzioni fisse) */
+.map-wrap {
+  position: relative; flex-shrink: 0; margin: 0 auto; aspect-ratio: var(--map-ar, 1.66);
+  width: min(100% - 32px, 900px, calc((100vh - 170px) * var(--map-ar, 1.66)));
+  border-radius: 18px; overflow: hidden; box-shadow: 0 0 0 4px #fff, 0 8px 16px rgba(0, 0, 0, 0.3);
+}
+.modal .map-wrap { width: min(100%, calc((100vh - 150px) * var(--map-ar, 1.66))); }
+.map-canvas { display: block; width: 100%; height: 100%; }
 .map-pins { position: absolute; inset: 0; }
 .map-pin {
   position: absolute;
@@ -655,39 +660,25 @@ body.playing #hud, body.playing #controls { display: block; }
 .task-panel {
   position: absolute;
   /* scende sotto lo specchietto retrovisore quando e' acceso */
-  top: calc(8px + var(--rearview-h, 0px) + 6px + var(--safe-t));
+  top: calc(6px + var(--rearview-h, 0px) + 6px + var(--safe-t));
   left: 50%;
   transform: translateX(-50%);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
   pointer-events: none;
-  min-width: 230px;
 }
-.task-stats, .task-box {
-  background: rgba(22, 28, 38, 0.78);
+/* Una riga sottile: tempo, pallet e cadute con icona e numero affiancati */
+.task-stats {
+  display: flex;
+  background: rgba(22, 28, 38, 0.7);
   border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: 6px;
+  border-radius: 999px;
   color: #fff;
 }
-.task-stats { display: flex; }
-.task-stat { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 5px 10px; font-size: 20px; }
+.task-stat { display: flex; align-items: center; gap: 5px; padding: 2px 11px; font-size: 14px; line-height: 1; }
 .task-stat + .task-stat { border-left: 1px solid rgba(255, 255, 255, 0.3); }
 .task-stat b { font-size: 13px; font-variant-numeric: tabular-nums; }
 .task-stat b.warn { color: #ff6b5e; }
-.task-box { padding: 6px 12px 8px; }
-.task-title { font-weight: 900; font-size: 14px; text-align: center; padding-bottom: 4px; margin-bottom: 4px; border-bottom: 2px solid #f4c20d; }
-.task-list { list-style: none; margin: 0; padding: 0; font-size: 12px; font-weight: 700; }
-.task-list li { display: flex; gap: 6px; padding: 1px 0; }
-.task-list li i { font-style: normal; width: 12px; text-align: center; }
-.task-list li.done { color: #7ee08a; }
-.task-list li.fail { color: #ff7b6e; }
 .task-panel.free .task-stats { display: none; }
-@media (max-height: 420px) {
-  .task-panel { min-width: 200px; }
-  .task-box { padding: 4px 10px 5px; }
-  .task-list { font-size: 11px; }
-}
+
 
 /* Bottone camera rapido, sotto mappa e impostazioni */
 .hud-cam {
@@ -737,12 +728,6 @@ body.playing #hud, body.playing #controls { display: block; }
 .pedal.gas, .pedal.brake { background: none; }
 
 /* Pannello compiti comprimibile */
-#hud .task-panel { pointer-events: auto; cursor: pointer; }
-.task-chevron { display: inline-block; margin-left: 6px; transition: transform 0.15s; }
-.task-panel.collapsed .task-list { display: none; }
-.task-panel.collapsed .task-title { border-bottom: 0; padding-bottom: 0; margin-bottom: 0; }
-.task-panel.collapsed .task-chevron { transform: rotate(-90deg); }
-.task-panel.collapsed .task-box { padding: 3px 12px; }
 
 .install-btn { position: absolute; top: calc(18px + var(--safe-t)); left: 50%; transform: translateX(-50%); min-height: 40px; font-size: 16px; z-index: 2; }
 .install-btn:active { transform: translateX(-50%) scale(0.95); }
