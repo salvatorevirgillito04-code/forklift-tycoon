@@ -490,6 +490,10 @@ export function openSettings(app, { inGame = false, onClose } = {}) {
     <div class="setting"><span>${t('sensitivity')} <b data-sens-val>${s.sensitivity.toFixed(1)}</b></span>
       <input type="range" min="0.4" max="2" step="0.1" value="${s.sensitivity}" data-sens></div>
     <div class="setting"><span>${t('graphics')}</span>${seg('quality', [['low', t('low')], ['medium', t('medium')], ['high', t('high')]])}</div>
+    <div class="setting"><span>${t('sfxVolume')} <b data-vol-val="sfxVolume">${Math.round((s.sfxVolume ?? 0.8) * 100)}%</b></span>
+      <input type="range" min="0" max="1" step="0.05" value="${s.sfxVolume ?? 0.8}" data-vol="sfxVolume"></div>
+    <div class="setting"><span>${t('musicVolume')} <b data-vol-val="musicVolume">${Math.round((s.musicVolume ?? 0.5) * 100)}%</b></span>
+      <input type="range" min="0" max="1" step="0.05" value="${s.musicVolume ?? 0.5}" data-vol="musicVolume"></div>
     <label class="setting check" data-mirrors><span>${t('mirrors')}</span>
       <input type="checkbox" ${s.mirrors !== false ? 'checked' : ''}></label>
     ${dev.on ? `<button class="pill-btn purple" data-dev>${ICONS.gear}${t('devMenu')}</button>` : ''}
@@ -521,6 +525,11 @@ export function openSettings(app, { inGame = false, onClose } = {}) {
     s.invertGyro = e.target.checked;
     apply();
   });
+  el.querySelectorAll('[data-vol]').forEach((r) => r.addEventListener('input', () => {
+    s[r.dataset.vol] = +r.value;
+    el.querySelector(`[data-vol-val="${r.dataset.vol}"]`).textContent = `${Math.round(+r.value * 100)}%`;
+    apply();
+  }));
   const sens = el.querySelector('[data-sens]');
   sens.addEventListener('input', () => {
     s.sensitivity = +sens.value;

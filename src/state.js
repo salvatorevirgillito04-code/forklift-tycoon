@@ -20,7 +20,7 @@ const defaults = () => ({
   candidateSeed: 1,
   workersPaidAt: 0, // ultimo accredito dei guadagni degli operai
   workerCarry: 0, // frazione di moneta non ancora accreditata
-  settings: { lang: detectLang(), view: 'third', sensitivity: 1, steering: 'arrows', invertGyro: false, quality: 'high', mirrors: true },
+  settings: { lang: detectLang(), view: 'third', sensitivity: 1, steering: 'arrows', invertGyro: false, quality: 'high', mirrors: true, sfxVolume: 0.8, musicVolume: 0.5 },
   savedAt: 0,
 });
 

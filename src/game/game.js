@@ -15,6 +15,7 @@ import { Hud } from './hud.js';
 import { TRUCK, FORK, loadDecor } from './models.js';
 import { createRearview } from './rearview.js';
 import { WorkerBots } from './workerbots.js';
+import { GameAudio } from './audio.js';
 import { vehicleById } from '../data.js';
 import { t } from '../i18n.js';
 
@@ -32,6 +33,7 @@ export class Game {
     this.lookYaw = 0;
     this.lookPitch = 0;
     this.lookIdle = 0;
+    this.audio = new GameAudio();
     this.menuAngle = 0;
   }
 
@@ -167,6 +169,7 @@ export class Game {
 
   setSettings(settings) {
     this.settings = settings;
+    this.audio.setVolumes(settings.sfxVolume ?? 0.8, settings.musicVolume ?? 0.5);
     this.applyQuality(settings.quality);
     this.controls?.setSettings(settings);
     this.rearview?.setEnabled(settings.mirrors !== false);
@@ -295,6 +298,7 @@ export class Game {
       if (this.mode === 'play' && !this.paused) this.step(dt);
       else if (this.mode === 'play' && this.mission.finished) this.mission.animateLeaving(dt);
       this.updateCamera(dt);
+      this.audio.update(this.mode === 'play' ? this.forklift : null, this.mode === 'play' && !this.paused);
       this.scene.render();
     } catch (err) {
       Sentry.captureException(err);
@@ -315,6 +319,7 @@ export class Game {
     this.bots.update(dt, f);
     this.pallets.update(dt);
     for (const ev of f.events) {
+      this.audio.event(ev);
       if (ev === 'dropped') {
         this.mission.drops += 1;
         this.hud.toast(t('palletDropped'), 'bad');
