@@ -1,4 +1,4 @@
-import { MeshBuilder, TransformNode, Mesh, Vector3, Curve3, LoadAssetContainerAsync } from '@babylonjs/core';
+import { MeshBuilder, TransformNode, Mesh, Vector3, Quaternion, Curve3, LoadAssetContainerAsync } from '@babylonjs/core';
 import '@babylonjs/loaders/glTF';
 
 // Dimensioni condivise con la simulazione (metri).
@@ -195,9 +195,35 @@ export async function createForkliftModel(scene, mats, vehicle) {
   // Carrozzeria realistica (Tripo 3D, gia' in coordinate del muletto di taglia 1): montante, forche e ruote restano le nostre
   const glb = await tryLoadGLB(scene, vehicle.model || 'forklift.glb');
   if (glb) {
-    instantiateGLB(glb, body, 'forkliftBody');
+    const inst = instantiateGLB(glb, body, 'forkliftBody');
+    // Volante del modello: nodo separato che gira attorno al suo asse (centro e asse scritti nel file)
+    const wheelMesh = inst.rootNodes[0].getChildMeshes(false).find((m) => m.name.endsWith('steer'));
+    const ex = wheelMesh?.metadata?.gltf?.extras;
+    if (ex?.center) {
+      // Centro e asse dal file (spazio glTF, specchiato da Babylon) portati nello spazio del corpo:
+      // cosi' il volante gira nello stesso verso dello sterzo
+      root.computeWorldMatrix(true);
+      const toBody = body.computeWorldMatrix(true).clone().invert();
+      inst.rootNodes[0].computeWorldMatrix(true);
+      const fileM = wheelMesh.parent.computeWorldMatrix(true);
+      const pivot = new TransformNode('steerPivot', scene);
+      pivot.parent = body;
+      pivot.position = Vector3.TransformCoordinates(Vector3.TransformCoordinates(new Vector3(...ex.center), fileM), toBody);
+      // l'asse y del perno coincide con l'asse del volante
+      const axis = Vector3.TransformNormal(Vector3.TransformNormal(new Vector3(...ex.axis), fileM), toBody).normalize();
+      const side = Vector3.Cross(Vector3.Up(), axis);
+      const ang = Math.acos(Math.min(1, Vector3.Dot(Vector3.Up(), axis)));
+      let q = side.lengthSquared() < 1e-6 ? Quaternion.Identity() : Quaternion.RotationAxis(side.normalize(), ang);
+      // verso della rotazione: deve portare l'alto proprio sull'asse
+      if (Vector3.Dot(Vector3.Up().applyRotationQuaternion(q), axis) < 0.99) q = Quaternion.RotationAxis(side, -ang);
+      pivot.rotationQuaternion = q;
+      steerSpin = new TransformNode('steerSpin', scene);
+      steerSpin.parent = pivot;
+      for (const n of [pivot, steerSpin, wheelMesh]) n.computeWorldMatrix(true);
+      wheelMesh.setParent(steerSpin);
+    }
     // Raccordo scuro tra il muso della carrozzeria e il montante
-    box(scene, 'mastMount', 0.72, 0.6, 0.42, new Vector3(0, 0.55, 0.2), mats.darkSteel, body);
+    box(scene, 'mastMount', 0.72, 0.3, 0.42, new Vector3(0, 0.4, 0.2), mats.darkSteel, body);
   } else {
     // Telaio e contrappeso
     parts.push(box(scene, 'chassis', 1.15, 0.5, 1.8, new Vector3(0, 0.45, -1.15), paint, body));

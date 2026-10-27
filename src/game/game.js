@@ -12,7 +12,7 @@ import { Forklift } from './forklift.js';
 import { Mission } from './mission.js';
 import { Controls } from './controls.js';
 import { Hud } from './hud.js';
-import { TRUCK, loadDecor } from './models.js';
+import { TRUCK, FORK, loadDecor } from './models.js';
 import { createRearview } from './rearview.js';
 import { WorkerBots } from './workerbots.js';
 import { vehicleById } from '../data.js';
@@ -360,7 +360,11 @@ export class Game {
       // Occhio del guidatore al centro: si guarda attraverso il montante, tra le catene
       const [ex, ey, ez] = f.geo.eye;
       pos = base.add(new Vector3(ex * Math.cos(fy) + ez * Math.sin(fy), ey, -ex * Math.sin(fy) + ez * Math.cos(fy)));
-      target = pos.add(new Vector3(fwd.x, -0.5 - this.lookPitch, fwd.z));
+      // Sguardo inclinato quanto serve a tenere in vista le forche (sui muletti grandi l'occhio e' piu' alto e lontano):
+      // il punto a 3/4 delle forche resta sotto il centro di 0.3 rad (meta' strada verso il bordo basso)
+      const ahead = f.geo.forkBase + FORK.length * 0.75 - ez;
+      const tilt = Math.max(Math.atan(0.5), Math.atan2(Math.max(0.3, ey - f.forkY), ahead) - 0.3);
+      target = pos.add(new Vector3(fwd.x, -Math.tan(tilt) - this.lookPitch, fwd.z));
       cam.fov = 1.2;
       cam.position.copyFrom(pos);
     } else {
