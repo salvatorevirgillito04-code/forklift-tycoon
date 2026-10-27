@@ -4,17 +4,23 @@
 // scale = taglia del mezzo (l'ultimo e' ~1,5 volte il primo); style = dettagli del modello 3D.
 export const VEHICLES = [
   { id: 'e12', name: 'Compact 18', price: 0, capacity: 1200, lift: 3.0, speed: 4.0, accel: 2.2, color: '#e2561c', scale: 1.0,
-    photo: 'forklift-1.jpg', style: { trim: '#3a3d42', rim: '#2b2b2b', lpg: true } },
+    photo: 'forklift-1.jpg', style: { trim: '#3a3d42', rim: '#2b2b2b', lpg: true },
+    model: 'fk-e12.glb', eye: [0, 1.95, -0.95] }, // carrozzeria Tripo 3D dalla foto; eye = occhi del guidatore (taglia 1)
   { id: 'd18', name: 'Worker 35D', price: 2500, capacity: 1800, lift: 3.8, speed: 4.8, accel: 2.6, color: '#d71920', scale: 1.1,
-    photo: 'forklift-2.jpg', style: { trim: '#3b3e43', rim: '#c9cdd2', exhaust: true } },
+    photo: 'forklift-2.jpg', style: { trim: '#3b3e43', rim: '#c9cdd2', exhaust: true },
+    model: 'fk-d18.glb', eye: [0, 1.68, -0.88] },
   { id: 'd25', name: 'Heavy 60D', price: 8000, capacity: 2500, lift: 4.5, speed: 5.5, accel: 3.0, color: '#d8161b', scale: 1.2,
-    photo: 'forklift-3.jpg', style: { trim: '#1e1f22', rim: '#1e1f22', exhaust: true, roundRear: true, dualFront: true, workLights: true } },
+    photo: 'forklift-3.jpg', style: { trim: '#1e1f22', rim: '#1e1f22', exhaust: true, roundRear: true, dualFront: true, workLights: true },
+    model: 'fk-d25.glb', eye: [0, 1.6, -0.75] },
   { id: 'd35', name: 'Titan XF100', price: 20000, capacity: 3500, lift: 5.2, speed: 6.0, accel: 3.3, color: '#e0321d', scale: 1.3,
-    photo: 'forklift-4.jpg', style: { trim: '#141414', rim: '#e0321d', fork: '#e0321d' } },
+    photo: 'forklift-4.jpg', style: { trim: '#141414', rim: '#e0321d', fork: '#e0321d' },
+    model: 'fk-d35.glb', eye: [0, 1.5, -0.68] },
   { id: 'd50', name: 'Mega H120', price: 50000, capacity: 5000, lift: 5.8, speed: 6.6, accel: 3.6, color: '#d9202a', scale: 1.4,
-    photo: 'forklift-5.jpg', style: { trim: '#151515', rim: '#d9202a', exhaust: true, roundRear: true, cab: 'closed' } },
+    photo: 'forklift-5.jpg', style: { trim: '#151515', rim: '#d9202a', exhaust: true, roundRear: true, cab: 'closed' },
+    model: 'fk-d50.glb', eye: [0, 1.65, -0.9] },
   { id: 'd80', name: 'Colossus 160', price: 120000, capacity: 8000, lift: 6.5, speed: 7.2, accel: 4.0, color: '#d9b23a', scale: 1.5,
-    photo: 'forklift-6.jpg', style: { trim: '#1a1a1a', rim: '#e8e2c8', exhaust: true, cab: 'closed' } },
+    photo: 'forklift-6.jpg', style: { trim: '#1a1a1a', rim: '#e8e2c8', exhaust: true, cab: 'closed' },
+    model: 'fk-d80.glb', eye: [0, 1.9, -1.0] },
 ];
 
 // Il mezzo iniziale e' gratis solo la prima volta: le copie per gli operai si pagano.

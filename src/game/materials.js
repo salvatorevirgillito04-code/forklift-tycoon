@@ -98,8 +98,6 @@ export function createMaterials(scene) {
     paint: memo((c) => pbr(scene, 'paint' + c, { color: c, metal: 0.35, rough: 0.35 })),
     light: pbr(scene, 'light', { color: '#fff7d6', emissive: '#fff2b0' }),
     redLight: pbr(scene, 'redLight', { color: '#ff3b30', emissive: '#a01010' }),
-    leaves: pbr(scene, 'leaves', { color: '#3f6b2a', rough: 0.95 }),
-    bark: pbr(scene, 'bark', { color: '#5a4030', rough: 1 }),
     sign: memo((text, bg, fg) => {
       const tex = canvasTexture(scene, 'sign' + text, 512, (ctx, s) => {
         ctx.fillStyle = bg;

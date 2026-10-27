@@ -12,7 +12,7 @@ import { Forklift } from './forklift.js';
 import { Mission } from './mission.js';
 import { Controls } from './controls.js';
 import { Hud } from './hud.js';
-import { TRUCK } from './models.js';
+import { TRUCK, loadDecor } from './models.js';
 import { createRearview } from './rearview.js';
 import { WorkerBots } from './workerbots.js';
 import { vehicleById } from '../data.js';
@@ -85,7 +85,7 @@ export class Game {
     this.sky.mesh.applyFog = false;
     this.sky.mesh.isPickable = false;
     this.sky.rotation.y = SKY_ROTATION;
-    this.world = new World(scene, this.mats, this.shadowGen, t('saleSign'));
+    this.world = new World(scene, this.mats, this.shadowGen, t('saleSign'), await loadDecor(scene));
     this.pallets = new PalletManager(scene, this.mats, this.shadowGen);
     this.env = { colliders: this.world.colliders, pallets: this.pallets, truckBedHeight: TRUCK.bedHeight };
     this.mission = new Mission(scene, this.mats, this.env, this.shadowGen);

@@ -118,7 +118,7 @@ export function vehicleGeometry(vehicle) {
     innerLen: 2.2 * s,
     // Alzata alta: montante triplo (sezione intermedia), cosi' le sezioni restano sempre sovrapposte
     triplex: (vehicle.lift || 0) - 1.6 * s > 0.75 * 2.2 * s,
-    eye: [0.05 * s, 2.0 * s, -0.75 * s],
+    eye: (vehicle.eye || [0.05, 2.0, -0.75]).map((v) => v * s),
   };
 }
 
@@ -146,6 +146,38 @@ function instantiateGLB(container, parent, name) {
   return inst;
 }
 
+// Oggetti del quartiere (Tripo 3D): caricati prima del mondo, cosi' le copie si uniscono ai fissi per materiale
+export const DECOR = ['lamp', 'dumpster', 'barrel', 'barrier', 'cone'];
+export async function loadDecor(scene) {
+  const out = {};
+  await Promise.all(DECOR.map(async (k) => { out[k] = await tryLoadGLB(scene, `${k}.glb`); }));
+  return out;
+}
+
+// Una copia del modello con la trasformazione gia' applicata ai vertici (senza genitori): pronta da unire
+export function placeGLB(container, name, x, y, z, rotY = 0, scale = 1) {
+  const inst = container.instantiateModelsToScene((n) => `${name}_${n}`, false);
+  const root = new TransformNode(name, container.scene);
+  root.position.set(x, y, z);
+  root.rotation.y = rotY;
+  root.scaling.setAll(scale);
+  inst.rootNodes.forEach((n) => { n.parent = root; });
+  root.computeWorldMatrix(true);
+  const meshes = [];
+  for (const m of root.getChildMeshes()) {
+    if (!m.getTotalVertices()) continue;
+    m.makeGeometryUnique(); // le copie condividono i vertici: senza, ogni posizionamento sposterebbe anche le altre
+    m.computeWorldMatrix(true);
+    m.setParent(null);
+    m.bakeCurrentTransformIntoVertices();
+    m.refreshBoundingInfo();
+    m.isPickable = false;
+    meshes.push(m);
+  }
+  root.dispose();
+  return meshes;
+}
+
 export async function createForkliftModel(scene, mats, vehicle) {
   const root = new TransformNode('forklift', scene);
   const st = vehicle.style || {};
@@ -160,9 +192,12 @@ export async function createForkliftModel(scene, mats, vehicle) {
   const parts = [];
 
   let steerSpin = null;
-  const glb = await tryLoadGLB(scene, 'forklift.glb');
+  // Carrozzeria realistica (Tripo 3D, gia' in coordinate del muletto di taglia 1): montante, forche e ruote restano le nostre
+  const glb = await tryLoadGLB(scene, vehicle.model || 'forklift.glb');
   if (glb) {
     instantiateGLB(glb, body, 'forkliftBody');
+    // Raccordo scuro tra il muso della carrozzeria e il montante
+    box(scene, 'mastMount', 0.72, 0.6, 0.42, new Vector3(0, 0.55, 0.2), mats.darkSteel, body);
   } else {
     // Telaio e contrappeso
     parts.push(box(scene, 'chassis', 1.15, 0.5, 1.8, new Vector3(0, 0.45, -1.15), paint, body));
@@ -420,14 +455,18 @@ export async function createForkliftModel(scene, mats, vehicle) {
   return { root, mastPivot, middle, inner, carriage, chains, steerSpin, forkL, forkR, frontWheels, rearWheels, cabShell, meshes: all };
 }
 
+// Colore della cabina -> una delle tre motrici Tripo (rossa, blu, bianca)
+function tractorTint(color) {
+  const n = parseInt(color.slice(1), 16), r = n >> 16, g = (n >> 8) & 255, b = n & 255;
+  if (Math.min(r, g, b) > 200) return 'white';
+  return b > r ? 'blue' : 'red';
+}
+
 export async function createTruckModel(scene, mats, color = '#d63a2f') {
   const root = new TransformNode('truck', scene);
-  const glb = await tryLoadGLB(scene, 'truck.glb');
-  if (glb) {
-    instantiateGLB(glb, root, 'truckBody');
-    return root;
-  }
   const { bedLength: L, bedWidth: W, bedHeight: H } = TRUCK;
+  // Motrice realistica (Tripo 3D) del colore piu' vicino; il rimorchio piatto resta nostro (preciso per i carichi)
+  const tractor = await tryLoadGLB(scene, `truck-${tractorTint(color)}.glb`);
   const cabPaint = mats.paint(color);
   // Pianale (rimorchio)
   box(scene, 'bed', L, 0.22, W, new Vector3(0, H - 0.11, 0), mats.wood, root);
@@ -445,6 +484,16 @@ export async function createTruckModel(scene, mats, color = '#d63a2f') {
   box(scene, 'mudguard', 3.8, 0.08, W, new Vector3(-L / 2 + 2.3, 1.04, 0), mats.rubber, root);
   box(scene, 'legL', 0.15, 0.7, 0.15, new Vector3(1.5, 0.35, 0.8), mats.steel, root);
   box(scene, 'legR', 0.15, 0.7, 0.15, new Vector3(1.5, 0.35, -0.8), mats.steel, root);
+  if (tractor) {
+    // Il modello ha il paraurti in z = 0 e guarda verso +z: ruotato verso +x, muso dove finiva la motrice procedurale
+    const cab = new TransformNode('tractor', scene);
+    cab.parent = root;
+    cab.rotation.y = Math.PI / 2;
+    cab.position.x = L / 2 + 3.95;
+    instantiateGLB(tractor, cab, 'tractor');
+    mergeByMaterial(root.getChildMeshes().filter((m) => !m.name.startsWith('tractor')), root, 'truck');
+    return root;
+  }
   // Trattore
   const cx = L / 2 + 1.9;
   box(scene, 'tractorFrame', 4.2, 0.35, 1.3, new Vector3(cx - 0.2, 0.85, 0), mats.darkSteel, root);
@@ -470,11 +519,20 @@ export async function createTruckModel(scene, mats, color = '#d63a2f') {
 let palletTemplate = null;
 let loadTemplates = null;
 export async function createPalletModel(scene, mats, { loadHeight = 1, fragile = false } = {}) {
-  const glb = await tryLoadGLB(scene, 'pallet.glb');
   const root = new TransformNode('pallet', scene);
-  if (glb) {
-    instantiateGLB(glb, root, 'pallet');
-    return root;
+  if (!palletTemplate) {
+    // Pallet realistico (Tripo 3D) se presente: diventa il modello sorgente delle istanze
+    const glb = await tryLoadGLB(scene, 'pallet.glb');
+    const src = glb?.meshes.find((m) => m.getTotalVertices() > 0);
+    if (src && !palletTemplate) {
+      const inst = glb.instantiateModelsToScene((n) => `palletGlb_${n}`, false);
+      const mesh = inst.rootNodes[0].getChildMeshes().find((m) => m.getTotalVertices() > 0);
+      mesh.setParent(null); // tiene la trasformazione (conversione glTF) ...
+      mesh.bakeCurrentTransformIntoVertices(); // ... e la scrive nei vertici
+      inst.rootNodes.forEach((n) => n.dispose());
+      mesh.name = 'palletTemplate';
+      palletTemplate = mesh;
+    }
   }
   if (!palletTemplate) {
     const s = PALLET.size;
@@ -490,6 +548,8 @@ export async function createPalletModel(scene, mats, { loadHeight = 1, fragile =
     }
     palletTemplate = Mesh.MergeMeshes(parts, true, true);
     palletTemplate.name = 'palletTemplate';
+  }
+  if (!loadTemplates) {
     // Modelli "sorgente" delle istanze: tenuti sotto terra, li disegnano solo le istanze
     loadTemplates = [mats.cardboard, mats.fragileBox].map((mat) => box(scene, 'loadTemplate', 1.1, 1, 1.1, new Vector3(0, 0, 0), mat));
     for (const t of [palletTemplate, ...loadTemplates]) {

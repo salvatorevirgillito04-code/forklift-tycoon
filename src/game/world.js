@@ -1,5 +1,6 @@
 import { MeshBuilder, Vector3, TransformNode, Mesh, VertexBuffer } from '@babylonjs/core';
 import { WAREHOUSES, WORLD } from '../data.js';
+import { placeGLB } from './models.js';
 
 // Geometria di un lotto in coordinate locali (u lungo X, w = distanza dalla strada).
 export const PLOT = {
@@ -11,6 +12,9 @@ export const PLOT = {
   zone: { u: [-6, 6], w: [35.5, 44.5] },
   racks: { u: [-13, 13], w: [52.5, 55.5], height: 6.5 },
 };
+
+// Rotazione del lampione Tripo che porta il braccio verso -z (centro strada per i lampioni a z > 0)
+const LAMP_ROT = Math.PI / 2;
 
 export const plotToWorld = (wh, u, w) => [wh.cx + u, wh.side * w];
 
@@ -43,8 +47,9 @@ function worldUV(mesh, tile) {
 }
 
 export class World {
-  constructor(scene, mats, shadowGen, saleLabel = 'SALE') {
+  constructor(scene, mats, shadowGen, saleLabel = 'SALE', decor = {}) {
     this.saleLabel = saleLabel;
+    this.decor = decor; // modelli Tripo 3D gia' caricati (mancanti = oggetti procedurali)
     this.scene = scene;
     this.mats = mats;
     this.shadowGen = shadowGen;
@@ -220,13 +225,18 @@ export class World {
     // Lampioni lungo la strada
     for (let x = WORLD.minX + 10; x < WORLD.maxX; x += 22) {
       for (const z of [-7.6, 7.6]) {
+        if (this.decor.lamp) {
+          // braccio verso la strada
+          this.prop('lamp', x, z, z > 0 ? LAMP_ROT : LAMP_ROT + Math.PI, { r: 0.12, h: 7, shadow: false });
+          continue;
+        }
         this.addBox('lampPost', x - 0.1, x + 0.1, 0, 7, z - 0.1, z + 0.1, mats.darkSteel, { shadow: false, fade: false });
         const dir = z > 0 ? -1 : 1;
         this.addBox('lampArm', x - 0.06, x + 0.06, 6.9, 7.0, Math.min(z, z + dir * 1.6), Math.max(z, z + dir * 1.6), mats.darkSteel, { shadow: false });
         this.addBox('lampHead', x - 0.25, x + 0.25, 6.75, 6.9, z + dir * 1.4 - 0.4, z + dir * 1.4 + 0.4, mats.light, { shadow: false });
       }
     }
-    // Container e alberi sul retro dei lotti
+    // Container sul retro dei lotti
     const colors = ['#1f6fb2', '#b53a2c', '#2e8b57', '#d98e04', '#6c4fa1'];
     WAREHOUSES.forEach((wh, i) => {
       const [x, z] = plotToWorld(wh, -18.5, 40);
@@ -234,29 +244,32 @@ export class World {
       const r = { minX: x - 1.25, maxX: x + 1.25, minZ: z - 6, maxZ: z + 6 };
       this.addBox('container', r.minX, r.maxX, 0, 2.6, r.minZ, r.maxZ, mats.container(c), { fade: false });
       if (i % 3 === 0) this.addBox('container2', r.minX, r.maxX, 2.6, 5.2, r.minZ + 0.5, r.maxZ - 0.5, mats.container(colors[(i + 2) % 5]), { fade: false });
-      const [tx, tz] = plotToWorld(wh, 18, 60);
-      this.tree(tx, tz);
+      // Oggetti di contorno ai lati del capannone, lontano dai percorsi dei muletti
+      const face = wh.side > 0 ? 0 : Math.PI;
+      const at = (u, w) => plotToWorld(wh, u, w);
+      this.prop('dumpster', ...at(17.6, 46), face + Math.PI / 2, { r: 0.75, h: 1.4 });
+      this.prop('barrel', ...at(-17, 49.5), i * 0.7, { r: 0.32, h: 0.9 });
+      this.prop('barrel', ...at(-17.7, 50.3), i * 1.3, { r: 0.32, h: 0.9 });
+      this.prop('barrel', ...at(-16.9, 51.1), i * 2.1, { r: 0.32, h: 0.9 });
+      this.prop('barrier', ...at(20.5, 9), face + Math.PI / 2, { r: 0.6, h: 0.8 });
+      this.prop('cone', ...at(19.2, 8.2), i, { r: 0.2, h: 0.75 });
+      this.prop('cone', ...at(19.2, 10.2), i + 1, { r: 0.2, h: 0.75 });
     });
-    for (let x = WORLD.minX - 8; x < WORLD.maxX + 10; x += 14) {
-      this.tree(x, WORLD.maxZ + 8 + (x % 3));
-      this.tree(x + 5, WORLD.minZ - 9 - (x % 4));
-    }
   }
 
-  tree(x, z) {
-    const trunk = MeshBuilder.CreateCylinder('trunk', { diameterTop: 0.25, diameterBottom: 0.4, height: 3, tessellation: 8 }, this.scene);
-    trunk.position.set(x, 1.5, z);
-    trunk.material = this.mats.bark;
-    const crown = MeshBuilder.CreateSphere('crown', { diameter: 4.2, segments: 6 }, this.scene);
-    crown.position.set(x, 4.4, z);
-    crown.scaling.y = 1.2;
-    crown.material = this.mats.leaves;
-    if (this.shadowGen) this.shadowGen.addShadowCaster(crown);
-    crown.metadata = { caster: true };
-    trunk.isPickable = false;
-    crown.isPickable = false;
-    this.statics.push(trunk, crown);
-    this.colliders.push({ minX: x - 0.3, maxX: x + 0.3, minZ: z - 0.3, maxZ: z + 0.3, y0: 0, y1: 3, tag: 'tree' });
+  // Oggetto Tripo 3D appoggiato a terra; finisce tra i fissi (uniti per materiale). r/h = ingombro per gli urti.
+  prop(kind, x, z, rotY = 0, { r = 0.3, h = 1, shadow = true, collide = true } = {}) {
+    const c = this.decor[kind];
+    if (!c) return false;
+    for (const m of placeGLB(c, kind, x, 0, z, rotY)) {
+      if (shadow) {
+        m.metadata = { caster: true };
+        this.shadowGen?.addShadowCaster(m);
+      }
+      this.statics.push(m);
+    }
+    if (collide) this.colliders.push({ minX: x - r, maxX: x + r, minZ: z - r, maxZ: z + r, y0: 0, y1: h, tag: kind });
+    return true;
   }
 
   // Testo del cartello vendita nella lingua del gioco
