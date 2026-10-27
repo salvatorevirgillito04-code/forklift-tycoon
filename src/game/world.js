@@ -10,7 +10,8 @@ export const PLOT = {
   door: { u: [-3.5, 3.5], height: 5.5 },
   truck: { u: -3, w: 16 }, // centro del pianale
   zone: { u: [-6, 6], w: [35.5, 44.5] },
-  racks: { u: [-13, 13], w: [52.5, 55.5], height: 6.5 },
+  // Scaffalatura vera sul fondo: 14 campate da un pallet, 3 piani (terra, 1,4 m, 2,8 m: arriva anche il Compact)
+  racks: { u: [-12.25, 12.25], bay: 1.75, w: [54.4, 55.5], levels: [0, 1.4, 2.8], beam: 0.1, height: 3.9 },
 };
 
 // Rotazione del lampione Tripo che porta il braccio verso -z (centro strada per i lampioni a z > 0)
@@ -22,6 +23,24 @@ function rangeToBox(wh, u0, u1, w0, w1) {
   const [x0, z0] = plotToWorld(wh, u0, w0);
   const [x1, z1] = plotToWorld(wh, u1, w1);
   return { minX: Math.min(x0, x1), maxX: Math.max(x0, x1), minZ: Math.min(z0, z1), maxZ: Math.max(z0, z1) };
+}
+
+// Posti sulla scaffalatura: centro di ogni campata per ogni piano, in coordinate del mondo
+export function rackSlots(wh) {
+  const R = PLOT.racks, out = [];
+  const bays = Math.round((R.u[1] - R.u[0]) / R.bay);
+  for (const h of R.levels) {
+    for (let i = 0; i < bays; i++) {
+      const [x, z] = plotToWorld(wh, R.u[0] + (i + 0.5) * R.bay, (R.w[0] + R.w[1]) / 2);
+      out.push({ x, z, h });
+    }
+  }
+  return out;
+}
+
+export function rackRect(wh) {
+  const R = PLOT.racks;
+  return rangeToBox(wh, R.u[0], R.u[1], R.w[0] - 0.1, R.w[1]);
 }
 
 export function zoneRect(wh) {
@@ -57,6 +76,7 @@ export class World {
     this.doors = new Map(); // id -> { mesh, collider }
     this.signs = new Map();
     this.statics = [];
+    this.shelves = []; // piani delle scaffalature { minX, maxX, minZ, maxZ, h }
     this.build();
   }
 
@@ -169,12 +189,24 @@ export class World {
     this.doors.set(wh.id, door);
     // Scaffalature sul fondo
     const R = PLOT.racks;
-    box('rackBlock', R.u[0], R.u[1], 0, R.height, R.w[0], R.w[1], mats.darkInterior, { shadow: false });
-    for (let u = R.u[0]; u <= R.u[1]; u += 2.6) {
-      box('rackPost', u, u + 0.12, 0, R.height, R.w[0] - 0.1, R.w[0], mats.rack, { collide: false, shadow: false });
+    const bays = Math.round((R.u[1] - R.u[0]) / R.bay);
+    // montanti davanti e dietro tra una campata e l'altra (urtano muletto, forche e carico)
+    for (let i = 0; i <= bays; i++) {
+      const u = R.u[0] + i * R.bay;
+      for (const w of [R.w[0], R.w[1] - 0.1]) box('rackPost', u - 0.05, u + 0.05, 0, R.height, w, w + 0.1, mats.rack, { tag: 'rack', shadow: false });
     }
-    for (const y of [0.15, 2.1, 4.1, 6.0]) {
-      box('rackBeam', R.u[0], R.u[1], y, y + 0.14, R.w[0] - 0.12, R.w[0], mats.rackBeam, { collide: false, shadow: false });
+    // correnti dei piani: davanti e dietro. Il carrello porta-forche non li urta (sta sul filo della scaffalatura)
+    for (const h of R.levels.filter((y) => y > 0)) {
+      for (const w of [R.w[0], R.w[1] - 0.1]) {
+        const { collider } = box('rackBeam', R.u[0], R.u[1], h - R.beam, h, w, w + 0.1, mats.rackBeam, { tag: 'rack', shadow: false });
+        collider.noCarriage = true;
+      }
+      for (let i = 0; i < bays; i++) {
+        // piano d'appoggio di ogni campata (dove si posa il pallet)
+        const [x0, z0] = plotToWorld(wh, R.u[0] + i * R.bay + 0.05, R.w[0]);
+        const [x1, z1] = plotToWorld(wh, R.u[0] + (i + 1) * R.bay - 0.05, R.w[1]);
+        this.shelves.push({ minX: Math.min(x0, x1), maxX: Math.max(x0, x1), minZ: Math.min(z0, z1), maxZ: Math.max(z0, z1), h });
+      }
     }
     // Zona di stoccaggio (strisce gialle a terra)
     const Z = PLOT.zone;

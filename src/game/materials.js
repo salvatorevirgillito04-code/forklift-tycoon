@@ -78,7 +78,6 @@ export function createMaterials(scene) {
     roof: pbr(scene, 'roof', { color: '#6b7178', metal: 0.6, rough: 0.55 }),
     trim: pbr(scene, 'trim', { color: '#25507a', metal: 0.4, rough: 0.5 }),
     doorClosed: pbr(scene, 'doorClosed', { color: '#8a9096', metal: 0.6, rough: 0.45 }),
-    darkInterior: pbr(scene, 'darkInterior', { color: '#2a2c30', rough: 0.9 }),
     steel: pbr(scene, 'steel', { color: '#7d8287', metal: 0.85, rough: 0.35 }),
     darkSteel: pbr(scene, 'darkSteel', { color: '#2e3134', metal: 0.7, rough: 0.45 }),
     rubber: pbr(scene, 'rubber', { color: '#161616', rough: 0.95 }),

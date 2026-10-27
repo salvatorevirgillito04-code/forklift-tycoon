@@ -11,6 +11,7 @@ const defaults = () => ({
   xp: 0,
   level: 1,
   contractLevel: 1,
+  contractSeed: 1, // contratti proposti: cambiano dopo ogni contratto giocato
   stats: { contracts: 0, pallets: 0, earned: 0, workerEarned: 0 },
   vehicles: { e12: 1 }, // id modello -> numero di muletti posseduti
   activeVehicle: 'e12',

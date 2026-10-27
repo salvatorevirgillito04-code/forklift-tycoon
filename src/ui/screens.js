@@ -128,7 +128,7 @@ export function renderContracts(app) {
   const veh = vehicleById(save.activeVehicle);
   const lvl = save.contractLevel;
   const cards = DIFFICULTIES.map((d) => {
-    const c = makeContract(lvl, d, selectedWarehouse);
+    const c = makeContract(lvl, d, selectedWarehouse, save.contractSeed);
     const tooHeavy = c.weight > veh.capacity;
     return `<div class="contract-card ${d}">
         <div class="contract-head">${t(d)}</div>
@@ -163,7 +163,7 @@ export function renderContracts(app) {
     renderContracts(app);
   }));
   screenEl().querySelectorAll('[data-diff]').forEach((b) => b.addEventListener('click', () => {
-    app.startMission(makeContract(lvl, b.dataset.diff, selectedWarehouse));
+    app.startMission(makeContract(lvl, b.dataset.diff, selectedWarehouse, save.contractSeed));
   }));
 }
 

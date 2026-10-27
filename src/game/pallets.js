@@ -10,6 +10,7 @@ export class PalletManager {
     this.shadowGen = shadowGen;
     this.list = [];
     this.truckBed = null; // rettangolo del pianale { x, z, hw, hd, yaw }
+    this.shelves = []; // piani delle scaffalature { minX, maxX, minZ, maxZ, h }
     this.nextId = 1;
   }
 
@@ -46,6 +47,10 @@ export class PalletManager {
     let h = 0;
     const r = this.rect(p);
     if (this.truckBed && this.onTruck(p)) h = TRUCK.bedHeight;
+    // piano della scaffalatura sotto il centro del pallet
+    for (const sh of this.shelves) {
+      if (sh.h > h && sh.h <= below + 0.02 && p.x >= sh.minX && p.x <= sh.maxX && p.z >= sh.minZ && p.z <= sh.maxZ) h = sh.h;
+    }
     for (const o of this.list) {
       if (o === p || o.state !== 'rest') continue;
       const t = this.top(o);

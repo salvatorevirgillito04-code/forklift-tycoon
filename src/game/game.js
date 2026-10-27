@@ -87,6 +87,7 @@ export class Game {
     this.sky.rotation.y = SKY_ROTATION;
     this.world = new World(scene, this.mats, this.shadowGen, t('saleSign'), await loadDecor(scene));
     this.pallets = new PalletManager(scene, this.mats, this.shadowGen);
+    this.pallets.shelves = this.world.shelves;
     this.env = { colliders: this.world.colliders, pallets: this.pallets, truckBedHeight: TRUCK.bedHeight };
     this.mission = new Mission(scene, this.mats, this.env, this.shadowGen);
     this.bots = new WorkerBots(scene, this.mats, this.env);

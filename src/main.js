@@ -92,6 +92,9 @@ const app = {
   },
 
   finishMission(outcome, result, contract) {
+    // Contratti nuovi nella finestra di scelta (anche se fallito)
+    save.contractSeed = (save.contractSeed || 1) + 1;
+    persist();
     if (outcome === 'complete') {
       const levelUp = addRewards({
         coins: result.coins, xp: result.xp, pallets: contract.pallets, contractLevel: contract.level,

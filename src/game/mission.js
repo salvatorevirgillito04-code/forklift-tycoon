@@ -1,6 +1,6 @@
 import { createTruckModel, TRUCK, PALLET } from './models.js';
-import { WAREHOUSES } from '../data.js';
-import { PLOT, plotToWorld, zoneRect } from './world.js';
+import { WAREHOUSES, CONTRACT_TYPES } from '../data.js';
+import { PLOT, plotToWorld, zoneRect, rackSlots, rackRect } from './world.js';
 
 const TRUCK_COLORS = ['#d63a2f', '#1f5fa8', '#f0f0f0', '#2c8c4a', '#e3a01b'];
 
@@ -51,8 +51,11 @@ export class Mission {
     this.forceDone = false;
     this.leaving = 0;
 
+    // Da dove partono i pallet e dove vanno: zona gialla, camion o scaffalatura
+    const route = CONTRACT_TYPES[contract.type];
+    this.route = route;
     const [bx, bz] = plotToWorld(wh, PLOT.truck.u, PLOT.truck.w);
-    if (contract.type !== 'free') {
+    if (route && (route.from === 'truck' || route.to === 'truck')) {
       this.truck = await createTruckModel(this.scene, this.mats, TRUCK_COLORS[contract.seed % TRUCK_COLORS.length]);
       this.truck.position.set(bx, 0, bz);
       this.truck.getChildMeshes().forEach((m) => {
@@ -69,15 +72,26 @@ export class Mission {
       this.env.pallets.truckBed = { x: bx, z: bz, hw: L / 2, hd: W / 2, yaw: 0 };
     }
 
-    const loadH = Math.min(1.5, 0.55 + contract.weight / 2600);
+    // Sulla scaffalatura il carico deve passare tra un piano e l'altro (1,4 m)
+    const rack = route && (route.from === 'rack' || route.to === 'rack');
+    const loadH = rack ? Math.min(1.05, 0.5 + contract.weight / 6000) : Math.min(1.5, 0.55 + contract.weight / 4000);
     const spawn = (x, z, bottom) => this.env.pallets.spawn({
       x, z, bottom, yaw: 0, weight: contract.weight, loadH, fragile: contract.fragile,
     });
-    if (contract.type === 'load') {
+    if (route?.from === 'zone') {
       const slots = zoneSlots(wh);
       for (let i = 0; i < contract.pallets; i++) await spawn(slots[i][0], slots[i][1], 0);
-    } else if (contract.type === 'unload') {
+    } else if (route?.from === 'truck') {
       for (const [x, z] of bedSlots(wh, contract.pallets)) await spawn(x, z, TRUCK.bedHeight);
+    } else if (route?.from === 'rack') {
+      // posti a caso sulla scaffalatura (stesso contratto = stessi posti)
+      const slots = rackSlots(wh);
+      let seed = contract.seed >>> 0;
+      for (let i = 0; i < contract.pallets; i++) {
+        seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+        const [s] = slots.splice(seed % slots.length, 1);
+        await spawn(s.x, s.z, s.h);
+      }
     } else {
       // Guida libera: qualche pallet di prova nel piazzale
       for (let i = 0; i < 3; i++) {
@@ -95,8 +109,11 @@ export class Mission {
     if (!c || c.type === 'free') return { done: 0, total: 0 };
     const pallets = this.env.pallets;
     let done = 0;
-    if (c.type === 'load') {
+    if (this.route.to === 'truck') {
       done = pallets.list.filter((p) => p.state === 'rest' && pallets.onTruck(p) && p.bottom >= TRUCK.bedHeight - 0.01).length;
+    } else if (this.route.to === 'rack') {
+      const r = rackRect(this.wh);
+      done = pallets.list.filter((p) => p.state === 'rest' && p.x >= r.minX && p.x <= r.maxX && p.z >= r.minZ && p.z <= r.maxZ).length;
     } else {
       const z = zoneRect(this.wh);
       done = pallets.list.filter((p) => p.state === 'rest' && p.bottom < 0.05
@@ -122,7 +139,7 @@ export class Mission {
     if ((done >= total || this.forceDone) && !forklift.carried) {
       this.finished = true;
       // Il camion riparte (con o senza carico)
-      if (this.contract.type === 'load') {
+      if (this.route.to === 'truck') {
         for (const p of this.env.pallets.list) if (this.env.pallets.onTruck(p)) p.node.parent = this.truck;
         for (const p of this.env.pallets.list) {
           if (p.node.parent === this.truck) p.node.position.set(p.x - this.truck.position.x, p.bottom, p.z - this.truck.position.z);

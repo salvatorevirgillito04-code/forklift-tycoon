@@ -128,7 +128,7 @@ export class Forklift {
       const r = aabbIntoRect(c, TMP_RECT);
       if (verticalOverlap(0.05, this.geo.body.height, c.y0, c.y1) && rectsOverlap(body, r)) return null;
       if (verticalOverlap(fy0, fy1, c.y0, c.y1) && (rectsOverlap(forks[0], r) || rectsOverlap(forks[1], r))) return null;
-      if (verticalOverlap(forkY - 0.05, forkY + 1.32, c.y0, c.y1) && rectsOverlap(carriage, r)) return null;
+      if (!c.noCarriage && verticalOverlap(forkY - 0.05, forkY + 1.32, c.y0, c.y1) && rectsOverlap(carriage, r)) return null;
       if (mastTop > this.geo.body.height && verticalOverlap(this.geo.body.height, mastTop, c.y0, c.y1) && rectsOverlap(mast, r)) return null;
       if (cRect && verticalOverlap(carried.bottom + 0.01, cTop, c.y0, c.y1) && rectsOverlap(cRect, r, 0.0)) return null;
     }

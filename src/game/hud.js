@@ -1,6 +1,6 @@
 import { coinText } from '../ui/ui.js';
 import { WAREHOUSES, WORLD } from '../data.js';
-import { PLOT, plotToWorld, zoneRect } from './world.js';
+import { PLOT, plotToWorld, zoneRect, rackRect } from './world.js';
 import { t, fmt } from '../i18n.js';
 import { ICONS } from '../ui/icons.js';
 
@@ -160,7 +160,7 @@ export class Hud {
       els.drops.textContent = String(mission.drops);
       els.drops.classList.toggle('warn', mission.drops > 0);
       this.renderTasks([
-        { text: t(c.type === 'load' ? 'taskLoad' : 'taskUnload', { n: total, d: done }), state: done >= total ? 'done' : 'todo' },
+        { text: t({ truck: 'taskLoad', zone: 'taskUnload', rack: 'taskRack' }[mission.route?.to] || 'taskUnload', { n: total, d: done }), state: done >= total ? 'done' : 'todo' },
         { text: t('taskNoDrop'), state: mission.drops > 0 ? 'fail' : done >= total ? 'done' : 'todo' },
         { text: t('taskTime'), state: mission.timeLeft <= 0 ? 'fail' : done >= total ? 'done' : 'todo' },
       ]);
@@ -194,8 +194,9 @@ export class Hud {
       // Obiettivo: zona gialla (scarico) o pianale (carico)
       const wh = mission.wh;
       ctx.fillStyle = 'rgba(255,210,30,0.55)';
-      if (mission.contract.type === 'unload') {
-        const z = zoneRect(wh);
+      const to = mission.route?.to;
+      if (to === 'zone' || to === 'rack') {
+        const z = to === 'zone' ? zoneRect(wh) : rackRect(wh);
         const [a, b] = P(z.minX, z.maxZ);
         ctx.fillRect(a, b, (z.maxX - z.minX) * s, (z.maxZ - z.minZ) * s);
       }
@@ -203,7 +204,7 @@ export class Hud {
     if (pallets.truckBed && mission.truck) {
       const b = pallets.truckBed;
       const [a, c] = P(b.x - b.hw, b.z + b.hd);
-      ctx.fillStyle = mission.contract?.type === 'load' ? 'rgba(255,210,30,0.8)' : '#c0392b';
+      ctx.fillStyle = mission.route?.to === 'truck' ? 'rgba(255,210,30,0.8)' : '#c0392b';
       ctx.fillRect(a, c, b.hw * 2 * s, b.hd * 2 * s);
       ctx.fillStyle = '#c0392b';
       ctx.fillRect(a + b.hw * 2 * s, c, 5 * s, b.hd * 2 * s);
