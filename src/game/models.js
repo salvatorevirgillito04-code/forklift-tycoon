@@ -192,10 +192,15 @@ export async function createForkliftModel(scene, mats, vehicle) {
   const parts = [];
 
   let steerSpin = null;
+  let roof = [];
   // Carrozzeria realistica (Tripo 3D, gia' in coordinate del muletto di taglia 1): montante, forche e ruote restano le nostre
   const glb = await tryLoadGLB(scene, vehicle.model || 'forklift.glb');
   if (glb) {
     const inst = instantiateGLB(glb, body, 'forkliftBody');
+    // Tetto della cabina (sopra gli occhi del guidatore): in prima persona diventa trasparente
+    roof = inst.rootNodes[0].getChildMeshes(false).filter((m) => m.name.endsWith('roof'));
+    // materiale proprio (quello del modello e' condiviso con gli operai ed e' forzato opaco)
+    roof.forEach((m) => { m.material = m.material.clone(`${m.material.name}_roof`); });
     // Volante del modello: nodo separato che gira attorno al suo asse (centro e asse scritti nel file)
     const wheelMesh = inst.rootNodes[0].getChildMeshes(false).find((m) => m.name.endsWith('steer'));
     const ex = wheelMesh?.metadata?.gltf?.extras;
@@ -478,7 +483,7 @@ export async function createForkliftModel(scene, mats, vehicle) {
 
   const all = root.getChildMeshes();
   const cabShell = all.filter((m) => m.metadata?.cabShell);
-  return { root, mastPivot, middle, inner, carriage, chains, steerSpin, forkL, forkR, frontWheels, rearWheels, cabShell, meshes: all };
+  return { root, mastPivot, middle, inner, carriage, chains, steerSpin, forkL, forkR, frontWheels, rearWheels, cabShell, roof, meshes: all };
 }
 
 // Colore della cabina -> una delle tre motrici Tripo (rossa, blu, bianca)

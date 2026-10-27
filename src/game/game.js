@@ -37,7 +37,7 @@ export class Game {
 
   async init(settings) {
     this.settings = settings;
-    this.engine = new Engine(this.canvas, true, { stencil: false, preserveDrawingBuffer: false, powerPreference: 'high-performance' }, true);
+    this.engine = new Engine(this.canvas, true, { stencil: false, preserveDrawingBuffer: false, powerPreference: 'high-performance', alpha: false }, true);
     const scene = new Scene(this.engine);
     this.scene = scene;
     scene.clearColor = new Color4(0.62, 0.77, 0.92, 1);
@@ -188,7 +188,8 @@ export class Game {
       if (!last || e.pointerId !== last.id) return;
       const k = 0.006 * this.settings.sensitivity;
       this.lookYaw = Scalar.Clamp(this.lookYaw + (e.clientX - last.x) * k, -Math.PI, Math.PI);
-      this.lookPitch = Scalar.Clamp(this.lookPitch + (e.clientY - last.y) * k, -0.6, 0.5);
+      // in prima persona si puo' guardare molto piu' in alto (pallet sugli scaffali)
+      this.lookPitch = Scalar.Clamp(this.lookPitch + (e.clientY - last.y) * k, this.settings.view === 'first' ? -1.1 : -0.6, 0.5);
       last.x = e.clientX;
       last.y = e.clientY;
       this.lookIdle = 0;
@@ -364,8 +365,12 @@ export class Game {
       // Sguardo inclinato quanto serve a tenere in vista le forche (sui muletti grandi l'occhio e' piu' alto e lontano):
       // il punto a 3/4 delle forche resta sotto il centro di 0.3 rad (meta' strada verso il bordo basso)
       const ahead = f.geo.forkBase + FORK.length * 0.75 - ez;
-      const tilt = Math.max(Math.atan(0.5), Math.atan2(Math.max(0.3, ey - f.forkY), ahead) - 0.3);
-      target = pos.add(new Vector3(fwd.x, -Math.tan(tilt) - this.lookPitch, fwd.z));
+      // forche basse: sguardo in giu' sulle punte; forche alte: lo sguardo sale con loro (centro del carico)
+      const low = Math.max(Math.atan(0.5), Math.atan2(ey, ahead) - 0.3);
+      const high = Math.atan2(ey - f.forkY - 0.5, ahead) + 0.12;
+      const want = Math.min(low, high);
+      this.fpTilt = this.fpTilt === undefined ? want : this.fpTilt + (want - this.fpTilt) * Math.min(1, dt * 4);
+      target = pos.add(new Vector3(fwd.x, -Math.tan(Scalar.Clamp(this.fpTilt + this.lookPitch, -1.2, 1.3)), fwd.z));
       cam.fov = 1.2;
       cam.position.copyFrom(pos);
     } else {
@@ -397,6 +402,15 @@ export class Game {
     this.rearview?.update(f.model?.root, f.geo.s);
     // Cabina chiusa: si vede da fuori, in prima persona viene nascosta per una vista pulita
     const firstPerson = this.settings.view === 'first';
+    if (f.model?.roof?.length && (this.roofSeeThrough !== firstPerson || this.roofModel !== f.model)) {
+      // dal posto di guida il tetto si vede in trasparenza: si guardano i pallet in alto
+      this.roofSeeThrough = firstPerson;
+      this.roofModel = f.model; // muletto nuovo (contratto o cambio mezzo): va riapplicato
+      f.model.roof.forEach((m) => {
+        m.visibility = firstPerson ? 0.3 : 1;
+        m.material.transparencyMode = firstPerson ? 2 : 0; // 2 = trasparenza, 0 = opaco
+      });
+    }
     if (f.model?.cabShell?.length && this.cabHidden !== firstPerson) {
       this.cabHidden = firstPerson;
       f.model.cabShell.forEach((m) => m.setEnabled(!firstPerson));
