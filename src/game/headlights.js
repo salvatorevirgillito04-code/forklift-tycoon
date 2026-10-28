@@ -28,9 +28,12 @@ function materials(scene) {
   const sm = (e0, e1, x) => { const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
   for (let py = 0; py < 256; py++) {
     const v = 1 - py / 255; // 0 = sotto il faro (in basso), 1 = lontano
-    const along = 1.2 * sm(0.02, 0.2, v) * Math.pow(1 - v, 1.5);
     for (let px = 0; px < 256; px++) {
       const u = Math.abs(px / 255 - 0.5) * 2; // 0 al centro, 1 ai bordi
+      // inizio curvo: al centro la luce tocca l'asfalto prima, ai lati poco dopo (niente linea dritta);
+      // parte da zero e cresce piano fino a qualche metro dal muso, poi cala con la distanza
+      const vs = Math.max(0, v - 0.05 * u * u);
+      const along = 1.35 * Math.pow(sm(0, 0.17, vs), 1.3) * Math.pow(1 - v, 1.4);
       // due fari: due chiazze piu' chiare che si fondono in avanti
       const lobes = 1 + 0.25 * (1 - v) * Math.exp(-Math.pow((u - 0.45) / 0.22, 2));
       const a = 0.62 * along * (1 - sm(0.45, 1, u)) * lobes;

@@ -62,7 +62,7 @@ export class Traffic {
         lamps: [[lx, M.lampY, onFront(lx, M.lampY)], [-lx, M.lampY, onFront(-lx, M.lampY)]],
         tails: [[tx, M.tailY, onRear(tx, M.tailY)], [-tx, M.tailY, onRear(-tx, M.tailY)]],
         lens: [0.24, 0.09], tailLens: [0.2, 0.07], glow: 0.14,
-        beam: { z0: front - 1.6, z1: front + 16, w0: hw * 1.7, w1: 8 },
+        beam: { z0: front + 0.3, z1: front + 18, w0: hw * 1.5, w1: 9 },
       }, lights);
       addBlobShadow(this.scene, root, (front - rear) * 1.3, hw * 2 + 1.2, (front + rear) / 2, 0);
       const col = { minX: 0, maxX: 0, minZ: 0, maxZ: 0, y0: 0, y1: 1.5, tag: 'car' };
