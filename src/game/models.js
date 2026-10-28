@@ -128,12 +128,12 @@ export function vehicleGeometry(vehicle) {
 
 // Modelli .glb in /public/models (caricati una volta sola)
 const glbCache = new Map();
-async function tryLoadGLB(scene, file) {
+export async function tryLoadGLB(scene, file) {
   if (!glbCache.has(file)) glbCache.set(file, LoadAssetContainerAsync(`${import.meta.env.BASE_URL}models/${file}`, scene).catch(() => null));
   return glbCache.get(file);
 }
 
-function instantiateGLB(container, parent, name) {
+export function instantiateGLB(container, parent, name) {
   const inst = container.instantiateModelsToScene((n) => `${name}_${n}`, false);
   inst.rootNodes.forEach((n) => { n.parent = parent; });
   return inst;

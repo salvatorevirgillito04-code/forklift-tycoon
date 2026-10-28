@@ -312,6 +312,30 @@ export class GameAudio {
     }
   }
 
+  // Clacson di una macchina a distanza dist (m): due note stonate insieme, piu' basso da lontano
+  horn(dist = 10) {
+    if (!this.ctx || this.ctx.state !== 'running') return;
+    const ctx = this.ctx, t = ctx.currentTime;
+    const vol = 0.32 / (1 + dist / 12);
+    const f = ctx.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.value = 2200;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(vol, t + 0.02);
+    g.gain.setValueAtTime(vol, t + 0.5);
+    g.gain.linearRampToValueAtTime(0, t + 0.58);
+    f.connect(g).connect(this.sfx);
+    for (const hz of [405, 510]) {
+      const o = ctx.createOscillator();
+      o.type = 'square';
+      o.frequency.value = hz;
+      o.connect(f);
+      o.start(t);
+      o.stop(t + 0.6);
+    }
+  }
+
   // Colpi brevi: pallet appoggiato/preso (clack), caduto (tonfo)
   event(name) {
     if (!this.ctx || this.ctx.state !== 'running') return;

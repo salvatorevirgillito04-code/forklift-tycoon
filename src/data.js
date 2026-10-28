@@ -44,7 +44,9 @@ export const WAREHOUSES = PRICES.map((price, i) => {
   };
 });
 
-export const WORLD = { minX: -116, maxX: 116, minZ: -66, maxZ: 66, roadHalf: 7 };
+export const WORLD = { minX: -116, maxX: 116, minZ: -66, maxZ: 66, roadHalf: 7, roadOut: 120 }; // roadOut: strada oltre la recinzione
+// Lampioni sul confine tra un lotto e l'altro: gli ingressi dei piazzali restano liberi per i camion
+export const ROAD_LAMPS_X = [-110, -66, -22, 22, 66, 110];
 
 // Generatore pseudo-casuale deterministico: lo stesso livello genera sempre gli stessi contratti.
 function rng(seed) {
@@ -126,6 +128,10 @@ export function makeContract(level, difficulty, warehouseId, seed = 0) {
     seed: Math.floor(r() * 1e9),
   };
 }
+
+// Penalita' per ogni urto contro una persona o una macchina: 5%, +0,5% ogni 10 livelli; in tutto al massimo il 25%
+export const bumpPct = (level) => 5 + 0.5 * Math.floor(level / 10);
+export const BUMP_MAX = 25;
 
 export const xpForLevel = (lvl) => Math.round(120 * Math.pow(lvl, 1.45));
 

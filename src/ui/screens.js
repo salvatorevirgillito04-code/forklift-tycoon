@@ -688,6 +688,7 @@ export function openResult(app, outcome, result, contract) {
         ${row(t('reward'), fmt(result.base))}
         ${row(t('timeBonus'), `+${fmt(result.timeBonus)}`, 'good')}
         ${result.penalty ? row(`${t('penalty')} (${result.drops} ${t('drops').toLowerCase()})`, `-${fmt(result.penalty)}`, 'bad') : ''}
+        ${result.bumpPenalty ? row(`${t('bumps')} (${result.bumps} · -${result.bumpPct}%)`, `-${fmt(result.bumpPenalty)}`, 'bad') : ''}
         ${row(t('total'), `${fmt(result.coins)} 🪙`, 'total')}
         ${row(t('xp'), `+${result.xp}`)}
       </ul>` : `<p class="modal-text">${t('timeUp')}</p>`}

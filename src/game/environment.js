@@ -11,7 +11,7 @@ import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js'
 import { PBRMaterial } from '@babylonjs/core/Materials/PBR/pbrMaterial.js';
 import { SpotLight } from '@babylonjs/core/Lights/spotLight.js';
 import { Constants } from '@babylonjs/core/Engines/constants.js';
-import { WAREHOUSES, WORLD } from '../data.js';
+import { WAREHOUSES, WORLD, ROAD_LAMPS_X } from '../data.js';
 import { PLOT, plotToWorld } from './world.js';
 
 // Orario e meteo del contratto: luce, cielo, nebbia, superfici bagnate o innevate, luci di notte, pioggia e neve.
@@ -246,8 +246,8 @@ export class Environment {
       pools.push(d);
     };
     // lampioni della strada: luce verso la strada e il marciapiede
-    for (let x = WORLD.minX + 10; x < WORLD.maxX; x += 22) {
-      for (const z of [-7.6, 7.6]) add(x, z * 0.62, 8);
+    for (const x of ROAD_LAMPS_X) {
+      for (const z of [-7.6, 7.6]) add(x, z * 0.62, 11);
     }
     for (const wh of WAREHOUSES) {
       // dentro: sotto le lampade a soffitto

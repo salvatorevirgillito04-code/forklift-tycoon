@@ -29,6 +29,8 @@ import { createRearview } from './rearview.js';
 import { WorkerBots } from './workerbots.js';
 import { GameAudio } from './audio.js';
 import { Environment } from './environment.js';
+import { Traffic } from './traffic.js';
+import { People } from './people.js';
 import { vehicleById } from '../data.js';
 import { t } from '../i18n.js';
 
@@ -107,6 +109,10 @@ export class Game {
     this.mission = new Mission(scene, this.mats, this.env, this.shadowGen);
     this.bots = new WorkerBots(scene, this.mats, this.env);
     this.bots.shadowGen = this.shadowGen;
+    this.traffic = new Traffic(scene, this.env, this.audio);
+    await this.traffic.init();
+    this.people = new People(scene, this.env);
+    await this.people.init();
     this.applyQuality(settings.quality);
     this.world.freezeStatics();
     // orario e meteo dei contratti (dopo l'unione dei fissi: scambia i materiali di terra con la neve)
@@ -251,6 +257,7 @@ export class Game {
     // Materiali e shader compilati prima di iniziare (la prima comparsa di un materiale costa un attimo)
     await Promise.race([this.scene.whenReadyAsync(), new Promise((r) => setTimeout(r, 4000))]);
     this.mode = 'play';
+    if (this.mission.drive) this.hud.toast(t('truckArriving'));
     Sentry.addBreadcrumb({ category: 'mission', message: `start ${contract.type} lv${contract.level}` });
   }
 
@@ -318,7 +325,14 @@ export class Game {
     const dt = Math.min(0.05, this.engine.getDeltaTime() / 1000) * (this.timeScale || 1);
     try {
       if (this.mode === 'play' && !this.paused) this.step(dt);
-      else if (this.mode === 'play' && this.mission.finished) this.mission.animateLeaving(dt);
+      else if (this.mode === 'play' && this.mission.finished) this.mission.driveTruck(dt, null, this.traffic.cars, this.people.list);
+      // traffico: sempre in movimento (anche nel menu); col gioco in pausa resta fermo
+      if (!(this.mode === 'play' && this.paused)) {
+        const playing = this.mode === 'play' ? this.forklift : null;
+        this.traffic.update(dt, playing, this.mission.drive ? [this.mission.moveCol] : []);
+        const T = this.envFx;
+        this.traffic.setLights(!!T && (T.time !== 'day' || T.weather !== 'clear'));
+      }
       this.updateCamera(dt);
       this.audio.update(this.mode === 'play' ? this.forklift : null, this.mode === 'play' && !this.paused);
       this.envFx?.update(realDt, this.mode === 'play' ? this.forklift : null);
@@ -347,6 +361,7 @@ export class Game {
       this.shadowGen.cull(f.x, f.z, 28);
     }
     this.bots.update(dt, f);
+    this.people.update(dt, f, [f, ...[...this.bots.bots.values()].map((b) => b.f)]);
     this.pallets.update(dt);
     for (const ev of f.events) {
       this.audio.event(ev);
@@ -356,9 +371,16 @@ export class Game {
       } else if (ev === 'tooHeavy') this.hud.toast(t('tooHeavy'), 'bad');
       else if (ev === 'insertDeeper') this.hud.toast(t('insertDeeper'), 'warn');
       else if (ev === 'widen') this.hud.toast(t('widenForks'), 'warn');
+      else if ((ev === 'hitCar' || ev === 'hitPerson') && this.mission.bump()) {
+        this.hud.toast(t(ev, { n: this.mission.bumpPctTotal }), 'bad');
+      }
     }
     f.events.length = 0;
-    const outcome = this.mission.update(dt, f);
+    const outcome = this.mission.update(dt, f, this.traffic.cars, this.people.list);
+    if (this.mission.justParked) {
+      this.mission.justParked = false;
+      this.hud.toast(t('truckParked'), 'good');
+    }
     this.hud.update({ forklift: f, mission: this.mission, pallets: this.pallets });
     if (outcome) {
       this.paused = true;

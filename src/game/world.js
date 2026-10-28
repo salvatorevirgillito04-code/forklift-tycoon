@@ -3,7 +3,7 @@ import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.js';
 import { Mesh } from '@babylonjs/core/Meshes/mesh.js';
 import { VertexBuffer } from '@babylonjs/core/Buffers/buffer.js';
-import { WAREHOUSES, WORLD } from '../data.js';
+import { WAREHOUSES, WORLD, ROAD_LAMPS_X } from '../data.js';
 import { placeGLB } from './models.js';
 
 // Geometria di un lotto in coordinate locali (u lungo X, w = distanza dalla strada).
@@ -121,22 +121,28 @@ export class World {
     const { mats } = this;
     const W = WORLD;
     // L'erba sta ben sotto il piazzale: con 1-2 cm di differenza da lontano "tremava" sopra il cemento
-    this.ground('grass', W.minX - 60, W.maxX + 60, W.minZ - 60, W.maxZ + 60, -0.15, mats.grass);
+    const R0 = W.minX - W.roadOut, R1 = W.maxX + W.roadOut;
+    this.ground('grass', R0 - 20, R1 + 20, W.minZ - 60, W.maxZ + 60, -0.15, mats.grass);
     this.ground('yardGround', W.minX, W.maxX, W.minZ, W.maxZ, -0.01, mats.concrete);
-    this.ground('road', W.minX, W.maxX, -W.roadHalf, W.roadHalf, 0, mats.asphalt);
+    // La strada esce dalla recinzione: da li' arrivano e se ne vanno camion e macchine
+    this.ground('road', R0, R1, -W.roadHalf, W.roadHalf, 0, mats.asphalt);
     // Segnaletica stradale
-    for (let x = W.minX + 2; x < W.maxX - 2; x += 6) {
+    for (let x = R0 + 2; x < R1 - 2; x += 6) {
       this.addBox('dash', x, x + 3, 0.005, 0.015, -0.08, 0.08, mats.lineWhite, { collide: false, shadow: false, receive: true });
     }
     for (const z of [-W.roadHalf + 0.3, W.roadHalf - 0.3]) {
-      this.addBox('edge', W.minX, W.maxX, 0.005, 0.015, z - 0.08, z + 0.08, mats.lineWhite, { collide: false, shadow: false, receive: true });
+      this.addBox('edge', R0, R1, 0.005, 0.015, z - 0.08, z + 0.08, mats.lineWhite, { collide: false, shadow: false, receive: true });
     }
-    // Recinzione perimetrale
-    const f = 0.15;
+    // Recinzione perimetrale, aperta sulla strada
+    const f = 0.15, rh = W.roadHalf;
     this.fence(W.minX, W.maxX, W.maxZ - f, W.maxZ);
     this.fence(W.minX, W.maxX, W.minZ, W.minZ + f);
-    this.fence(W.minX, W.minX + f, W.minZ, W.maxZ);
-    this.fence(W.maxX - f, W.maxX, W.minZ, W.maxZ);
+    for (const x of [W.minX, W.maxX - f]) {
+      this.fence(x, x + f, W.minZ, -rh);
+      this.fence(x, x + f, rh, W.maxZ);
+      // il muletto resta nel quartiere (ostacolo invisibile solo per lui)
+      this.colliders.push({ minX: x, maxX: x + f, minZ: -rh, maxZ: rh, y0: 0, y1: 4, tag: 'edge' });
+    }
 
     WAREHOUSES.forEach((wh) => this.buildPlot(wh));
     this.group = undefined;
@@ -263,7 +269,7 @@ export class World {
   buildDecor() {
     const { mats } = this;
     // Lampioni lungo la strada
-    for (let x = WORLD.minX + 10; x < WORLD.maxX; x += 22) {
+    for (const x of ROAD_LAMPS_X) {
       for (const z of [-7.6, 7.6]) {
         if (this.decor.lamp) {
           // braccio verso la strada

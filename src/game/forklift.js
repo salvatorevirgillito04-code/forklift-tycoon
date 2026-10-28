@@ -126,12 +126,14 @@ export class Forklift {
       // Scarta subito gli ostacoli lontani (il muletto con forche e carico sta in ~5 m)
       if (c.maxX < x - 5 || c.minX > x + 5 || c.maxZ < z - 5 || c.minZ > z + 5) continue;
       const r = aabbIntoRect(c, TMP_RECT);
+      this.blockedBy = c; // l'ostacolo urtato (persone e macchine danno la penalita')
       if (verticalOverlap(0.05, this.geo.body.height, c.y0, c.y1) && rectsOverlap(body, r)) return null;
       if (verticalOverlap(fy0, fy1, c.y0, c.y1) && (rectsOverlap(forks[0], r) || rectsOverlap(forks[1], r))) return null;
       if (!c.noCarriage && verticalOverlap(forkY - 0.05, forkY + 1.32, c.y0, c.y1) && rectsOverlap(carriage, r)) return null;
       if (mastTop > this.geo.body.height && verticalOverlap(this.geo.body.height, mastTop, c.y0, c.y1) && rectsOverlap(mast, r)) return null;
       if (cRect && verticalOverlap(carried.bottom + 0.01, cTop, c.y0, c.y1) && rectsOverlap(cRect, r, 0.0)) return null;
     }
+    this.blockedBy = null;
     const hits = [];
     for (const p of env.pallets.list) {
       const hit = this.palletHit(p, env, x, z, yaw, forkY, spread, body, forks, cRect, carried, cTop);
@@ -349,6 +351,7 @@ export class Forklift {
     const nz = this.z + Math.cos(nYaw) * this.v * dt;
     let hit = false;
     const touched = this.contacts(env, nx, nz, nYaw);
+    const blocker = touched ? null : this.blockedBy;
     if (!touched || touched.length === 0) {
       // Pallet gia' smosso: resta "in movimento" per un attimo anche senza contatto
       this.pushGrace = (this.pushGrace || 0) - dt;
@@ -372,7 +375,8 @@ export class Forklift {
       if (Math.abs(this.v) > 1.6 && this.carried) this.dropCarried(env);
       // Contro un pallet in attesa di smuoverlo: si ferma senza rimbalzare
       this.v *= touched && touched.length && (this.pushTime > 0 || this.pushGrace > 0) ? 0 : -0.15;
-      env.onImpact?.(Math.abs(prevV));
+      const tag = blocker?.tag;
+      if (tag === 'car' || tag === 'person') this.events.push(tag === 'car' ? 'hitCar' : 'hitPerson');
     }
 
     this.updateCarried(dt, env, { yawRate, decel: (Math.abs(prevV) - Math.abs(this.v)) / dt, loadRatio, input });
