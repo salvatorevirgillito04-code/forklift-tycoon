@@ -121,7 +121,12 @@ export class People {
         if (!p.route.length) this.plan(p, wh);
         const [tx, tz] = p.route[0];
         const dx = tx - p.x, dz = tz - p.z, d = Math.hypot(dx, dz);
-        if (d < 0.15) {
+        // un'altra persona proprio davanti: aspetta che passi (quella con l'indice piu' basso ha la precedenza)
+        const blocked = this.list.some((o) => o !== p && this.list.indexOf(o) < this.list.indexOf(p)
+          && Math.hypot(o.x - p.x, o.z - p.z) < 0.9 && ((o.x - p.x) * dx + (o.z - p.z) * dz) > 0);
+        if (blocked) {
+          this.play(p, 'idle');
+        } else if (d < 0.15) {
           p.route.shift();
           if (!p.route.length) p.wait = rnd(1.5, 5);
         } else {
