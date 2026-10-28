@@ -335,6 +335,9 @@ export class Game {
         this.traffic.update(dt, playing, this.mission.drive ? [this.mission.moveCol] : []);
       }
       this.updateCamera(dt);
+      // il cielo segue la camera (infiniteDistance non vale per la cupola, che ha un genitore): senza, dai lotti
+      // lontani la parte opposta della cupola finiva oltre la distanza di disegno e restava un buco grigio
+      this.sky.position.copyFrom(this.camera.position);
       this.audio.update(this.mode === 'play' ? this.forklift : null, this.mode === 'play' && !this.paused);
       this.envFx?.update(realDt, this.mode === 'play' ? this.forklift : null);
       if (this.envFx && this.forklift) this.audio.setWeather(this.envFx.weather, this.envFx.isOutside(this.forklift.x, this.forklift.z), this.envFx.rainLevel);

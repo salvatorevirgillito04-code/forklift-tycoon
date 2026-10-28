@@ -22,13 +22,13 @@ function materials(scene) {
   const tex = new DynamicTexture('headlightAtlas', { width: 512, height: 256 }, scene, true);
   const ctx = tex.getContext();
   ctx.clearRect(0, 0, 512, 256);
-  // fascio a terra: il trapezio e' gia' nella forma del pezzo; qui la sfumatura. Parte forte sotto il muso
-  // (come la luce che esce dal faro e tocca subito l'asfalto), poi cala con la distanza e verso i bordi
+  // fascio a terra: il trapezio e' gia' nella forma del pezzo; qui la sfumatura. Comincia sotto il mezzo e
+  // cresce dolcemente fino a poco davanti al muso (nessun bordo netto), poi cala con la distanza e verso i bordi
   const img = ctx.createImageData(256, 256);
   const sm = (e0, e1, x) => { const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
   for (let py = 0; py < 256; py++) {
     const v = 1 - py / 255; // 0 = sotto il faro (in basso), 1 = lontano
-    const along = (0.55 + 0.45 * sm(0, 0.1, v)) * Math.pow(1 - v, 1.5);
+    const along = 1.2 * sm(0.02, 0.2, v) * Math.pow(1 - v, 1.5);
     for (let px = 0; px < 256; px++) {
       const u = Math.abs(px / 255 - 0.5) * 2; // 0 al centro, 1 ai bordi
       // due fari: due chiazze piu' chiare che si fondono in avanti

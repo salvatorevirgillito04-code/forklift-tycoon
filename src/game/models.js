@@ -344,7 +344,7 @@ export async function createForkliftModel(scene, mats, vehicle) {
     lamps: [[rx, ly, lz], [-rx, ly, lz]],
     tails: [[tx, ty, tz(tx, ty)], [-tx, ty, tz(-tx, ty)]],
     lens: [0.13, 0.09], tailLens: [0.12, 0.06], glow: 0.13,
-    beam: { z0: geo.mastZ - 0.2, z1: geo.mastZ + 12, w0: 1.6 * s, w1: 7.5 },
+    beam: { z0: geo.mastZ - 1.2, z1: geo.mastZ + 12, w0: 1.4 * s, w1: 7.5 },
   }, root);
   const B = geo.body;
   addBlobShadow(scene, root, B.hw * 3.3, (B.z1 - B.z0) * 1.45, 0, (B.z0 + B.z1) / 2);
@@ -402,7 +402,7 @@ export async function createTruckModel(scene, mats, color = '#d63a2f') {
     lamps: [[lx, ly, fz(lx, ly)], [-lx, ly, fz(-lx, ly)]],
     tails: [[1.0, 0.82, -L / 2 - 0.06], [-1.0, 0.82, -L / 2 - 0.06]],
     lens: [0.3, 0.12], tailLens: [0.26, 0.1], glow: 0.18,
-    beam: { z0: front - 0.3, z1: front + 18, w0: 2.4, w1: 9 },
+    beam: { z0: front - 2, z1: front + 18, w0: 2.2, w1: 9 },
   }, lights);
   addBlobShadow(scene, root, L + 6.5, W + 1.6, 1.975, 0);
   return root;
