@@ -264,6 +264,10 @@ export class Mission {
     this.truck.position.set(this.bedPose.x, 0, this.bedPose.z);
     this.truck.rotation.y = 0;
     this.truckPose = { ...this.bedPose, moving: false };
+    if (this.truckFade !== 1) {
+      this.truckFade = 1;
+      for (const m of this.truck.getChildMeshes(false, (n) => !n.isAnInstance)) m.visibility = 1;
+    }
     this.env.colliders.push(...this.truckColliders);
     this.env.pallets.truckBed = this.bedPose;
     for (const p of this.env.pallets.list) {

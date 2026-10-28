@@ -1,5 +1,6 @@
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.js';
 import { tryLoadGLB } from './models.js';
+import { addBlobShadow } from './blobshadow.js';
 import { WAREHOUSES } from '../data.js';
 import { plotToWorld } from './world.js';
 import { wrapAngle } from './physics.js';
@@ -42,6 +43,7 @@ export class People {
         anims[/walk/i.test(g.name) ? 'walk' : 'idle'] = g;
       }
       root.getChildMeshes().forEach((m) => { m.isPickable = false; });
+      addBlobShadow(this.scene, root, 1.2, 1.2);
       const col = { minX: 0, maxX: 0, minZ: 0, maxZ: 0, y0: 0, y1: 1.8, tag: 'person' };
       this.env.colliders.push(col);
       const p = { root, anims, col, x: 0, z: 0, yaw: 0, route: [], wait: 0, stopped: false, anim: null, enabled: true };
