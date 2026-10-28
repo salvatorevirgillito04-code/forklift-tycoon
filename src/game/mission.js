@@ -8,6 +8,8 @@ const TRUCK_COLORS = ['#d63a2f', '#1f5fa8', '#f0f0f0', '#2c8c4a', '#e3a01b'];
 const TRUCK_REAR = -TRUCK.bedLength / 2 - 0.2, TRUCK_FRONT = TRUCK.bedLength / 2 + 5;
 const TRUCK_HALF_W = TRUCK.bedWidth / 2 + 0.05;
 const ARRIVE_LANE = 3.5; // corsia (z) da cui arriva il camion, verso +x
+// distanza del centro del muletto da una scatola { minX, maxX, minZ, maxZ }
+const boxDist = (b, f) => Math.hypot(Math.max(b.minX - f.x, 0, f.x - b.maxX), Math.max(b.minZ - f.z, 0, f.z - b.maxZ));
 const line = (a, b) => bezierPath(a, [a[0] + (b[0] - a[0]) / 3, a[1] + (b[1] - a[1]) / 3], [a[0] + (b[0] - a[0]) * 2 / 3, a[1] + (b[1] - a[1]) * 2 / 3], b);
 
 // Posizioni dei pallet: zona interna (righe dalla porta verso il fondo) o pianale (2 file).
@@ -54,7 +56,7 @@ export class Mission {
     this.timeLeft = contract.timeLimit ?? Infinity;
     this.drops = 0;
     this.bumps = 0;
-    this.bumpWait = 0;
+    this.contact = null; // ostacolo urtato: un nuovo urto conta solo dopo essersi staccati
     this.finished = false;
     this.forceDone = false;
 
@@ -79,10 +81,10 @@ export class Mission {
       // Arriva dalla strada: avanti sulla corsia, poi in retromarcia fino al posto (il tempo parte quando e' fermo)
       // corsia verso +x (z = +3,5); per i lotti a sud si sposta sulla corsia vicina prima della manovra
       const zl = ARRIVE_LANE, zn = wh.side * ARRIVE_LANE, xs = bx + 26;
-      this.drive = { mode: 'arrive', i: 0, s: 0, v: 12, legs: [
-        { path: line([bx - 80, zl], [xs - 26, zl]), vmax: 13, keep: true, travel: true },
-        { path: bezierPath([xs - 26, zl], [xs - 13, zl], [xs - 13, zn], [xs, zn]), vmax: 8 },
-        { path: bezierPath([xs, zn], [xs - 12, zn], [bx + 14, bz], [bx, bz]), vmax: 3.5, reverse: true },
+      this.drive = { mode: 'arrive', i: 0, s: 0, v: 13, legs: [
+        { path: line([bx - 45, zl], [xs - 26, zl]), vmax: 13, keep: true, travel: true, fadeIn: true },
+        { path: bezierPath([xs - 26, zl], [xs - 13, zl], [xs - 13, zn], [xs, zn]), vmax: 10 },
+        { path: bezierPath([xs, zn], [xs - 12, zn], [bx + 14, bz], [bx, bz]), vmax: 5, reverse: true },
       ] };
       this.moveCol = { minX: 0, maxX: 0, minZ: 0, maxZ: 0, y0: 0, y1: 4, tag: 'truck' };
       this.env.colliders.push(this.moveCol);
@@ -156,7 +158,6 @@ export class Mission {
       this.driveTruck(dt, forklift, cars, walkers);
       return null;
     }
-    this.bumpWait -= dt;
     this.timeLeft -= dt;
     if (this.timeLeft <= 0) {
       this.timeLeft = 0;
@@ -180,7 +181,7 @@ export class Mission {
         this.drive = { mode: 'leave', i: 0, s: 0, v: 0, legs: [
           { path: bezierPath([bx, bz], [bx + 11, bz], [bx + 15, zn], [bx + 26, zn]), vmax: 4 },
           { path: bezierPath([bx + 26, zn], [bx + 39, zn], [bx + 39, zl], [bx + 52, zl]), vmax: 7 },
-          { path: line([bx + 52, zl], [bx + 140, zl]), vmax: 12, travel: true },
+          { path: line([bx + 52, zl], [bx + 140, zl]), vmax: 12, travel: true, fadeOut: true },
         ] };
         this.env.colliders.push(this.moveCol);
       }
@@ -197,8 +198,8 @@ export class Mission {
     const leg = d.legs[d.i];
     const left = leg.path.len - d.s;
     // rallenta in fondo alla tratta (non su quelle di solo viaggio, che proseguono nella successiva)
-    let want = leg.keep ? leg.vmax : Math.min(leg.vmax, Math.sqrt(2 * 1.6 * Math.max(0, left)) + 0.3);
-    if (leg.keep && d.legs[d.i + 1]) want = Math.min(want, d.legs[d.i + 1].vmax + Math.sqrt(2 * 1.6 * Math.max(0, left)));
+    let want = leg.keep ? leg.vmax : Math.min(leg.vmax, Math.sqrt(2 * 2.6 * Math.max(0, left)) + 0.3);
+    if (leg.keep && d.legs[d.i + 1]) want = Math.min(want, d.legs[d.i + 1].vmax + Math.sqrt(2 * 2.6 * Math.max(0, left)));
     if (forklift && this.blockedBy(forklift, leg.reverse)) want = 0;
     if (walkers.some((w) => this.blockedBy(w, leg.reverse))) want = 0;
     if (leg.travel) {
@@ -208,7 +209,7 @@ export class Mission {
         if (Math.abs(lz) < 2 && gap > -2 && gap < 18) want = Math.min(want, gap < 6 ? 0 : c.v);
       }
     }
-    d.v += Math.max(-3 * dt, Math.min(1.5 * dt, want - d.v));
+    d.v += Math.max(-3.5 * dt, Math.min(2.4 * dt, want - d.v));
     d.s = Math.min(leg.path.len, d.s + Math.max(0, d.v) * dt);
     this.placeTruck();
     if (d.s >= leg.path.len - 1e-3) {
@@ -230,6 +231,12 @@ export class Mission {
     const yaw = Math.atan2(-hz, hx);
     this.truck.position.set(pt.x, 0, pt.z);
     this.truck.rotation.y = yaw;
+    // compare e sparisce in dissolvenza (inizio e fine della strada)
+    const fade = leg.fadeIn ? Math.min(1, d.s / 12) : leg.fadeOut ? Math.min(1, (leg.path.len - d.s) / 12) : 1;
+    if (fade !== this.truckFade) {
+      this.truckFade = fade;
+      for (const m of this.truck.getChildMeshes(false, (n) => !n.isAnInstance)) m.visibility = fade; // i pallet (istanze) no
+    }
     this.truckPose = { x: pt.x, z: pt.z, yaw, reverse: !!leg.reverse, moving: true };
     // ostacolo per il muletto (scatola che contiene il camion girato)
     const c = Math.abs(Math.cos(yaw)), s = Math.abs(Math.sin(yaw));
@@ -263,12 +270,20 @@ export class Mission {
     this.justParked = true;
   }
 
-  // Urto contro una persona o una macchina: conta una volta ogni 3 secondi. true se e' stato contato.
-  bump() {
-    if (!this.contract || this.finished || this.bumpWait > 0) return false;
+  // Urto contro una persona o una macchina (col = il suo ostacolo): conta una volta finche' il muletto
+  // resta appoggiato; dopo essersi staccati (mezzo metro) il prossimo urto conta di nuovo. true se contato.
+  bump(col, f) {
+    if (!this.contract || this.finished) return false;
+    if (this.contact?.col === col) return false;
+    this.contact = { col, d: boxDist(col, f) };
     this.bumps += 1;
-    this.bumpWait = 3;
     return true;
+  }
+
+  // chiamata a ogni passo: si e' staccati quando ci si allontana dall'ostacolo urtato
+  updateContact(f) {
+    const c = this.contact;
+    if (c && boxDist(c.col, f) > c.d + 0.5) this.contact = null;
   }
 
   get bumpPctTotal() {

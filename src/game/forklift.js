@@ -376,7 +376,10 @@ export class Forklift {
       // Contro un pallet in attesa di smuoverlo: si ferma senza rimbalzare
       this.v *= touched && touched.length && (this.pushTime > 0 || this.pushGrace > 0) ? 0 : -0.15;
       const tag = blocker?.tag;
-      if (tag === 'car' || tag === 'person') this.events.push(tag === 'car' ? 'hitCar' : 'hitPerson');
+      if (tag === 'car' || tag === 'person') {
+        this.lastHit = blocker;
+        this.events.push(tag === 'car' ? 'hitCar' : 'hitPerson');
+      }
     }
 
     this.updateCarried(dt, env, { yawRate, decel: (Math.abs(prevV) - Math.abs(this.v)) / dt, loadRatio, input });

@@ -371,11 +371,12 @@ export class Game {
       } else if (ev === 'tooHeavy') this.hud.toast(t('tooHeavy'), 'bad');
       else if (ev === 'insertDeeper') this.hud.toast(t('insertDeeper'), 'warn');
       else if (ev === 'widen') this.hud.toast(t('widenForks'), 'warn');
-      else if ((ev === 'hitCar' || ev === 'hitPerson') && this.mission.bump()) {
+      else if ((ev === 'hitCar' || ev === 'hitPerson') && this.mission.bump(f.lastHit, f)) {
         this.hud.toast(t(ev, { n: this.mission.bumpPctTotal }), 'bad');
       }
     }
     f.events.length = 0;
+    this.mission.updateContact(f);
     const outcome = this.mission.update(dt, f, this.traffic.cars, this.people.list);
     if (this.mission.justParked) {
       this.mission.justParked = false;
