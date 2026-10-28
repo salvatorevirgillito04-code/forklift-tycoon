@@ -109,7 +109,7 @@ class RainDrops {
 }
 
 export class Hud {
-  constructor(root, { onSettings, onMap, onCamera, coins }) {
+  constructor(root, { onSettings, onMap, onCamera, onLights, coins }) {
     this.root = root;
     root.innerHTML = `
       <canvas class="rain-drops"></canvas>
@@ -120,6 +120,7 @@ export class Hud {
         <button class="round-btn small" data-act="settings" aria-label="${t('settings')}">${ICONS.gear}</button>
       </div>
       <button class="hud-cam" data-act="camera" aria-label="${t('view')}">${ICONS.camera}</button>
+      <button class="hud-cam lights" data-act="lights" aria-label="${t('lights')}">${ICONS.headlight}</button>
       <div class="task-panel">
         <div class="task-stats">
           <div class="task-stat" data-stat="time">${ICONS.clock}<b class="timer">--:--</b></div>
@@ -134,6 +135,8 @@ export class Hud {
     root.querySelector('[data-act="settings"]').addEventListener('click', onSettings);
     root.querySelector('[data-act="map"]').addEventListener('click', onMap);
     root.querySelector('[data-act="camera"]').addEventListener('click', onCamera);
+    this.lightsBtn = root.querySelector('[data-act="lights"]');
+    this.lightsBtn.addEventListener('click', () => onLights?.());
     this.rainDrops = new RainDrops(root.querySelector('.rain-drops'));
     this.canvas = root.querySelector('.minimap canvas');
     this.ctx = this.canvas.getContext('2d');

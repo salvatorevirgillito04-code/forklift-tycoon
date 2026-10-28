@@ -37,6 +37,7 @@ export const ICONS = {
   rain: svg('<path d="M7 15a4.5 4.5 0 1 1 1-8.9A5.5 5.5 0 0 1 18.5 8 3.5 3.5 0 0 1 18 15z"/><path d="M8 18l-1 3M12 18l-1 3M16 18l-1 3"/>'),
   snow: svg('<path d="M7 14a4.5 4.5 0 1 1 1-8.9A5.5 5.5 0 0 1 18.5 7 3.5 3.5 0 0 1 18 14z"/><path d="M8 18h.01M12 20h.01M16 18h.01M10 22h.01M14 22h.01"/>'),
   fog: svg('<path d="M4 9h16M2 13h20M5 17h14M8 21h8"/>'),
+  headlight: svg('<path d="M10 5c-3.9 0-6 3-6 7s2.1 7 6 7z"/><path d="M14 8h7M14 12h7M14 16h7"/>'),
   camera: svg('<path d="M3 8h4l2-3h6l2 3h4v11H3z"/><circle cx="12" cy="13" r="3.5"/>'),
   clock: svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
   pallets: svg('<path d="M4 4h7v6H4zM13 4h7v6h-7zM8.5 12h7v6h-7zM3 20h18"/>'),

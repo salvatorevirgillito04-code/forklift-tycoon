@@ -31,6 +31,7 @@ import { GameAudio } from './audio.js';
 import { Environment } from './environment.js';
 import { Traffic } from './traffic.js';
 import { People } from './people.js';
+import { setOwnLights, headlightsLevel } from './headlights.js';
 import { vehicleById } from '../data.js';
 import { t } from '../i18n.js';
 
@@ -246,7 +247,8 @@ export class Game {
     // Operai vicini creati ora, durante il caricamento: crearli mentre si gioca bloccava il gioco un attimo
     await this.bots.prewarm(this.forklift);
     this.shadowGen.cull(this.forklift.x, this.forklift.z, 20);
-    this.hud = new Hud(hudRoot, { onSettings, onMap, onCamera, coins });
+    this.hud = new Hud(hudRoot, { onSettings, onMap, onCamera, coins, onLights: () => this.toggleLights() });
+    this.playerLights = null; // fanali del muletto automatici a ogni contratto
     this.rearview = createRearview(this.scene, this.camera);
     this.rearview.setEnabled(this.settings.mirrors !== false);
     this.hud.setOwned(owned);
@@ -262,6 +264,19 @@ export class Game {
     this.mode = 'play';
     if (this.mission.drive) this.hud.toast(t('truckArriving'));
     Sentry.addBreadcrumb({ category: 'mission', message: `start ${contract.type} lv${contract.level}` });
+  }
+
+  // Tasto fanali: accende o spegne i fanali del proprio muletto (poi restano come scelto fino al prossimo contratto)
+  toggleLights() {
+    const f = this.forklift;
+    if (!f?.model?.lights) return;
+    this.playerLights = !this.lightsOn();
+    setOwnLights(f.model.lights, this.playerLights);
+    this.hud?.toast(t(this.playerLights ? 'lightsOn' : 'lightsOff'));
+  }
+
+  lightsOn() {
+    return this.playerLights ?? headlightsLevel() > 0;
   }
 
   clearFadedWalls() {
@@ -463,6 +478,11 @@ export class Game {
     f.model?.root.computeWorldMatrix(true);
     this.rearview?.update(f.model?.root, f.geo.s);
     const firstPerson = this.settings.view === 'first';
+    const lit = this.lightsOn();
+    if (this.hud?.lightsBtn && this.hud.lightsLit !== lit) {
+      this.hud.lightsLit = lit;
+      this.hud.lightsBtn.classList.toggle('on', lit);
+    }
     // in prima persona niente aloni e lenti dei fari del tettuccio davanti agli occhi (il fascio a terra resta)
     if (f.model?.lights) for (const m of f.model.lights.lenses) m.isVisible = !firstPerson;
     if (f.model?.roof?.length && (this.roofSeeThrough !== firstPerson || this.roofModel !== f.model)) {

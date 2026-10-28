@@ -167,5 +167,22 @@ function build(scene, name, G, mat, parent) {
 export function setHeadlights(v) {
   level = v;
   if (glowMat) glowMat.alpha = Math.max(0.01, v);
-  for (const m of all) m.setEnabled(v > 0);
+  for (const m of all) m.setEnabled(m.override ?? v > 0);
+}
+
+export const headlightsLevel = () => level;
+
+// Fanali di un mezzo comandati a mano (tasto luci): on = true/false, null = automatici.
+// Accesi di giorno usano un materiale proprio, piu' tenue ma visibile anche quando gli altri sono spenti.
+export function setOwnLights(lights, on) {
+  const meshes = [lights, ...(lights.lenses || [])];
+  for (const m of meshes) {
+    m.override = on ?? undefined;
+    if (on && level < 0.5) {
+      m.ownMat ||= glowMat.clone(`${glowMat.name}Own`);
+      m.ownMat.alpha = 0.55;
+      m.material = m.ownMat;
+    } else m.material = glowMat;
+    m.setEnabled(m.override ?? level > 0);
+  }
 }

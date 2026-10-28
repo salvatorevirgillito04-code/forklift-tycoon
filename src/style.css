@@ -684,6 +684,10 @@ body.playing #hud, body.playing #controls { display: block; }
   border: 2px solid rgba(255, 255, 255, 0.75);
 }
 
+/* Tasto fanali, sotto il bottone camera: giallo quando sono accesi */
+.hud-cam.lights { top: calc(132px + var(--safe-t)); }
+.hud-cam.lights.on { color: #ffd23a; border-color: #ffd23a; box-shadow: 0 0 12px rgba(255, 210, 58, 0.6); }
+
 /* Forche: bottoni tondi scuri semitrasparenti */
 .fork-btn {
   border-radius: 50%;
