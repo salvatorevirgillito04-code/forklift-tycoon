@@ -190,6 +190,10 @@ export class World {
     // Scaffalature sul fondo
     const R = PLOT.racks;
     const bays = Math.round((R.u[1] - R.u[0]) / R.bay);
+    // lampade appese sopra la scaffalatura, sul lato del corridoio (illuminano piani e pallet)
+    for (let u = R.u[0] + 1.5; u < R.u[1]; u += 4.1) {
+      box('lamp', u - 0.9, u + 0.9, 5.2, 5.3, R.w[0] - 1.25, R.w[0] - 1.05, mats.light, { collide: false, shadow: false });
+    }
     // montanti davanti e dietro tra una campata e l'altra (urtano muletto, forche e carico)
     for (let i = 0; i <= bays; i++) {
       const u = R.u[0] + i * R.bay;

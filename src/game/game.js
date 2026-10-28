@@ -16,6 +16,7 @@ import { TRUCK, FORK, loadDecor } from './models.js';
 import { createRearview } from './rearview.js';
 import { WorkerBots } from './workerbots.js';
 import { GameAudio } from './audio.js';
+import { Environment } from './environment.js';
 import { vehicleById } from '../data.js';
 import { t } from '../i18n.js';
 
@@ -96,6 +97,11 @@ export class Game {
     this.bots.shadowGen = this.shadowGen;
     this.applyQuality(settings.quality);
     this.world.freezeStatics();
+    // orario e meteo dei contratti (dopo l'unione dei fissi: scambia i materiali di terra con la neve)
+    this.envFx = new Environment(scene, { sun, hemi, sky: this.sky, mats: this.mats, camera: this.camera, world: this.world });
+    this.envFx.setSkyAllowed(this.skyAllowed !== false);
+    this.env.grip = (x, z) => this.envFx.grip(x, z);
+    this.envFx.onThunder = (delay, near) => this.audio.thunder(delay, near);
     this.bindLook();
 
     window.addEventListener('resize', () => this.engine.resize());
@@ -139,7 +145,9 @@ export class Game {
       this.shadowCull = 0; // al prossimo passo solo gli oggetti vicini
     }
     this.sun.shadowEnabled = !!mode;
-    this.sky.setEnabled(q !== 'low' && dev.sky);
+    this.skyAllowed = q !== 'low' && dev.sky;
+    if (this.envFx) this.envFx.setSkyAllowed(this.skyAllowed);
+    else this.sky.setEnabled(this.skyAllowed);
   }
 
   // Menu sviluppatore: spegne singoli effetti per capire cosa pesa sul telefono
@@ -209,6 +217,7 @@ export class Game {
     const vehicle = vehicleById(vehicleId);
     this.forklift = new Forklift(this.scene, this.mats, vehicle);
     await this.forklift.build(this.shadowGen);
+    this.envFx.apply(contract.time || 'day', contract.weather || 'clear');
     const start = await this.mission.start(contract);
     this.forklift.place(start.x, start.z, start.yaw);
     this.bots.setWorkers(workers);
@@ -239,6 +248,7 @@ export class Game {
   }
 
   stopMission() {
+    this.envFx?.apply('day', 'clear'); // menu sempre di giorno col sereno
     this.clearFadedWalls();
     this.rearview?.dispose();
     this.rearview = null;
@@ -299,6 +309,14 @@ export class Game {
       else if (this.mode === 'play' && this.mission.finished) this.mission.animateLeaving(dt);
       this.updateCamera(dt);
       this.audio.update(this.mode === 'play' ? this.forklift : null, this.mode === 'play' && !this.paused);
+      this.envFx?.update(realDt, this.mode === 'play' ? this.forklift : null);
+      if (this.envFx && this.forklift) this.audio.setWeather(this.envFx.weather, this.envFx.isOutside(this.forklift.x, this.forklift.z));
+      // gocce sulla visuale: prima persona, pioggia, all'aperto
+      if (this.hud) {
+        const f = this.forklift;
+        this.hud.rainDrops.frame(realDt, this.mode === 'play' && !this.paused && this.settings.view === 'first'
+          && this.envFx.weather === 'rain' && this.envFx.isWetAt(f.x, f.z) > 0.5);
+      }
       this.scene.render();
     } catch (err) {
       Sentry.captureException(err);
@@ -354,7 +372,7 @@ export class Game {
       cam.position.set(Math.sin(this.menuAngle) * r, 22, 20 + Math.cos(this.menuAngle) * r);
       cam.setTarget(new Vector3(0, 4, 18));
       cam.fov = 0.9;
-      this.sun.position = new Vector3(0, 0, 18).subtract(SUN_DIR.scale(100));
+      this.sun.position = new Vector3(0, 0, 18).subtract((this.envFx?.sunDir || SUN_DIR).scale(100));
       return;
     }
     const yaw = f.yaw + this.lookYaw;
@@ -402,7 +420,7 @@ export class Game {
       cam.fov = 0.95;
     }
     cam.setTarget(target);
-    this.sun.position = base.subtract(SUN_DIR.scale(100));
+    this.sun.position = base.subtract((this.envFx?.sunDir || SUN_DIR).scale(100));
     f.model?.root.computeWorldMatrix(true);
     this.rearview?.update(f.model?.root, f.geo.s);
     // Cabina chiusa: si vede da fuori, in prima persona viene nascosta per una vista pulita

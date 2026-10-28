@@ -29,6 +29,14 @@ export const ICONS = {
   contract: svg('<path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6M9 13h8M9 17h6"/>'),
   play: svg('<path d="M7 4l13 8-13 8z"/>'),
 
+  // orario e meteo dei contratti
+  sun: svg('<circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/>'),
+  sunset: svg('<path d="M3 18h18M6 18a6 6 0 0 1 12 0M12 4v4M9.5 6.5L12 9l2.5-2.5M4 12.5l1.6.8M20 12.5l-1.6.8M3 22h18"/>'),
+  dawn: svg('<path d="M3 18h18M6 18a6 6 0 0 1 12 0M12 9V5M9.5 6.5L12 4l2.5 2.5M4 12.5l1.6.8M20 12.5l-1.6.8M3 22h18"/>'),
+  moon: svg('<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>'),
+  rain: svg('<path d="M7 15a4.5 4.5 0 1 1 1-8.9A5.5 5.5 0 0 1 18.5 8 3.5 3.5 0 0 1 18 15z"/><path d="M8 18l-1 3M12 18l-1 3M16 18l-1 3"/>'),
+  snow: svg('<path d="M7 14a4.5 4.5 0 1 1 1-8.9A5.5 5.5 0 0 1 18.5 7 3.5 3.5 0 0 1 18 14z"/><path d="M8 18h.01M12 20h.01M16 18h.01M10 22h.01M14 22h.01"/>'),
+  fog: svg('<path d="M4 9h16M2 13h20M5 17h14M8 21h8"/>'),
   camera: svg('<path d="M3 8h4l2-3h6l2 3h4v11H3z"/><circle cx="12" cy="13" r="3.5"/>'),
   clock: svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
   pallets: svg('<path d="M4 4h7v6H4zM13 4h7v6h-7zM8.5 12h7v6h-7zM3 20h18"/>'),

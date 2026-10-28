@@ -75,6 +75,17 @@ export const CONTRACT_TYPES = {
   zone2rack: { from: 'zone', to: 'rack' },
   rack2zone: { from: 'rack', to: 'zone' },
 };
+// Orario e meteo di ogni contratto (a caso); il brutto tempo e la notte pagano di piu'
+export const TIMES = ['day', 'sunset', 'night', 'dawn'];
+export const WEATHERS = ['clear', 'rain', 'fog', 'snow'];
+const BONUS = { night: 0.1, fog: 0.1, rain: 0.2, snow: 0.2 };
+function pickTime(r) {
+  const x = r();
+  return x < 0.5 ? 'day' : x < 0.68 ? 'sunset' : x < 0.86 ? 'night' : 'dawn';
+}
+// 2 contratti su 3 sereni, il terzo con pioggia, nebbia o neve
+const pickWeather = (r) => (r() < 2 / 3 ? 'clear' : WEATHERS[1 + Math.floor(r() * 3)]);
+
 // Peso per pallet: kg per livello del contratto (livello 20 difficile ~2000 kg)
 const KG_PER_LEVEL = { easy: 50, normal: 75, hard: 100 };
 const MAX_WEIGHT = 8000; // portata del muletto piu' grande
@@ -94,7 +105,9 @@ export function makeContract(level, difficulty, warehouseId, seed = 0) {
   // Tempo: piu' secondi per pallet, fino a 5/6/7 minuti (facile/normale/difficile); con gli scaffali un po' di piu'
   const perPallet = Math.max(d.minSec, d.secPerPallet - level * 0.5) * (rack ? 1.2 : 1);
   const timeLimit = Math.round(Math.min(d.maxTime * (rack ? 1.2 : 1), pallets * perPallet + 60) / 5) * 5;
-  const reward = Math.round(90 * Math.pow(1.13, level - 1) * d.mult * wh.rewardMult * (rack ? 1.15 : 1) * (0.95 + r() * 0.1));
+  const time = pickTime(r), weather = pickWeather(r);
+  const bonus = 1 + (BONUS[time] || 0) + (BONUS[weather] || 0);
+  const reward = Math.round(90 * Math.pow(1.13, level - 1) * d.mult * wh.rewardMult * (rack ? 1.15 : 1) * bonus * (0.95 + r() * 0.1));
   const xp = Math.round((40 + level * 12) * d.mult * (rack ? 1.15 : 1));
   return {
     level,
@@ -107,6 +120,9 @@ export function makeContract(level, difficulty, warehouseId, seed = 0) {
     reward,
     xp,
     fragile: d.fragile,
+    time,
+    weather,
+    bonus,
     seed: Math.floor(r() * 1e9),
   };
 }

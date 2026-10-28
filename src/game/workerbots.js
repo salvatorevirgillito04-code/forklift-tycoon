@@ -556,7 +556,10 @@ export class WorkerBots {
       const q = pointAt(path, bot.s + d);
       turn = Math.max(turn, Math.abs(wrapAngle(q.h - here.h)) / d);
     }
-    let target = Math.min((reverse ? V_REV : V_FWD) / (1 + turn * 2.2), Math.sqrt(2 * DEC * left));
+    // col brutto tempo all'aperto vanno piu' piano (stessa aderenza del giocatore)
+    const grip = this.env.grip?.(here.x, here.z);
+    const slow = grip ? 0.55 + 0.45 * grip.brake : 1;
+    let target = Math.min(((reverse ? V_REV : V_FWD) * slow) / (1 + turn * 2.2), Math.sqrt(2 * DEC * left));
     target = Math.max(target, 0.12); // ultimo tratto a passo d'uomo, senza fermarsi prima dell'arrivo
     // Ostacolo entro lo spazio di frenata: frena dolcemente
     const look = Math.min(left, 0.4 + (bot.v * bot.v) / (2 * DEC));

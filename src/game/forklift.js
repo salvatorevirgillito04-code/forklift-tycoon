@@ -251,6 +251,9 @@ export class Forklift {
     const veh = this.vehicle;
     this.stuck = this.findStuck(env);
     const loadRatio = this.carried ? this.carried.p.weight / veh.capacity : 0;
+    // aderenza del punto in cui si trova (pioggia/neve all'aperto)
+    const grip = env.grip?.(this.x, this.z) || { brake: 1, accel: 1, steer: 30, stability: 1 };
+    this.grip = grip;
 
     // --- Sterzo ---
     if (input.steerTarget !== null) {
@@ -272,7 +275,7 @@ export class Forklift {
     const dir = this.gear;
     if (input.throttle > 0) {
       if (this.v === 0 || Math.sign(this.v) === dir) {
-        this.v += dir * input.throttle * veh.accel * (1 - loadRatio * 0.3) * dt;
+        this.v += dir * input.throttle * veh.accel * grip.accel * (1 - loadRatio * 0.3) * dt;
       } else {
         const dec = (1.2 + input.throttle * 0.8) * dt; // inversione dolce: max 2 m/s²
         if (Math.abs(this.v) <= dec) {
@@ -283,12 +286,12 @@ export class Forklift {
       }
     }
     if (input.brake > 0) {
-      const dec = input.brake * 7 * dt;
+      const dec = input.brake * 7 * grip.brake * dt;
       this.v = Math.abs(this.v) <= dec ? 0 : this.v - Math.sign(this.v) * dec;
     }
     if (input.throttle === 0) {
       // freno motore: rilasciando l'acceleratore il muletto rallenta deciso
-      const engine = 1.9 * dt;
+      const engine = 1.9 * grip.brake * dt;
       this.v = Math.abs(this.v) <= engine ? 0 : this.v - Math.sign(this.v) * engine;
     }
     if (Math.abs(this.v) > maxV) this.v = Math.sign(this.v) * maxV;
@@ -337,7 +340,10 @@ export class Forklift {
 
     // --- Cinematica: modello bicicletta con riferimento sull'asse anteriore ---
     const delta = this.steer * MAX_STEER;
-    const yawRate = this.v * Math.tan(delta) / this.geo.wheelbase;
+    // sul bagnato/neve la rotazione segue lo sterzo in ritardo: il muletto "scivola" un po' in curva
+    const wantYaw = this.v * Math.tan(delta) / this.geo.wheelbase;
+    this.yawRateNow = (this.yawRateNow ?? wantYaw) + (wantYaw - (this.yawRateNow ?? wantYaw)) * Math.min(1, dt * grip.steer);
+    const yawRate = this.yawRateNow;
     const nYaw = this.yaw + yawRate * dt;
     const nx = this.x + Math.sin(nYaw) * this.v * dt;
     const nz = this.z + Math.cos(nYaw) * this.v * dt;
@@ -509,8 +515,8 @@ export class Forklift {
     // Soglie ammorbidite (~60% di cadute in meno in curva e con forche inclinate/strette)
     const outside = Math.abs(fork(-1)) > 0.62 || Math.abs(fork(1)) > 0.62;
     const spreadBonus = (this.spread - 0.5) * 1.2;
-    const latLimit = 7.5 - 0.3 * h - 0.8 * loadRatio + spreadBonus;
-    const brakeLimit = 4.6 - 0.45 * h + this.tilt * 14 - loadRatio;
+    const latLimit = (7.5 - 0.3 * h - 0.8 * loadRatio + spreadBonus) * (this.grip?.stability ?? 1);
+    const brakeLimit = (4.6 - 0.45 * h + this.tilt * 14 - loadRatio) * (this.grip?.stability ?? 1);
     let reason = null;
     if (outside) reason = 'widen';
     else if (c.shallow && lifted > 0.08 && c.time > 0.4) reason = 'insertDeeper';

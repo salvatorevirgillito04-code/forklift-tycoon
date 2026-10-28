@@ -52,6 +52,7 @@ export class GameAudio {
     this.noise = this.makeNoise();
     this.buildHydraulic();
     this.buildBeeper();
+    this.buildWeather();
     this.applyVolumes();
     this.loadSounds();
     this.startMusic();
@@ -205,6 +206,71 @@ export class GameAudio {
     this.hydraulic = { out, pump };
   }
 
+  // Meteo: fruscio della pioggia (rumore filtrato) e vento con la neve (rumore scuro che va e viene)
+  buildWeather() {
+    const ctx = this.ctx;
+    const rain = this.noiseSource(true);
+    const rf = ctx.createBiquadFilter();
+    rf.type = 'bandpass';
+    rf.frequency.value = 2600;
+    rf.Q.value = 0.35;
+    const rg = ctx.createGain();
+    rg.gain.value = 0;
+    rain.connect(rf).connect(rg).connect(this.sfx);
+    const wind = this.noiseSource(true);
+    const wf = ctx.createBiquadFilter();
+    wf.type = 'lowpass';
+    wf.frequency.value = 420;
+    wf.Q.value = 3;
+    const wg = ctx.createGain();
+    wg.gain.value = 0;
+    wind.connect(wf).connect(wg).connect(this.sfx);
+    rain.start();
+    wind.start(0, 0.37);
+    this.weatherFx = { rg, rf, wg, wf, kind: 'clear', outside: 1 };
+  }
+
+  // tipo di meteo della partita e quanto si e' all'aperto (dentro i magazzini e' attutito)
+  setWeather(kind, outside = 1) {
+    if (!this.weatherFx) return;
+    this.weatherFx.kind = kind;
+    this.weatherFx.outside = outside;
+  }
+
+  updateWeather(t, playing) {
+    const w = this.weatherFx;
+    const out = playing ? 0.35 + 0.65 * w.outside : 0;
+    w.rg.gain.setTargetAtTime(w.kind === 'rain' ? 0.45 * out : 0, t, 0.4);
+    w.rf.frequency.setTargetAtTime(1200 + 1600 * w.outside, t, 0.4); // dentro: piu' cupo (tetto)
+    // vento: raffiche lente
+    const gust = 0.6 + 0.4 * Math.sin(t * 0.7) * Math.sin(t * 0.23 + 1);
+    w.wg.gain.setTargetAtTime(w.kind === 'snow' ? 0.7 * out * gust : 0, t, 0.6);
+    w.wf.frequency.setTargetAtTime(300 + 260 * gust, t, 0.6);
+  }
+
+  // Tuono: arriva dopo il lampo (delay s); vicino = forte e secco, lontano = cupo
+  thunder(delay, near) {
+    if (!this.ctx || this.ctx.state !== 'running') return;
+    const ctx = this.ctx, t = ctx.currentTime + delay;
+    const s = this.noiseSource();
+    const f = ctx.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.setValueAtTime(near ? 900 : 380, t);
+    f.frequency.exponentialRampToValueAtTime(90, t + 3.5);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.001, t);
+    g.gain.exponentialRampToValueAtTime(near ? 2.6 : 1.5, t + (near ? 0.05 : 0.4));
+    // brontolio: qualche ripresa prima di spegnersi
+    g.gain.exponentialRampToValueAtTime(near ? 0.9 : 0.6, t + 0.9);
+    g.gain.exponentialRampToValueAtTime(near ? 1.3 : 0.8, t + 1.4);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 4.2);
+    s.loop = true;
+    s.playbackRate.value = 0.6;
+    s.connect(f).connect(g).connect(this.sfx);
+    s.start(t);
+    s.stop(t + 4.4);
+  }
+
   // Cicalino sintetico: tono puro ~1 kHz con poche armoniche, come quelli veri (riserva)
   buildBeeper() {
     const ctx = this.ctx;
@@ -230,6 +296,7 @@ export class GameAudio {
       this.applyVolumes();
     }
     const e = this.engine, h = this.hydraulic;
+    this.updateWeather(t, !!forklift && playing);
     if (!forklift || !playing) {
       e.out.gain.setTargetAtTime(0, t, 0.15);
       h.out.gain.setTargetAtTime(0, t, 0.05);

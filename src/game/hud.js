@@ -54,10 +54,65 @@ export function worldToMap(x, z, scale) {
   return [(x - WORLD.minX + MARGIN) * scale, (WORLD.maxZ - z + MARGIN) * scale];
 }
 
+// Gocce di pioggia sulla visuale (prima persona): cerchietti trasparenti col bordo chiaro che a volte scivolano giu'
+class RainDrops {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.drops = [];
+    this.acc = 0;
+    this.on = false;
+  }
+
+  frame(dt, active) {
+    const c = this.canvas;
+    if (!active && !this.drops.length) {
+      if (this.on) { this.ctx.clearRect(0, 0, c.width, c.height); this.on = false; }
+      return;
+    }
+    this.on = true;
+    // mezza risoluzione: basta per gocce sfocate e costa poco
+    const w = Math.round(c.clientWidth / 2), h = Math.round(c.clientHeight / 2);
+    if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+    this.acc += dt;
+    if (this.acc < 1 / 30) return;
+    const step = this.acc;
+    this.acc = 0;
+    if (active && this.drops.length < 40 && Math.random() < step * 9) {
+      this.drops.push({ x: Math.random() * w, y: Math.random() * h * 0.9, r: 2 + Math.random() * 5, life: 0, max: 2 + Math.random() * 4, vy: 0 });
+    }
+    const ctx = this.ctx;
+    ctx.clearRect(0, 0, w, h);
+    this.drops = this.drops.filter((d) => {
+      d.life += step;
+      d.r = Math.min(d.r + step * 1.5, 9);
+      // le gocce grandi scivolano
+      if (d.r > 6.5) d.vy = Math.min(d.vy + step * 60, 90);
+      d.y += d.vy * step;
+      const fade = Math.min(1, d.life * 4) * Math.max(0, 1 - Math.max(0, d.life - d.max) * 2);
+      if (fade <= 0 || d.y > h + 10) return false;
+      if (d.vy > 1) {
+        ctx.strokeStyle = `rgba(210,225,240,${0.12 * fade})`;
+        ctx.lineWidth = d.r * 0.6;
+        ctx.beginPath(); ctx.moveTo(d.x, d.y - d.vy * 0.4); ctx.lineTo(d.x, d.y); ctx.stroke();
+      }
+      const g = ctx.createRadialGradient(d.x - d.r * 0.3, d.y - d.r * 0.35, d.r * 0.1, d.x, d.y, d.r);
+      g.addColorStop(0, `rgba(255,255,255,${0.35 * fade})`);
+      g.addColorStop(0.55, `rgba(200,215,235,${0.08 * fade})`);
+      g.addColorStop(0.85, `rgba(40,50,60,${0.22 * fade})`);
+      g.addColorStop(1, 'rgba(40,50,60,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2); ctx.fill();
+      return true;
+    });
+  }
+}
+
 export class Hud {
   constructor(root, { onSettings, onMap, onCamera, coins }) {
     this.root = root;
     root.innerHTML = `
+      <canvas class="rain-drops"></canvas>
       <div class="minimap"><canvas width="300" height="300"></canvas></div>
       <div class="top-right">
         <div class="coin-pill hud-coins">${ICONS.coin}<span>${coinText(coins)}</span></div>
@@ -79,6 +134,7 @@ export class Hud {
     root.querySelector('[data-act="settings"]').addEventListener('click', onSettings);
     root.querySelector('[data-act="map"]').addEventListener('click', onMap);
     root.querySelector('[data-act="camera"]').addEventListener('click', onCamera);
+    this.rainDrops = new RainDrops(root.querySelector('.rain-drops'));
     this.canvas = root.querySelector('.minimap canvas');
     this.ctx = this.canvas.getContext('2d');
     this.els = {

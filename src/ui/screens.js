@@ -7,7 +7,7 @@ import {
   freeSlots, canAfford, dev, hireWorker, trainWorker, fireWorker, setWorkerVehicle, workersNetPerHour, accrueWorkers,
 } from '../state.js';
 import {
-  VEHICLES, WAREHOUSES, DIFFICULTIES, unitPrice, makeContract, vehicleById, xpForLevel,
+  VEHICLES, WAREHOUSES, DIFFICULTIES, TIMES, WEATHERS, unitPrice, makeContract, vehicleById, xpForLevel,
   workerSlots, hireCost, trainCost, workerIncome, makeCandidates, WORKER_MAX_LEVEL,
 } from '../data.js';
 import { isLinked, getUser, linkEmail, logout, isOnline } from '../cloud.js';
@@ -122,18 +122,23 @@ export function renderHub(app) {
 }
 
 // ---------- CONTRATTI ----------
+// Menu sviluppatore: orario e meteo scelti a mano al posto di quelli a caso
+const devSky = (c) => (dev.on ? { ...c, time: dev.time || c.time, weather: dev.weather || c.weather } : c);
 let selectedWarehouse = 0;
 export function renderContracts(app) {
   if (!save.warehouses.includes(selectedWarehouse)) selectedWarehouse = save.warehouses[0];
   const veh = vehicleById(save.activeVehicle);
   const lvl = save.contractLevel;
   const cards = DIFFICULTIES.map((d) => {
-    const c = makeContract(lvl, d, selectedWarehouse, save.contractSeed);
+    const c = devSky(makeContract(lvl, d, selectedWarehouse, save.contractSeed));
     const tooHeavy = c.weight > veh.capacity;
     return `<div class="contract-card ${d}">
         <div class="contract-head">${t(d)}</div>
         <div class="contract-body">
           <div class="contract-type">${ICONS.truck}<b>${t(c.type)}</b>${c.fragile ? `<em>${t('fragile')}</em>` : ''}</div>
+          <div class="contract-sky ${c.weather}">${ICONS[c.time === 'day' ? 'sun' : c.time === 'night' ? 'moon' : c.time]}<span>${t('t_' + c.time)}</span>
+            ${c.weather !== 'clear' ? `${ICONS[c.weather]}<span>${t('w_' + c.weather)}</span>` : ''}
+            ${c.bonus > 1 ? `<i>+${Math.round((c.bonus - 1) * 100)}%</i>` : ''}</div>
           <ul>
             <li><span>${t('pallets')}</span><b>${c.pallets}</b></li>
             <li><span>${t('weight')}</span><b class="${tooHeavy ? 'bad' : ''}">${fmt(c.weight)} kg</b></li>
@@ -163,7 +168,7 @@ export function renderContracts(app) {
     renderContracts(app);
   }));
   screenEl().querySelectorAll('[data-diff]').forEach((b) => b.addEventListener('click', () => {
-    app.startMission(makeContract(lvl, b.dataset.diff, selectedWarehouse, save.contractSeed));
+    app.startMission(devSky(makeContract(lvl, b.dataset.diff, selectedWarehouse, save.contractSeed)));
   }));
 }
 
@@ -570,6 +575,10 @@ function openDevMenu(app, inGame, closeSettings) {
     <label class="setting check"><span>${t('perfOverlay')}</span><input type="checkbox" data-perf ${g.perfEl ? 'checked' : ''}></label>
     ${['sky', 'shadows'].map((k) => `<label class="setting check"><span>${t('devToggle_' + k)}</span>
       <input type="checkbox" data-toggle="${k}" ${(g.devToggles?.[k] ?? true) ? 'checked' : ''}></label>`).join('')}
+    <div class="setting"><span>${t('devTime')}</span>
+      <div class="segmented wrap">${['', ...TIMES].map((x) => `<button class="${(dev.time || '') === x ? 'on' : ''}" data-ftime="${x}">${x ? t('t_' + x) : t('devRandom')}</button>`).join('')}</div></div>
+    <div class="setting"><span>${t('devWeather')}</span>
+      <div class="segmented wrap">${['', ...WEATHERS].map((x) => `<button class="${(dev.weather || '') === x ? 'on' : ''}" data-fweather="${x}">${x ? t('w_' + x) : t('devRandom')}</button>`).join('')}</div></div>
     <div class="setting"><span>${t('timeSpeed')}</span>
       <div class="segmented">${speeds.map((x) => `<button class="${(g.timeScale || 1) === x ? 'on' : ''}" data-speed="${x}">×${x}</button>`).join('')}</div></div>
     ${inGame ? `
@@ -595,6 +604,19 @@ function openDevMenu(app, inGame, closeSettings) {
     toggles[c.dataset.toggle] = c.checked;
     g.setDevToggles(toggles);
   }));
+  // orario/meteo forzati per i prossimi contratti (e subito, se in partita)
+  const force = (key, attr) => el.querySelectorAll(`[data-${attr}]`).forEach((b) => b.addEventListener('click', () => {
+    dev[key] = b.dataset[attr] || null;
+    el.querySelectorAll(`[data-${attr}]`).forEach((x) => x.classList.toggle('on', x === b));
+    if (inGame && g.mission.contract) {
+      const c = g.mission.contract;
+      if (dev.time) c.time = dev.time;
+      if (dev.weather) c.weather = dev.weather;
+      g.envFx.apply(c.time || 'day', c.weather || 'clear');
+    }
+  }));
+  force('time', 'ftime');
+  force('weather', 'fweather');
   el.querySelectorAll('[data-speed]').forEach((b) => b.addEventListener('click', () => {
     g.timeScale = +b.dataset.speed;
     el.querySelectorAll('[data-speed]').forEach((x) => x.classList.toggle('on', x === b));
