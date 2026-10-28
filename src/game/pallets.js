@@ -17,8 +17,7 @@ export class PalletManager {
   async spawn({ x, z, yaw = 0, bottom = 0, weight, loadH, fragile }) {
     const node = await createPalletModel(this.scene, this.mats, { loadHeight: loadH, fragile });
     node.getChildMeshes().forEach((m) => {
-      this.shadowGen?.addShadowCaster(m);
-      m.receiveShadows = true;
+      this.shadowGen?.addShadowCaster(m); // istanze: le ombre ricevute si impostano sui modelli sorgente
     });
     const p = {
       id: this.nextId++, x, z, yaw, bottom, weight, loadH, fragile, node,

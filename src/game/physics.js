@@ -1,16 +1,6 @@
 // Collisioni 2D sul piano XZ con un intervallo verticale [y0, y1].
 // Rettangolo orientato: { x, z, hw, hd, yaw } (hw lungo X locale, hd lungo Z locale).
 
-export function rectCorners(r) {
-  const c = Math.cos(r.yaw), s = Math.sin(r.yaw);
-  const pts = [];
-  for (const [a, b] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
-    const lx = a * r.hw, lz = b * r.hd;
-    pts.push([r.x + lx * c + lz * s, r.z - lx * s + lz * c]);
-  }
-  return pts;
-}
-
 // Separating Axis Theorem tra due rettangoli orientati.
 // Senza creare oggetti: e' chiamata centinaia di volte per fotogramma e la memoria temporanea
 // faceva fermare il gioco per la pulizia (scatti casuali sui telefoni).

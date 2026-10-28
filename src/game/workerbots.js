@@ -1,4 +1,6 @@
-import { MeshBuilder, TransformNode, Vector3 } from '@babylonjs/core';
+import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.js';
+import { TransformNode } from '@babylonjs/core/Meshes/transformNode.js';
+import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 import { Forklift } from './forklift.js';
 import { createPalletModel, createTruckModel, mergeByMaterial, PALLET, TRUCK } from './models.js';
 import { plotToWorld } from './world.js';
@@ -270,7 +272,7 @@ export class WorkerBots {
         truck?.dispose();
         return;
       }
-      const shadow = (node) => node.getChildMeshes().forEach((m) => { this.shadowGen?.addShadowCaster(m); m.receiveShadows = true; });
+      const shadow = (node) => node.getChildMeshes().forEach((m) => { this.shadowGen?.addShadowCaster(m); if (!m.isAnInstance) m.receiveShadows = true; });
       pallets.forEach(shadow);
       if (truck) {
         shadow(truck);

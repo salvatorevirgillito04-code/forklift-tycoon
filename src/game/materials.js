@@ -1,4 +1,7 @@
-import { DynamicTexture, PBRMaterial, Color3, Texture } from '@babylonjs/core';
+import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.js';
+import { PBRMaterial } from '@babylonjs/core/Materials/PBR/pbrMaterial.js';
+import { Color3 } from '@babylonjs/core/Maths/math.color.js';
+import { Texture } from '@babylonjs/core/Materials/Textures/texture.js';
 
 const TEX_URL = `${import.meta.env.BASE_URL}textures/`;
 
@@ -69,7 +72,6 @@ export function createMaterials(scene) {
   return {
     chain,
     chrome: pbr(scene, 'chrome', { color: '#d9dde2', metal: 1, rough: 0.12 }),
-    display: pbr(scene, 'display', { color: '#3b5f3b', rough: 0.3, emissive: '#2f6b3a' }),
     asphalt: texturedPbr(scene, 'asphalt', 'asphalt', { tile: 5, rough: 0.95 }),
     concrete: texturedPbr(scene, 'concrete', 'concrete', { tile: 4 }),
     floor: texturedPbr(scene, 'floor', 'floor', { tile: 6 }),
@@ -81,22 +83,17 @@ export function createMaterials(scene) {
     steel: pbr(scene, 'steel', { color: '#7d8287', metal: 0.85, rough: 0.35 }),
     darkSteel: pbr(scene, 'darkSteel', { color: '#2e3134', metal: 0.7, rough: 0.45 }),
     rubber: pbr(scene, 'rubber', { color: '#161616', rough: 0.95 }),
-    glass: pbr(scene, 'glass', { color: '#9fc4d8', metal: 0.1, rough: 0.05, alpha: 0.35 }),
-    seat: pbr(scene, 'seat', { color: '#1e1e1e', rough: 0.7 }),
     wood: texturedPbr(scene, 'wood', 'wood'),
     cardboard: texturedPbr(scene, 'cardboard', 'cardboard'),
     fragileBox: texturedPbr(scene, 'fragileBox', 'cardboard', { color: '#e0605a' }),
-    wrap: pbr(scene, 'wrap', { color: '#e8eef2', metal: 0, rough: 0.25, alpha: 0.55 }),
     rack: pbr(scene, 'rack', { color: '#e0601e', metal: 0.5, rough: 0.5 }),
     rackBeam: pbr(scene, 'rackBeam', { color: '#2f62a8', metal: 0.5, rough: 0.5 }),
     lineWhite: pbr(scene, 'lineWhite', { color: '#e9e9e2', rough: 0.7 }),
     lineYellow: pbr(scene, 'lineYellow', { color: '#f4c20d', rough: 0.6, emissive: '#3a2d00' }),
-    zoneGreen: pbr(scene, 'zoneGreen', { color: '#35d07f', rough: 0.6, emissive: '#0d5a2e', alpha: 0.55 }),
     fence: pbr(scene, 'fence', { color: '#8e969c', metal: 0.7, rough: 0.4 }),
     container: memo((c) => pbr(scene, 'container' + c, { color: c, metal: 0.5, rough: 0.6 })),
     paint: memo((c) => pbr(scene, 'paint' + c, { color: c, metal: 0.35, rough: 0.35 })),
     light: pbr(scene, 'light', { color: '#fff7d6', emissive: '#fff2b0' }),
-    redLight: pbr(scene, 'redLight', { color: '#ff3b30', emissive: '#a01010' }),
     sign: memo((text, bg, fg) => {
       const tex = canvasTexture(scene, 'sign' + text, 512, (ctx, s) => {
         ctx.fillStyle = bg;

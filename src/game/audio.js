@@ -1,6 +1,6 @@
 // Suoni del gioco (Web Audio).
-// Motore e (se presenti) cicalino e idraulica sono registrazioni vere libere (pubblico dominio / CC0, Wikimedia Commons);
-// la musica e' di OpenGameArt (CC0). Se un file manca si usa il suono generato dal codice.
+// Motore registrato (pubblico dominio / CC0, Wikimedia Commons), pioggia registrata, musica di OpenGameArt (CC0).
+// Cicalino, idraulica, vento, tuoni e colpi sono generati dal codice.
 
 const MUSIC_IN_GAME = 0.4; // in partita la musica resta bassa
 const SOUNDS = `${import.meta.env.BASE_URL}sounds/`;
@@ -12,7 +12,6 @@ export class GameAudio {
     this.sfxVol = 0.8;
     this.musicVol = 0.5;
     this.inGame = false;
-    this.buffers = {};
     // Il browser fa partire l'audio solo dopo un tocco dell'utente
     const unlock = () => {
       this.start();
@@ -58,7 +57,7 @@ export class GameAudio {
     this.startMusic();
   }
 
-  // Registrazioni: il motore vero sostituisce quello sintetico appena e' pronto
+  // Registrazioni del motore e della pioggia
   async loadSounds() {
     const load = async (name) => {
       try {
@@ -69,9 +68,8 @@ export class GameAudio {
         return null;
       }
     };
-    const [idle, rev, beep, up, down, rainL, rainM, rainH] = await Promise.all(
-      ['engine-idle.ogg', 'engine-rev.ogg', 'beeper.ogg', 'hydraulic-up.ogg', 'hydraulic-down.ogg',
-        'rain-light.ogg', 'rain-medium.ogg', 'rain-heavy.ogg'].map(load));
+    const [idle, rev, rainL, rainM, rainH] = await Promise.all(
+      ['engine-idle.ogg', 'engine-rev.ogg', 'rain-light.ogg', 'rain-medium.ogg', 'rain-heavy.ogg'].map(load));
     // pioggia registrata (leggera, media, forte): un anello per tipo, passa da un filtro che la attutisce dentro i magazzini
     if (rainL && rainM && rainH) {
       const w = this.weatherFx;
@@ -88,23 +86,7 @@ export class GameAudio {
         w.real[k] = g;
       }
     }
-    Object.assign(this.buffers, { beep, up, down });
     if (idle && rev) this.buildEngine(idle, rev);
-    else this.buildSynthEngine();
-    if (up) this.hydraulic.up = this.loopVoice(up);
-    if (down) this.hydraulic.down = this.loopVoice(down);
-  }
-
-  // Anello che suona sempre, a volume 0 finche' serve
-  loopVoice(buffer) {
-    const src = this.ctx.createBufferSource();
-    src.buffer = buffer;
-    src.loop = true;
-    const g = this.ctx.createGain();
-    g.gain.value = 0;
-    src.connect(g).connect(this.sfx);
-    src.start();
-    return { src, g };
   }
 
   setVolumes(sfx, music) {
@@ -171,33 +153,10 @@ export class GameAudio {
       src.start(0, Math.random() * buffer.duration);
       return { src, g };
     };
-    this.engine = { out, idle: voice(idle), rev: voice(rev), rpm: 0, real: true };
+    this.engine = { out, idle: voice(idle), rev: voice(rev), rpm: 0 };
   }
 
-  // Riserva sintetica (se le registrazioni non si caricano)
-  buildSynthEngine() {
-    const ctx = this.ctx;
-    const out = ctx.createGain();
-    out.gain.value = 0;
-    const lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass';
-    lp.frequency.value = 400;
-    lp.Q.value = 2;
-    const a = ctx.createOscillator();
-    a.type = 'sawtooth';
-    const b = ctx.createOscillator();
-    b.type = 'square';
-    const bGain = ctx.createGain();
-    bGain.gain.value = 0.5;
-    a.connect(lp);
-    b.connect(bGain).connect(lp);
-    lp.connect(out).connect(this.sfx);
-    a.start();
-    b.start();
-    this.engine = { out, lp, a, b, rpm: 0, real: false };
-  }
-
-  // Idraulica sintetica: pompa (ronzio) + flusso dell'olio (fruscio scuro); le registrazioni, se ci sono, la sostituiscono
+  // Idraulica sintetica: pompa (ronzio) + flusso dell'olio (fruscio scuro)
   buildHydraulic() {
     const ctx = this.ctx;
     const src = this.noiseSource(true);
@@ -223,17 +182,9 @@ export class GameAudio {
     this.hydraulic = { out, pump };
   }
 
-  // Meteo: fruscio della pioggia (rumore filtrato) e vento con la neve (rumore scuro che va e viene)
+  // Meteo: vento con la neve (rumore scuro che va e viene); la pioggia registrata passa dal filtro 'muffle'
   buildWeather() {
     const ctx = this.ctx;
-    const rain = this.noiseSource(true);
-    const rf = ctx.createBiquadFilter();
-    rf.type = 'bandpass';
-    rf.frequency.value = 2600;
-    rf.Q.value = 0.35;
-    const rg = ctx.createGain();
-    rg.gain.value = 0;
-    rain.connect(rf).connect(rg).connect(this.sfx);
     const wind = this.noiseSource(true);
     const wf = ctx.createBiquadFilter();
     wf.type = 'lowpass';
@@ -242,14 +193,13 @@ export class GameAudio {
     const wg = ctx.createGain();
     wg.gain.value = 0;
     wind.connect(wf).connect(wg).connect(this.sfx);
-    rain.start();
     wind.start(0, 0.37);
     // filtro della pioggia vera: aperto fuori, chiuso (cupo, attutito dal tetto) dentro
     const muffle = ctx.createBiquadFilter();
     muffle.type = 'lowpass';
     muffle.frequency.value = 18000;
     muffle.connect(this.sfx);
-    this.weatherFx = { rg, rf, wg, wf, muffle, kind: 'clear', outside: 1, level: 'medium' };
+    this.weatherFx = { wg, wf, muffle, kind: 'clear', outside: 1, level: 'medium' };
   }
 
   // tipo di meteo della partita e quanto si e' all'aperto (dentro i magazzini e' attutito)
@@ -267,10 +217,6 @@ export class GameAudio {
       // registrazione: solo l'anello dell'intensita' del contratto
       for (const [k, g] of Object.entries(w.real)) g.gain.setTargetAtTime(w.kind === 'rain' && k === w.level ? 1.6 * out : 0, t, 0.5);
       w.muffle.frequency.setTargetAtTime(w.outside > 0.5 ? 18000 : 900, t, 0.4);
-      w.rg.gain.setTargetAtTime(0, t, 0.2);
-    } else {
-      w.rg.gain.setTargetAtTime(w.kind === 'rain' ? 0.45 * out : 0, t, 0.4);
-      w.rf.frequency.setTargetAtTime(1200 + 1600 * w.outside, t, 0.4); // dentro: piu' cupo (tetto)
     }
     // vento: raffiche lente
     const gust = 0.6 + 0.4 * Math.sin(t * 0.7) * Math.sin(t * 0.23 + 1);
@@ -301,7 +247,7 @@ export class GameAudio {
     s.stop(t + 4.4);
   }
 
-  // Cicalino sintetico: tono puro ~1 kHz con poche armoniche, come quelli veri (riserva)
+  // Cicalino sintetico: tono puro ~1 kHz con poche armoniche, come quelli veri
   buildBeeper() {
     const ctx = this.ctx;
     const osc = ctx.createOscillator();
@@ -330,8 +276,6 @@ export class GameAudio {
     if (!forklift || !playing) {
       e.out.gain.setTargetAtTime(0, t, 0.15);
       h.out.gain.setTargetAtTime(0, t, 0.05);
-      h.up?.g.gain.setTargetAtTime(0, t, 0.05);
-      h.down?.g.gain.setTargetAtTime(0, t, 0.05);
       this.beeper.out.gain.setTargetAtTime(0, t, 0.01);
       return;
     }
@@ -344,47 +288,24 @@ export class GameAudio {
     e.rpm += (target - e.rpm) * 0.06;
     // muletti piu' grandi: motore piu' grave
     const size = 1.12 - (veh.scale - 1) * 0.35;
-    if (e.real) {
-      const rate = size * (0.9 + e.rpm * 0.45);
-      e.idle.src.playbackRate.setTargetAtTime(rate, t, 0.08);
-      e.rev.src.playbackRate.setTargetAtTime(rate * 0.92, t, 0.08);
-      // dissolvenza a potenza costante tra minimo e su di giri
-      e.idle.g.gain.setTargetAtTime(Math.cos(e.rpm * Math.PI / 2), t, 0.1);
-      e.rev.g.gain.setTargetAtTime(Math.sin(e.rpm * Math.PI / 2), t, 0.1);
-      e.out.gain.setTargetAtTime(0.38 + e.rpm * 0.18, t, 0.15);
-    } else {
-      const f = 40 * size * (1 + e.rpm * 1.8);
-      e.a.frequency.setTargetAtTime(f, t, 0.05);
-      e.b.frequency.setTargetAtTime(f / 2, t, 0.05);
-      e.lp.frequency.setTargetAtTime(300 + e.rpm * 900, t, 0.05);
-      e.out.gain.setTargetAtTime(0.105 * (0.55 + e.rpm * 0.6), t, 0.1);
-    }
-    // idraulica: registrazione di salita o discesa, oppure quella sintetica
-    if (h.up && h.down) {
-      const up = r.lift > 0.02 || Math.abs(r.tilt) > 0.01 || Math.abs(r.spread) > 0.01;
-      h.up.g.gain.setTargetAtTime(up ? lift * 0.8 : 0, t, 0.05);
-      h.down.g.gain.setTargetAtTime(r.lift < -0.02 ? Math.min(1, -r.lift / 0.5) * 0.8 : 0, t, 0.05);
-    } else {
-      h.out.gain.setTargetAtTime(lift * 0.1, t, 0.04);
-      h.pump.frequency.setTargetAtTime(85 + lift * 40 + (r.lift > 0 ? 15 : 0), t, 0.05);
-    }
+    const rate = size * (0.9 + e.rpm * 0.45);
+    e.idle.src.playbackRate.setTargetAtTime(rate, t, 0.08);
+    e.rev.src.playbackRate.setTargetAtTime(rate * 0.92, t, 0.08);
+    // dissolvenza a potenza costante tra minimo e su di giri
+    e.idle.g.gain.setTargetAtTime(Math.cos(e.rpm * Math.PI / 2), t, 0.1);
+    e.rev.g.gain.setTargetAtTime(Math.sin(e.rpm * Math.PI / 2), t, 0.1);
+    e.out.gain.setTargetAtTime(0.38 + e.rpm * 0.18, t, 0.15);
+    // idraulica
+    h.out.gain.setTargetAtTime(lift * 0.1, t, 0.04);
+    h.pump.frequency.setTargetAtTime(85 + lift * 40 + (r.lift > 0 ? 15 : 0), t, 0.05);
     // cicalino: bip... bip... in retromarcia (mezzo secondo acceso, mezzo spento)
     const bp = this.beeper;
     const reversing = forklift.gear < 0 && Math.abs(forklift.v) > 0.03;
     if (reversing && t >= bp.next) {
-      if (this.buffers.beep) {
-        const s = this.ctx.createBufferSource();
-        s.buffer = this.buffers.beep;
-        const g = this.ctx.createGain();
-        g.gain.value = 0.5;
-        s.connect(g).connect(this.sfx);
-        s.start(t, 0, Math.min(0.5, this.buffers.beep.duration));
-      } else {
-        bp.out.gain.setValueAtTime(0, t);
-        bp.out.gain.linearRampToValueAtTime(0.07, t + 0.01);
-        bp.out.gain.setValueAtTime(0.07, t + 0.45);
-        bp.out.gain.linearRampToValueAtTime(0, t + 0.47);
-      }
+      bp.out.gain.setValueAtTime(0, t);
+      bp.out.gain.linearRampToValueAtTime(0.07, t + 0.01);
+      bp.out.gain.setValueAtTime(0.07, t + 0.45);
+      bp.out.gain.linearRampToValueAtTime(0, t + 0.47);
       bp.next = t + 1;
     } else if (!reversing) {
       bp.next = 0;

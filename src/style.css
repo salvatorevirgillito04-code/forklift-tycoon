@@ -379,7 +379,6 @@ b.bad { color: var(--red-d); }
   box-shadow: 0 0 0 4px #fff, 0 8px 16px rgba(30, 20, 90, 0.25);
 }
 .vehicle-card.active { box-shadow: 0 0 0 4px var(--green), 0 8px 16px rgba(30, 20, 90, 0.25); }
-.vehicle-swatch { width: 78px; height: 78px; border-radius: 18px; display: grid; place-items: center; font-size: 46px; color: #fff; background: var(--c); box-shadow: inset 0 -5px 0 rgba(0, 0, 0, 0.2); flex-shrink: 0; }
 .vehicle-info { flex: 1; min-width: 0; }
 .vehicle-info h3 { margin: 0 0 6px; font-family: 'Lilita One', sans-serif; font-weight: 400; font-size: 21px; }
 .vehicle-info h3 small { font-family: 'Nunito'; font-size: 12px; color: #2f9e44; }
@@ -387,7 +386,6 @@ b.bad { color: var(--red-d); }
 .stat span { color: #5b6f86; }
 .stat b { text-align: right; }
 .vehicle-action { display: flex; flex-direction: column; align-items: center; gap: 6px; }
-.owned-tag { font-size: 12px; font-weight: 900; color: #2f9e44; }
 @media (max-width: 520px) {
   .vehicle-card { flex-wrap: wrap; }
   .vehicle-action { width: 100%; }
@@ -548,7 +546,7 @@ b.bad { color: var(--red-d); }
 #hud, #controls { position: fixed; inset: 0; pointer-events: none; display: none; }
 body.playing #hud, body.playing #controls { display: block; }
 #hud > *, #controls > * { pointer-events: auto; }
-#hud .objective, #hud .gauges, #hud .toast, #hud .rain-drops { pointer-events: none; }
+#hud .gauges, #hud .toast, #hud .rain-drops { pointer-events: none; }
 
 .minimap {
   position: absolute;
@@ -566,19 +564,6 @@ body.playing #hud, body.playing #controls { display: block; }
 
 .top-right { position: absolute; top: calc(12px + var(--safe-t)); right: calc(12px + var(--safe-r)); display: flex; gap: 14px; }
 
-.objective {
-  position: absolute;
-  top: calc(10px + var(--safe-t));
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  max-width: 46vw;
-}
-.obj-text { padding: 6px 14px; border-radius: 12px; background: rgba(20, 30, 60, 0.7); color: #fff; font-weight: 900; font-size: 14px; text-align: center; }
-.obj-row { display: flex; gap: 8px; }
 .chip { padding: 4px 12px; border-radius: 999px; background: rgba(255, 255, 255, 0.92); font-weight: 900; font-size: 15px; color: var(--ink); white-space: nowrap; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25); }
 .chip.warn { background: var(--red); color: #fff; }
 .gauges { position: absolute; bottom: calc(10px + var(--safe-b)); left: 50%; transform: translateX(-50%); display: flex; gap: 6px; }

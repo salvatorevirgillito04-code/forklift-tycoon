@@ -1,7 +1,16 @@
-import {
-  Color3, Color4, Vector3, Scene, Mesh, MeshBuilder, ShaderMaterial, Effect, VertexData, DynamicTexture,
-  StandardMaterial, PBRMaterial, SpotLight, Constants,
-} from '@babylonjs/core';
+import { Color3, Color4 } from '@babylonjs/core/Maths/math.color.js';
+import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
+import { Scene } from '@babylonjs/core/scene.js';
+import { Mesh } from '@babylonjs/core/Meshes/mesh.js';
+import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.js';
+import { ShaderMaterial } from '@babylonjs/core/Materials/shaderMaterial.js';
+import { Effect } from '@babylonjs/core/Materials/effect.js';
+import { VertexData } from '@babylonjs/core/Meshes/mesh.vertexData.js';
+import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.js';
+import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
+import { PBRMaterial } from '@babylonjs/core/Materials/PBR/pbrMaterial.js';
+import { SpotLight } from '@babylonjs/core/Lights/spotLight.js';
+import { Constants } from '@babylonjs/core/Engines/constants.js';
 import { WAREHOUSES, WORLD } from '../data.js';
 import { PLOT, plotToWorld } from './world.js';
 

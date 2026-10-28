@@ -1,8 +1,20 @@
-import {
-  Engine, Scene, Vector3, Color3, Color4, HemisphericLight, DirectionalLight, ShadowGenerator,
-  FreeCamera, CubeTexture, ImageProcessingConfiguration, Ray, Scalar, PhotoDome,
-  SceneInstrumentation,
-} from '@babylonjs/core';
+// Solo i pezzi di Babylon usati (il pacchetto intero pesa il triplo): questi registrano ombre e istanze
+import '@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent.js';
+import '@babylonjs/core/Meshes/instancedMesh.js';
+import { Engine } from '@babylonjs/core/Engines/engine.js';
+import { Scene } from '@babylonjs/core/scene.js';
+import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
+import { Color3, Color4 } from '@babylonjs/core/Maths/math.color.js';
+import { HemisphericLight } from '@babylonjs/core/Lights/hemisphericLight.js';
+import { DirectionalLight } from '@babylonjs/core/Lights/directionalLight.js';
+import { ShadowGenerator } from '@babylonjs/core/Lights/Shadows/shadowGenerator.js';
+import { FreeCamera } from '@babylonjs/core/Cameras/freeCamera.js';
+import { CubeTexture } from '@babylonjs/core/Materials/Textures/cubeTexture.js';
+import { ImageProcessingConfiguration } from '@babylonjs/core/Materials/imageProcessingConfiguration.js';
+import { Ray } from '@babylonjs/core/Culling/ray.js';
+import { Scalar } from '@babylonjs/core/Maths/math.scalar.js';
+import { PhotoDome } from '@babylonjs/core/Helpers/photoDome.js';
+import { SceneInstrumentation } from '@babylonjs/core/Instrumentation/sceneInstrumentation.js';
 import * as Sentry from '@sentry/browser';
 import { createMaterials } from './materials.js';
 import { ShadowCasters } from './shadows.js';
@@ -225,7 +237,6 @@ export class Game {
     // Operai vicini creati ora, durante il caricamento: crearli mentre si gioca bloccava il gioco un attimo
     await this.bots.prewarm(this.forklift);
     this.shadowGen.cull(this.forklift.x, this.forklift.z, 28);
-    this.cabHidden = null;
     this.hud = new Hud(hudRoot, { onSettings, onMap, onCamera, coins });
     this.rearview = createRearview(this.scene, this.camera);
     this.rearview.setEnabled(this.settings.mirrors !== false);
@@ -424,7 +435,6 @@ export class Game {
     this.sun.position = base.subtract((this.envFx?.sunDir || SUN_DIR).scale(100));
     f.model?.root.computeWorldMatrix(true);
     this.rearview?.update(f.model?.root, f.geo.s);
-    // Cabina chiusa: si vede da fuori, in prima persona viene nascosta per una vista pulita
     const firstPerson = this.settings.view === 'first';
     if (f.model?.roof?.length && (this.roofSeeThrough !== firstPerson || this.roofModel !== f.model)) {
       // dal posto di guida il tetto si vede in trasparenza: si guardano i pallet in alto
@@ -434,10 +444,6 @@ export class Game {
         m.visibility = firstPerson ? 0.3 : 1;
         m.material.transparencyMode = firstPerson ? 2 : 0; // 2 = trasparenza, 0 = opaco
       });
-    }
-    if (f.model?.cabShell?.length && this.cabHidden !== firstPerson) {
-      this.cabHidden = firstPerson;
-      f.model.cabShell.forEach((m) => m.setEnabled(!firstPerson));
     }
   }
 }

@@ -1,6 +1,10 @@
-import {
-  MeshBuilder, StandardMaterial, RenderTargetTexture, FreeCamera, Vector3, Color3, Texture,
-} from '@babylonjs/core';
+import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.js';
+import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
+import { RenderTargetTexture } from '@babylonjs/core/Materials/Textures/renderTargetTexture.js';
+import { FreeCamera } from '@babylonjs/core/Cameras/freeCamera.js';
+import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
+import { Color3 } from '@babylonjs/core/Maths/math.color.js';
+import { Texture } from '@babylonjs/core/Materials/Textures/texture.js';
 
 // Specchietto retrovisore mostrato in alto al centro dello schermo (prima e terza persona).
 // Leggero: una sola immagine 256x96 aggiornata a fotogrammi alterni, che disegna solo

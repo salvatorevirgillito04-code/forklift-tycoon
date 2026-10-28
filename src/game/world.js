@@ -1,4 +1,8 @@
-import { MeshBuilder, Vector3, TransformNode, Mesh, VertexBuffer } from '@babylonjs/core';
+import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.js';
+import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
+import { TransformNode } from '@babylonjs/core/Meshes/transformNode.js';
+import { Mesh } from '@babylonjs/core/Meshes/mesh.js';
+import { VertexBuffer } from '@babylonjs/core/Buffers/buffer.js';
 import { WAREHOUSES, WORLD } from '../data.js';
 import { placeGLB } from './models.js';
 
