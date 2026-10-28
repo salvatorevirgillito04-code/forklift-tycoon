@@ -84,7 +84,7 @@ export class Game {
     sun.shadowMinZ = 1;
     sun.shadowMaxZ = 220;
     sun.autoUpdateExtends = false;
-    sun.shadowFrustumSize = 60; // ombre entro ~30 m: mappa piu' piccola = ombre piu' nitide
+    sun.shadowFrustumSize = 44; // ombre entro ~20 m: mappa piu' piccola = ombre piu' nitide
     this.sun = sun;
 
     this.camera = new FreeCamera('cam', new Vector3(0, 30, -60), scene);
@@ -245,7 +245,7 @@ export class Game {
     this.bots.setWorkers(workers);
     // Operai vicini creati ora, durante il caricamento: crearli mentre si gioca bloccava il gioco un attimo
     await this.bots.prewarm(this.forklift);
-    this.shadowGen.cull(this.forklift.x, this.forklift.z, 28);
+    this.shadowGen.cull(this.forklift.x, this.forklift.z, 20);
     this.hud = new Hud(hudRoot, { onSettings, onMap, onCamera, coins });
     this.rearview = createRearview(this.scene, this.camera);
     this.rearview.setEnabled(this.settings.mirrors !== false);
@@ -359,7 +359,7 @@ export class Game {
     this.shadowCull = (this.shadowCull || 0) - dt;
     if (this.shadowCull <= 0) {
       this.shadowCull = 0.5;
-      this.shadowGen.cull(f.x, f.z, 28);
+      this.shadowGen.cull(f.x, f.z, 20);
     }
     this.bots.update(dt, f);
     this.people.update(dt, f, [f, ...[...this.bots.bots.values()].map((b) => b.f)]);

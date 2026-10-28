@@ -18,7 +18,7 @@ const DIST = 0.5; // distanza del pannello davanti alla camera principale
 
 export function createRearview(scene, mainCam) {
   const rtt = new RenderTargetTexture('rearviewRTT', { width: TEX_W, height: TEX_H }, scene, false);
-  rtt.refreshRate = 1; // a ogni fotogramma ma piccolo e con pochi oggetti: lavoro costante, niente scatti
+  rtt.refreshRate = 2; // a fotogrammi alterni: lo specchietto resta fluido e costa la meta'
   rtt.renderParticles = false;
   rtt.renderSprites = false;
   rtt.wrapU = Texture.WRAP_ADDRESSMODE;
