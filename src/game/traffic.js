@@ -1,14 +1,15 @@
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.js';
 import { Color3 } from '@babylonjs/core/Maths/math.color.js';
 import { tryLoadGLB, instantiateGLB } from './models.js';
-import { createHeadlights } from './headlights.js';
+import { createHeadlights, snapZ } from './headlights.js';
 import { WORLD } from '../data.js';
 
 // Traffico sulla strada principale: poche macchine (Tripo 3D, carrozzeria bianca tinta di colori diversi).
 // Frenano davanti al muletto, al camion e alle altre macchine; se il muletto resta davanti suonano il clacson.
 const MODELS = [
-  { file: 'car-sedan.glb', yaw: Math.PI }, // yaw: rotazione che porta il muso del modello verso +x
-  { file: 'car-hatch.glb', yaw: Math.PI / 2 },
+  // yaw: rotazione che porta il muso del modello verso +x; lamp/tail: altezza (m) e distanza dal centro (frazione)
+  { file: 'car-sedan.glb', yaw: Math.PI, lampY: 0.72, lampX: 0.66, tailY: 0.86, tailX: 0.7 },
+  { file: 'car-hatch.glb', yaw: Math.PI / 2, lampY: 0.78, lampX: 0.64, tailY: 0.95, tailX: 0.72 },
 ];
 const PAINT = ['#c8312b', '#1f4f9c', '#2b2d31', '#e8e8e8', '#8a9097', '#2f6b3f', '#d9a21b', '#6b2a45'];
 const CARS = 3;
@@ -43,20 +44,24 @@ export class Traffic {
       root.computeWorldMatrix(true);
       let min = Infinity, max = -Infinity, hw = 0;
       for (const m of meshes) {
+        m.computeWorldMatrix(true); // dopo la rotazione del modello (l'utilitaria nel file e' girata)
         const b = m.getBoundingInfo().boundingBox;
         min = Math.min(min, b.minimumWorld.x); max = Math.max(max, b.maximumWorld.x);
         hw = Math.max(hw, Math.abs(b.minimumWorld.z), Math.abs(b.maximumWorld.z));
       }
       const front = max, rear = min;
-      // fanali finti (accesi di notte e col brutto tempo): fascio, aloni, luci rosse dietro
+      // fanali finti (accesi di notte e col brutto tempo): lenti appoggiate sulla carrozzeria, aloni, fascio
       const lights = new TransformNode(`carLights${i}`, this.scene);
       lights.parent = root;
       lights.rotation.y = Math.PI / 2; // i fanali guardano +z: girati verso il muso (+x)
-      const ly = 0.68, lx = hw * 0.62;
+      const lx = hw * M.lampX, tx = hw * M.tailX;
+      const onFront = (x, y) => snapZ(lights, meshes, x, y, front + 1, front - 1.5) ?? front;
+      const onRear = (x, y) => snapZ(lights, meshes, x, y, rear - 1, rear + 1.5) ?? rear;
       createHeadlights(this.scene, `carLamps${i}`, {
-        lamps: [[lx, ly, front + 0.05], [-lx, ly, front + 0.05]],
-        tails: [[hw * 0.66, 0.8, rear - 0.05], [-hw * 0.66, 0.8, rear - 0.05]],
-        beam: { z0: front + 0.2, z1: front + 15, w0: 2.2, w1: 7.5 }, glow: 0.32, air: 6,
+        lamps: [[lx, M.lampY, onFront(lx, M.lampY)], [-lx, M.lampY, onFront(-lx, M.lampY)]],
+        tails: [[tx, M.tailY, onRear(tx, M.tailY)], [-tx, M.tailY, onRear(-tx, M.tailY)]],
+        lens: [0.24, 0.09], tailLens: [0.2, 0.07], glow: 0.14,
+        beam: { z0: front - 0.3, z1: front + 16, w0: hw * 1.9, w1: 8 },
       }, lights);
       const col = { minX: 0, maxX: 0, minZ: 0, maxZ: 0, y0: 0, y1: 1.5, tag: 'car' };
       this.env.colliders.push(col);

@@ -460,7 +460,8 @@ export class Game {
     f.model?.root.computeWorldMatrix(true);
     this.rearview?.update(f.model?.root, f.geo.s);
     const firstPerson = this.settings.view === 'first';
-    if (f.model?.lights) f.model.lights.halo.isVisible = !firstPerson; // aloni dei fari non davanti agli occhi
+    // in prima persona niente aloni e lenti dei fari del tettuccio davanti agli occhi (il fascio a terra resta)
+    if (f.model?.lights) for (const m of f.model.lights.lenses) m.isVisible = !firstPerson;
     if (f.model?.roof?.length && (this.roofSeeThrough !== firstPerson || this.roofModel !== f.model)) {
       // dal posto di guida il tetto si vede in trasparenza: si guardano i pallet in alto
       this.roofSeeThrough = firstPerson;

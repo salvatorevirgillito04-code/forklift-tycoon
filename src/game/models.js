@@ -4,7 +4,7 @@ import { Mesh } from '@babylonjs/core/Meshes/mesh.js';
 import { Vector3, Quaternion } from '@babylonjs/core/Maths/math.vector.js';
 import { LoadAssetContainerAsync } from '@babylonjs/core/Loading/sceneLoader.js';
 import '@babylonjs/loaders/glTF';
-import { createHeadlights } from './headlights.js';
+import { createHeadlights, snapZ } from './headlights.js';
 
 // Dimensioni condivise con la simulazione (metri).
 export const FORK = {
@@ -316,14 +316,36 @@ export async function createForkliftModel(scene, mats, vehicle) {
     if (parts.length > 1) mergeByMaterial(parts, node, node.name);
   }
 
-  // fanali sul tettuccio davanti e luci rosse dietro (finti: si accendono di notte e col brutto tempo)
-  const s = geo.s, ly = geo.body.height * 0.8, lz = geo.mastZ - 0.2;
+  // Fari da lavoro sugli angoli davanti del tettuccio (come sui muletti veri), luci rosse sul contrappeso.
+  // Posizioni prese dal modello: bordo del tetto e superficie posteriore della carrozzeria.
+  const s = geo.s;
+  const bodyMeshes = body.getChildMeshes().filter((m) => m.getTotalVertices() > 0);
+  root.computeWorldMatrix(true);
+  let rx = 0.5 * s, ry = geo.body.height, rz = geo.mastZ - 0.35;
+  if (roof.length) {
+    let x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
+    for (const m of roof) {
+      m.computeWorldMatrix(true);
+      const b = m.getBoundingInfo().boundingBox;
+      x1 = Math.max(x1, b.maximumWorld.x, -b.minimumWorld.x);
+      y1 = Math.max(y1, b.maximumWorld.y);
+      z1 = Math.max(z1, b.maximumWorld.z);
+    }
+    rx = x1 - 0.1; ry = y1; rz = z1 - 0.08;
+  }
+  // scatola del faro appoggiata sul tetto (si vede anche di giorno), lente sulla sua faccia davanti
+  const housings = [-1, 1].map((k) => box(scene, 'workLamp', 0.17, 0.13, 0.12, new Vector3(k * rx, ry + 0.065, rz), mats.darkSteel, root));
+  mergeByMaterial(housings, root, 'workLamps');
+  const ly = ry + 0.065, lz = rz + 0.06;
+  const tz = (x, y) => snapZ(root, bodyMeshes, x, y, geo.body.z0 - 1, geo.body.z0 + 1.5) ?? geo.body.z0;
+  const ty = 0.9 * s, tx = 0.42 * s;
   const lights = createHeadlights(scene, 'forkliftLights', {
-    lamps: [[0.5 * s, ly, lz], [-0.5 * s, ly, lz]],
-    tails: [[0.45 * s, 0.95 * s, geo.body.z0 + 0.05], [-0.45 * s, 0.95 * s, geo.body.z0 + 0.05]],
-    beam: { z0: geo.mastZ + 0.5, z1: geo.mastZ + 12, w0: 1.8, w1: 7 }, glow: 0.22, air: 5,
+    lamps: [[rx, ly, lz], [-rx, ly, lz]],
+    tails: [[tx, ty, tz(tx, ty)], [-tx, ty, tz(-tx, ty)]],
+    lens: [0.13, 0.09], tailLens: [0.12, 0.06], glow: 0.13,
+    beam: { z0: geo.mastZ - 0.2, z1: geo.mastZ + 12, w0: 1.6 * s, w1: 7.5 },
   }, root);
-  const all = root.getChildMeshes().filter((m) => m !== lights && m !== lights.halo);
+  const all = root.getChildMeshes().filter((m) => !m.metadata?.headlights);
   return { root, lights, mastPivot, middle, inner, carriage, chains, steerSpin, forkL, forkR, frontWheels, rearWheels, roof, meshes: all };
 }
 
@@ -355,6 +377,8 @@ export async function createTruckModel(scene, mats, color = '#d63a2f') {
   box(scene, 'mudguard', 3.8, 0.08, W, new Vector3(-L / 2 + 2.3, 1.04, 0), mats.rubber, root);
   box(scene, 'legL', 0.15, 0.7, 0.15, new Vector3(1.5, 0.35, 0.8), mats.steel, root);
   box(scene, 'legR', 0.15, 0.7, 0.15, new Vector3(1.5, 0.35, -0.8), mats.steel, root);
+  // traversa paracolpi in fondo al rimorchio: porta le luci rosse
+  box(scene, 'rearBar', 0.1, 0.22, W - 0.1, new Vector3(-L / 2 - 0.01, 0.82, 0), mats.darkSteel, root);
   // Il modello ha il paraurti in z = 0 e guarda verso +z: ruotato verso +x, davanti al pianale
   const cab = new TransformNode('tractor', scene);
   cab.parent = root;
@@ -362,15 +386,20 @@ export async function createTruckModel(scene, mats, color = '#d63a2f') {
   cab.position.x = L / 2 + 3.95;
   instantiateGLB(tractor, cab, 'tractor');
   mergeByMaterial(root.getChildMeshes().filter((m) => !m.name.startsWith('tractor')), root, 'truck');
-  // fanali della motrice e luci rosse in fondo al rimorchio (i fanali guardano +z: girati verso il muso, +x)
+  // fanali sul paraurti della motrice (posizione cercata sul modello) e luci rosse sulla traversa in fondo al
+  // rimorchio; i fanali guardano +z: nodo girato verso il muso (+x)
   const lights = new TransformNode('truckLights', scene);
   lights.parent = root;
   lights.rotation.y = Math.PI / 2;
-  const front = L / 2 + 5;
+  const front = L / 2 + 3.95; // paraurti della motrice
+  const cabMeshes = cab.getChildMeshes().filter((m) => m.getTotalVertices() > 0);
+  const fz = (x, y) => snapZ(lights, cabMeshes, x, y, front + 1, front - 1.5) ?? front;
+  const lx = 0.82, ly = 1.12;
   createHeadlights(scene, 'truckLamps', {
-    lamps: [[1.0, 1.05, front], [-1.0, 1.05, front]],
-    tails: [[1.1, 0.95, -L / 2 - 0.05], [-1.1, 0.95, -L / 2 - 0.05]],
-    beam: { z0: front + 0.3, z1: front + 17, w0: 2.6, w1: 8.5 }, glow: 0.38, air: 7,
+    lamps: [[lx, ly, fz(lx, ly)], [-lx, ly, fz(-lx, ly)]],
+    tails: [[1.0, 0.82, -L / 2 - 0.06], [-1.0, 0.82, -L / 2 - 0.06]],
+    lens: [0.3, 0.12], tailLens: [0.26, 0.1], glow: 0.18,
+    beam: { z0: front - 0.3, z1: front + 18, w0: 2.4, w1: 9 },
   }, lights);
   return root;
 }

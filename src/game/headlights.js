@@ -3,134 +3,154 @@ import { VertexData } from '@babylonjs/core/Meshes/mesh.vertexData.js';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
 import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.js';
 import { Color3 } from '@babylonjs/core/Maths/math.color.js';
+import { Vector3, Matrix } from '@babylonjs/core/Maths/math.vector.js';
 import { Constants } from '@babylonjs/core/Engines/constants.js';
+import { Ray } from '@babylonjs/core/Culling/ray.js';
 
-// Fanali finti (nessuna luce vera: costerebbero troppo sul telefono). Per ogni mezzo un solo oggetto con:
-// fascio a cono sull'asfalto, alone sui fari (visibile da piu' lati), cono leggero nell'aria, luci rosse dietro.
-// Coordinate locali del mezzo: avanti = +z (come il muletto); i mezzi che guardano +x usano yaw = PI/2.
-// Atlante: [0, 0.5] fascio a terra, [0.5, 0.75] alone bianco, [0.75, 1] alone rosso (in alto) e cono nell'aria (in basso).
+// Fanali finti (nessuna luce vera: costerebbero troppo sul telefono). Per ogni mezzo:
+// - lenti luminose appoggiate sulla carrozzeria vera (la posizione si cerca sul modello, vedi snapZ)
+// - alone stretto attorno alla lente, fascio sull'asfalto che parte dal mezzo, luci rosse dietro.
+// Coordinate locali: avanti = +z (come il muletto); i mezzi che guardano +x usano un nodo girato di PI/2.
+// Atlante: [0, 0.5] fascio a terra, [0.5, 0.75] bianco, [0.75, 1] rosso (in alto l'alone, in basso la lente accesa).
 
 const all = new Set();
-let shared = null;
+let glowMat = null;
 let level = 0; // 0 = spenti
 
-function material(scene) {
-  if (shared && !shared.isDisposed?.()) return shared;
-  const W = 512, H = 256;
-  const tex = new DynamicTexture('headlightAtlas', { width: W, height: H }, scene, true);
+function materials(scene) {
+  if (glowMat) return;
+  const tex = new DynamicTexture('headlightAtlas', { width: 512, height: 256 }, scene, true);
   const ctx = tex.getContext();
-  ctx.clearRect(0, 0, W, H);
-  // fascio a terra: il trapezio del fascio e' gia' nella forma del pezzo; qui solo la sfumatura morbida
-  // (di lato verso i bordi, in avanti con la distanza, e un attacco graduale vicino al faro)
+  ctx.clearRect(0, 0, 512, 256);
+  // fascio a terra: il trapezio e' gia' nella forma del pezzo; qui la sfumatura. Parte forte sotto il muso
+  // (come la luce che esce dal faro e tocca subito l'asfalto), poi cala con la distanza e verso i bordi
   const img = ctx.createImageData(256, 256);
   const sm = (e0, e1, x) => { const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
   for (let py = 0; py < 256; py++) {
-    const v = 1 - py / 255; // 0 = vicino al faro (in basso), 1 = lontano
-    const along = sm(0, 0.16, v) * Math.pow(1 - v, 1.7);
+    const v = 1 - py / 255; // 0 = sotto il faro (in basso), 1 = lontano
+    const along = (0.55 + 0.45 * sm(0, 0.1, v)) * Math.pow(1 - v, 1.5);
     for (let px = 0; px < 256; px++) {
-      const lat = 1 - sm(0.18, 0.5, Math.abs(px / 255 - 0.5));
-      const a = 0.9 * along * lat;
+      const u = Math.abs(px / 255 - 0.5) * 2; // 0 al centro, 1 ai bordi
+      // due fari: due chiazze piu' chiare che si fondono in avanti
+      const lobes = 1 + 0.25 * (1 - v) * Math.exp(-Math.pow((u - 0.45) / 0.22, 2));
+      const a = 0.62 * along * (1 - sm(0.45, 1, u)) * lobes;
       const i = (py * 256 + px) * 4;
-      img.data[i] = 255; img.data[i + 1] = 240; img.data[i + 2] = 205; img.data[i + 3] = Math.round(255 * a);
+      img.data[i] = 255; img.data[i + 1] = 241; img.data[i + 2] = 210; img.data[i + 3] = Math.min(255, Math.round(255 * a));
     }
   }
   ctx.putImageData(img, 0, 0);
-  // alone bianco del faro
   const glow = (cx, cy, r, rgb) => {
     const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-    g.addColorStop(0, `rgba(${rgb},1)`);
-    g.addColorStop(0.15, `rgba(${rgb},0.85)`);
-    g.addColorStop(0.45, `rgba(${rgb},0.22)`);
+    g.addColorStop(0, `rgba(${rgb},0.9)`);
+    g.addColorStop(0.2, `rgba(${rgb},0.45)`);
+    g.addColorStop(0.5, `rgba(${rgb},0.1)`);
     g.addColorStop(1, `rgba(${rgb},0)`);
     ctx.fillStyle = g;
     ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
   };
-  glow(320, 64, 62, '255,248,225');
-  glow(320, 192, 62, '255,248,225');
-  // alone rosso (luci di posizione e stop)
-  glow(448, 64, 62, '255,40,25');
-  // cono nell'aria: sfuma dal faro (in alto della striscia) in avanti, e dal centro ai bordi
-  const vol = ctx.createLinearGradient(0, 128, 0, 256);
-  vol.addColorStop(0, 'rgba(255,240,210,0.22)');
-  vol.addColorStop(0.5, 'rgba(255,238,205,0.06)');
-  vol.addColorStop(1, 'rgba(255,235,200,0)');
-  ctx.fillStyle = vol;
-  ctx.fillRect(384, 128, 128, 128);
-  const vs = ctx.createLinearGradient(384, 0, 512, 0);
-  vs.addColorStop(0, 'rgba(0,0,0,1)');
-  vs.addColorStop(0.45, 'rgba(0,0,0,0)');
-  vs.addColorStop(0.55, 'rgba(0,0,0,0)');
-  vs.addColorStop(1, 'rgba(0,0,0,1)');
-  ctx.globalCompositeOperation = 'destination-out';
-  ctx.fillStyle = vs;
-  ctx.fillRect(384, 128, 128, 128);
-  ctx.globalCompositeOperation = 'source-over';
+  glow(320, 64, 62, '255,248,228');
+  glow(448, 64, 62, '255,45,30');
+  // lente accesa: nucleo pieno e bordo morbido (in basso nell'atlante)
+  const core = (cx, cy, r, rgb) => {
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    g.addColorStop(0, `rgba(${rgb},1)`);
+    g.addColorStop(0.45, `rgba(${rgb},0.95)`);
+    g.addColorStop(0.75, `rgba(${rgb},0.35)`);
+    g.addColorStop(1, `rgba(${rgb},0)`);
+    ctx.fillStyle = g;
+    ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+  };
+  core(320, 192, 62, '255,250,236');
+  core(448, 192, 62, '255,40,25');
   tex.update();
   tex.hasAlpha = true;
-  const mat = new StandardMaterial('headlightMat', scene);
-  mat.diffuseColor = Color3.Black();
-  mat.specularColor = Color3.Black();
-  mat.emissiveTexture = tex;
-  mat.opacityTexture = tex;
-  mat.disableLighting = true;
-  mat.alphaMode = Constants.ALPHA_ADD;
-  mat.disableDepthWrite = true;
-  mat.backFaceCulling = false;
-  mat.fogEnabled = false;
-  mat.alpha = 1;
-  shared = mat;
-  return mat;
+  glowMat = new StandardMaterial('headlightGlow', scene);
+  glowMat.diffuseColor = Color3.Black();
+  glowMat.specularColor = Color3.Black();
+  glowMat.emissiveTexture = tex;
+  glowMat.opacityTexture = tex;
+  glowMat.disableLighting = true;
+  glowMat.alphaMode = Constants.ALPHA_ADD;
+  glowMat.disableDepthWrite = true;
+  glowMat.backFaceCulling = false;
+  glowMat.fogEnabled = false;
 }
 
-// spec: { lamps: [[x, y, z]...] fari davanti, tails: [[x, y, z]...] luci rosse dietro,
-//         beam: { z0, z1, w0, w1 } fascio a terra (da z0 a z1, larghezza w0 -> w1), glow: raggio dell'alone,
-//         air: lunghezza del cono nell'aria (0 = niente) }
-export function createHeadlights(scene, name, spec, parent) {
-  const pos = [], uv = [], idx = [], hpos = [], huv = [], hidx = [];
-  const into = (P, U, I) => (p, r) => {
-    // p: 4 vertici; r: [u0, v0, u1, v1] nell'atlante (v = 1 in alto)
-    const b = P.length / 3;
-    for (const q of p) P.push(...q);
-    U.push(r[0], r[1], r[2], r[1], r[2], r[3], r[0], r[3]);
-    I.push(b, b + 1, b + 2, b, b + 2, b + 3);
-  };
-  const quad = into(pos, uv, idx), hquad = into(hpos, huv, hidx);
-  const { beam, glow = 0.35, air = 0 } = spec;
-  if (beam) {
-    const y = 0.04;
-    quad([[-beam.w0 / 2, y, beam.z0], [beam.w0 / 2, y, beam.z0], [beam.w1 / 2, y, beam.z1], [-beam.w1 / 2, y, beam.z1]], [0, 0, 0.5, 1]);
+// Cerca la carrozzeria lungo l'asse avanti/indietro: dal punto (x, y, fromZ) verso toZ, nelle coordinate di
+// 'frame'. Ritorna la z del primo punto colpito (o null). Cosi' i fari stanno sulla superficie del modello.
+export function snapZ(frame, meshes, x, y, fromZ, toZ) {
+  const M = frame.computeWorldMatrix(true);
+  const a = Vector3.TransformCoordinates(new Vector3(x, y, fromZ), M);
+  const b = Vector3.TransformCoordinates(new Vector3(x, y, toZ), M);
+  const dir = b.subtract(a);
+  const len = dir.length();
+  const ray = new Ray(a, dir.normalize(), len);
+  let best = null;
+  for (const m of meshes) {
+    if (!m.getTotalVertices?.()) continue;
+    m.computeWorldMatrix(true);
+    const hit = ray.intersectsMesh(m, false);
+    if (hit.hit && (!best || hit.distance < best.distance)) best = hit;
   }
-  const halo = (x, y, z, r, rect) => {
-    // tre quadrati incrociati: l'alone si vede da davanti, di lato e dall'alto
-    hquad([[x - r, y - r, z], [x + r, y - r, z], [x + r, y + r, z], [x - r, y + r, z]], rect);
-    hquad([[x, y - r, z - r], [x, y - r, z + r], [x, y + r, z + r], [x, y + r, z - r]], rect);
-    hquad([[x - r, y, z - r], [x + r, y, z - r], [x + r, y, z + r], [x - r, y, z + r]], rect);
+  if (!best) return null;
+  const inv = Matrix.Invert(M);
+  return Vector3.TransformCoordinates(best.pickedPoint, inv).z;
+}
+
+// spec: { lamps: [[x, y, z]...] fari (z = superficie del faro), tails: [[x, y, z]...] luci rosse (z = superficie dietro),
+//         lens: [larghezza, altezza] delle lenti, tailLens: idem, glow: raggio dell'alone,
+//         beam: { z0, z1, w0, w1 } fascio a terra (da z0 a z1, larghezza w0 -> w1) }
+export function createHeadlights(scene, name, spec, parent) {
+  materials(scene);
+  const geo = () => ({ pos: [], uv: [], idx: [] });
+  const glowG = geo(), haloG = geo();
+  const quad = (G, p, r = [0, 0, 1, 1]) => {
+    const b = G.pos.length / 3;
+    for (const q of p) G.pos.push(...q);
+    G.uv.push(r[0], r[1], r[2], r[1], r[2], r[3], r[0], r[3]);
+    G.idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
+  };
+  const { beam, glow = 0.16 } = spec;
+  if (beam) {
+    const y = 0.035;
+    quad(glowG, [[-beam.w0 / 2, y, beam.z0], [beam.w0 / 2, y, beam.z0], [beam.w1 / 2, y, beam.z1], [-beam.w1 / 2, y, beam.z1]], [0, 0, 0.5, 1]);
+  }
+  // lente accesa: bagliore pieno grande quanto il faro, appena davanti alla superficie (dir = +1 davanti, -1 dietro)
+  const lens = (x, y, z, [w, h], dir, rect) => {
+    const zz = z + dir * 0.02, hw = w * 0.8, hh = h * 0.9;
+    quad(haloG, [[x - hw, y - hh, zz], [x + hw, y - hh, zz], [x + hw, y + hh, zz], [x - hw, y + hh, zz]], rect);
+  };
+  // alone: un quadrato davanti alla lente e uno orizzontale (si vede anche di lato e dall'alto);
+  // le parti dentro la carrozzeria restano nascoste: l'alone sembra uscire dal faro
+  const halo = (x, y, z, r, rect, dir) => {
+    const zz = z + dir * 0.03;
+    quad(haloG, [[x - r, y - r, zz], [x + r, y - r, zz], [x + r, y + r, zz], [x - r, y + r, zz]], rect);
+    quad(haloG, [[x - r, y, zz - r], [x + r, y, zz - r], [x + r, y, zz + r], [x - r, y, zz + r]], rect);
   };
   for (const [x, y, z] of spec.lamps || []) {
-    halo(x, y, z, glow, [0.5, 0.5, 0.75, 1]);
-    if (air) {
-      // cono nell'aria: piano verticale che si allarga e scende verso l'asfalto (si vede di lato e da dietro)
-      const z1 = z + air, w = air * 0.18, y1 = Math.max(0.15, y - air * 0.18);
-      quad([[x, y - 0.06, z], [x, y + 0.06, z], [x, y1 + w, z1], [x, y1 - w, z1]], [0.75, 0.5, 1, 0]);
-    }
+    lens(x, y, z, spec.lens || [0.18, 0.1], 1, [0.5, 0, 0.75, 0.5]);
+    halo(x, y, z, glow, [0.5, 0.5, 0.75, 1], 1);
   }
-  for (const [x, y, z] of spec.tails || []) halo(x, y, z, glow * 0.6, [0.75, 0.5, 1, 1]);
-  const mesh = build(scene, name, pos, uv, idx, parent);
-  // aloni a parte: il muletto del giocatore li nasconde in prima persona (sarebbero davanti agli occhi)
-  mesh.halo = build(scene, `${name}Halo`, hpos, huv, hidx, parent);
+  for (const [x, y, z] of spec.tails || []) {
+    lens(x, y, z, spec.tailLens || [0.16, 0.08], -1, [0.75, 0, 1, 0.5]);
+    halo(x, y, z, glow * 0.7, [0.75, 0.5, 1, 1], -1);
+  }
+  const mesh = build(scene, name, glowG, glowMat, parent);
+  // lenti e aloni a parte: il muletto del giocatore li nasconde in prima persona (sarebbero davanti agli occhi)
+  mesh.lenses = [build(scene, `${name}Halo`, haloG, glowMat, parent)];
   return mesh;
 }
 
-function build(scene, name, pos, uv, idx, parent) {
+function build(scene, name, G, mat, parent) {
   const mesh = new Mesh(name, scene);
-  if (pos.length) {
+  if (G.pos.length) {
     const vd = new VertexData();
-    vd.positions = pos;
-    vd.uvs = uv;
-    vd.indices = idx;
+    vd.positions = G.pos;
+    vd.uvs = G.uv;
+    vd.indices = G.idx;
     vd.applyToMesh(mesh);
   }
-  mesh.material = material(scene);
+  mesh.material = mat;
   mesh.isPickable = false;
   mesh.metadata = { rearview: true, headlights: true };
   if (parent) mesh.parent = parent;
@@ -143,6 +163,6 @@ function build(scene, name, pos, uv, idx, parent) {
 // Accesi o spenti per tutti i mezzi; v = quanto si vedono (1 di notte, meno con la luce del giorno)
 export function setHeadlights(v) {
   level = v;
-  if (shared) shared.alpha = Math.max(0.01, v);
+  if (glowMat) glowMat.alpha = Math.max(0.01, v);
   for (const m of all) m.setEnabled(v > 0);
 }
