@@ -9,7 +9,7 @@ import { VertexData } from '@babylonjs/core/Meshes/mesh.vertexData.js';
 import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.js';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
 import { PBRMaterial } from '@babylonjs/core/Materials/PBR/pbrMaterial.js';
-import { SpotLight } from '@babylonjs/core/Lights/spotLight.js';
+import { setHeadlights } from './headlights.js';
 import { Constants } from '@babylonjs/core/Engines/constants.js';
 import { WAREHOUSES, WORLD, ROAD_LAMPS_X } from '../data.js';
 import { PLOT, plotToWorld } from './world.js';
@@ -74,15 +74,22 @@ void main() {
     vec4 r = roofs[i];
     if (w.x > r.x && w.x < r.z && w.z > r.y && w.z < r.w && w.y < 9.6) inside = 1.0;
   }
+  // intensita': solo una parte delle gocce (scelte a caso, sempre le stesse) e' visibile
+  float keep = step(fract(sin(dot(position.xz, vec2(12.9898, 78.233))) * 43758.5453), density);
+  float d = length(w - cam); // distanza del centro: uguale per i 4 vertici
+  vUv = uv;
+  // nascoste, sotto un tetto o attaccate all'obiettivo (coprirebbero lo schermo): fuori dall'inquadratura,
+  // cosi' la scheda video non le disegna affatto
+  if (keep < 0.5 || inside > 0.5 || d < 1.6 || d > BOX * 0.5) {
+    vFade = 0.0;
+    gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    return;
+  }
   // rivolto verso la camera attorno all'asse verticale (pioggia) o del tutto (neve)
   vec3 toCam = normalize(vec3(cam.x - w.x, 0.0, cam.z - w.z));
   vec3 side = vec3(-toCam.z, 0.0, toCam.x);
   w += side * (uv.x - 0.5) * size + vec3(0.0, 1.0, 0.0) * (uv.y - 0.5) * len;
-  float d = length(w - cam);
-  // intensita': solo una parte delle gocce (scelte a caso, sempre le stesse) e' visibile
-  float keep = step(fract(sin(dot(position.xz, vec2(12.9898, 78.233))) * 43758.5453), density);
-  vFade = keep * (1.0 - inside) * clamp(d / 1.2, 0.0, 1.0) * clamp((BOX * 0.5 - d) / 4.0, 0.0, 1.0);
-  vUv = uv;
+  vFade = clamp((d - 1.6) / 1.5, 0.0, 1.0) * clamp((BOX * 0.5 - d) / 4.0, 0.0, 1.0);
   gl_Position = viewProjection * vec4(w, 1.0);
 }`;
 Effect.ShadersStore.precipFragmentShader = `
@@ -208,13 +215,14 @@ export class Environment {
       mesh.setEnabled(false);
       return { mesh, mat };
     };
-    this.rain = make('rain', 2800, false);
+    // meta' particelle di prima, un po' piu' grandi: stesso effetto, molto meno lavoro sul telefono
+    this.rain = make('rain', 1400, false);
     const r = this.rain.mat;
-    r.setFloat('speed', 14); r.setFloat('size', 0.018); r.setFloat('len', 0.55); r.setFloat('drift', 0.05);
-    r.setColor3('color', new Color3(0.8, 0.85, 0.92)); r.setFloat('alpha', 0.55);
-    this.snow = make('snow', 2400, true);
+    r.setFloat('speed', 14); r.setFloat('size', 0.026); r.setFloat('len', 0.7); r.setFloat('drift', 0.05);
+    r.setColor3('color', new Color3(0.8, 0.85, 0.92)); r.setFloat('alpha', 0.6);
+    this.snow = make('snow', 1150, true);
     const s = this.snow.mat;
-    s.setFloat('speed', 1.4); s.setFloat('size', 0.085); s.setFloat('len', 0.085); s.setFloat('drift', 0.6);
+    s.setFloat('speed', 1.4); s.setFloat('size', 0.12); s.setFloat('len', 0.12); s.setFloat('drift', 0.6);
     s.setColor3('color', new Color3(1, 1, 1)); s.setFloat('alpha', 0.95);
   }
 
@@ -302,13 +310,6 @@ export class Environment {
     rg.isPickable = false;
     rg.setEnabled(false);
     this.rackGlow = rg;
-    // fari del muletto (l'unica luce vera di notte: una sola, segue il giocatore)
-    this.headlight = new SpotLight('headlight', Vector3.Zero(), new Vector3(0, -0.35, 1), 1.1, 2, this.scene);
-    this.headlight.diffuse = c3('#fff1d6');
-    this.headlight.specular = c3('#403a30');
-    this.headlight.range = 30;
-    this.headlight.intensity = 0;
-    this.headlight.setEnabled(false);
   }
 
   // Pozzanghere: chiazze scure e lucide sui piazzali e sulla strada (solo con la pioggia)
@@ -320,7 +321,7 @@ export class Environment {
       const x = WORLD.minX + 6 + rnd() * (WORLD.maxX - WORLD.minX - 12);
       // non dentro i capannoni: solo strada e piazzali (|z| < 28)
       const z = (rnd() * 2 - 1) * 27;
-      const d = MeshBuilder.CreateDisc('puddle', { radius: 0.8 + rnd() * 1.6, tessellation: 14 }, this.scene);
+      const d = MeshBuilder.CreateDisc('puddle', { radius: 0.6 + rnd() * 1.2, tessellation: 14 }, this.scene);
       d.rotation.x = Math.PI / 2;
       d.scaling.y = 0.5 + rnd() * 0.5;
       d.rotation.y = rnd() * Math.PI;
@@ -334,6 +335,18 @@ export class Environment {
     mat.metallic = 0.1;
     mat.roughness = 0.04;
     mat.alpha = 0.85;
+    // bordi sfumati: la pozzanghera si confonde con l'asfalto invece di sembrare un disco
+    const ot = new DynamicTexture('puddleEdge', 64, this.scene, true);
+    const oc = ot.getContext();
+    const og = oc.createRadialGradient(32, 32, 4, 32, 32, 32);
+    og.addColorStop(0, 'rgba(255,255,255,1)');
+    og.addColorStop(0.55, 'rgba(255,255,255,0.85)');
+    og.addColorStop(1, 'rgba(255,255,255,0)');
+    oc.fillStyle = og;
+    oc.fillRect(0, 0, 64, 64);
+    ot.update();
+    ot.hasAlpha = true;
+    mat.opacityTexture = ot;
     merged.material = mat;
     merged.receiveShadows = true;
     merged.isPickable = false;
@@ -433,8 +446,20 @@ export class Environment {
     this.pools.setEnabled(!!T.lights);
     this.rackGlow.setEnabled(!!T.lights);
     this.mats.light.emissiveColor = T.lights ? c3('#fff2b0').scale(2.2) : c3('#fff2b0');
-    this.headlight.setEnabled(!!T.lights || weather === 'fog');
-    this.headlight.intensity = T.lights ? 9 : 4;
+    // fanali finti di tutti i mezzi: pieni di notte, piu' tenui con la luce del giorno
+    setHeadlights(T.lights ? 1 : time !== 'day' ? 0.6 : weather === 'fog' ? 0.55 : weather === 'clear' ? 0 : 0.4);
+    // ombre del sole solo col sereno di giorno (col cielo coperto e di notte non si vedono: si risparmia molto)
+    this.shadowsWanted = weather === 'clear' && !T.lights;
+    this.updateShadows();
+  }
+
+  setShadowsAllowed(on) {
+    this.shadowsAllowed = on;
+    this.updateShadows();
+  }
+
+  updateShadows() {
+    this.sun.shadowEnabled = !!this.shadowsAllowed && this.shadowsWanted !== false;
   }
 
   // dentro la qualita' Bassa il cielo fotografico e' spento: lo decide la qualita'
@@ -467,12 +492,6 @@ export class Environment {
       if (!p.mesh.isEnabled()) continue;
       p.mat.setFloat('time', this.t);
       p.mat.setVector3('cam', cam);
-    }
-    if (this.headlight.isEnabled() && forklift) {
-      const s = forklift.geo.s, yaw = forklift.yaw;
-      const fwd = new Vector3(Math.sin(yaw), 0, Math.cos(yaw));
-      this.headlight.position.set(forklift.x - fwd.x * 0.2 * s, 2.1 * s, forklift.z - fwd.z * 0.2 * s);
-      this.headlight.direction.set(fwd.x, -0.32, fwd.z);
     }
   }
 

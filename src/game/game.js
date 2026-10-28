@@ -118,6 +118,7 @@ export class Game {
     // orario e meteo dei contratti (dopo l'unione dei fissi: scambia i materiali di terra con la neve)
     this.envFx = new Environment(scene, { sun, hemi, sky: this.sky, mats: this.mats, camera: this.camera, world: this.world });
     this.envFx.setSkyAllowed(this.skyAllowed !== false);
+    this.envFx.setShadowsAllowed(this.shadowsOn);
     this.env.grip = (x, z) => this.envFx.grip(x, z);
     this.envFx.onThunder = (delay, near) => this.audio.thunder(delay, near);
     this.bindLook();
@@ -162,7 +163,9 @@ export class Game {
       this.shadowGen.attach(gen);
       this.shadowCull = 0; // al prossimo passo solo gli oggetti vicini
     }
-    this.sun.shadowEnabled = !!mode;
+    this.shadowsOn = !!mode;
+    if (this.envFx) this.envFx.setShadowsAllowed(!!mode);
+    else this.sun.shadowEnabled = !!mode;
     this.skyAllowed = q !== 'low' && dev.sky;
     if (this.envFx) this.envFx.setSkyAllowed(this.skyAllowed);
     else this.sky.setEnabled(this.skyAllowed);
@@ -330,8 +333,6 @@ export class Game {
       if (!(this.mode === 'play' && this.paused)) {
         const playing = this.mode === 'play' ? this.forklift : null;
         this.traffic.update(dt, playing, this.mission.drive ? [this.mission.moveCol] : []);
-        const T = this.envFx;
-        this.traffic.setLights(!!T && (T.time !== 'day' || T.weather !== 'clear'));
       }
       this.updateCamera(dt);
       this.audio.update(this.mode === 'play' ? this.forklift : null, this.mode === 'play' && !this.paused);
@@ -459,6 +460,7 @@ export class Game {
     f.model?.root.computeWorldMatrix(true);
     this.rearview?.update(f.model?.root, f.geo.s);
     const firstPerson = this.settings.view === 'first';
+    if (f.model?.lights) f.model.lights.halo.isVisible = !firstPerson; // aloni dei fari non davanti agli occhi
     if (f.model?.roof?.length && (this.roofSeeThrough !== firstPerson || this.roofModel !== f.model)) {
       // dal posto di guida il tetto si vede in trasparenza: si guardano i pallet in alto
       this.roofSeeThrough = firstPerson;

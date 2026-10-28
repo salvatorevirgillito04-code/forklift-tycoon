@@ -55,6 +55,29 @@ export class People {
     p.anims[p.anim]?.stop();
     p.anim = name;
     p.anims[name]?.start(true, name === 'walk' ? SPEED / 1.25 : 1);
+    if (p.far) p.anims[name]?.pause(); // da lontano la muove updateLod
+    p.frame = null;
+  }
+
+  // Da lontano (oltre 25 m) l'animazione si aggiorna ~7 volte al secondo invece che a ogni fotogramma
+  updateLod(p, dt, dist) {
+    const g = p.anims[p.anim];
+    if (!g) return;
+    const far = dist > 25;
+    if (far !== p.far) {
+      p.far = far;
+      if (far) g.pause(); else g.play(true);
+      p.frame = null;
+      p.lodT = 0;
+    }
+    if (!far) return;
+    p.lodT = (p.lodT || 0) + dt;
+    if (p.lodT < 0.15) return;
+    const fps = g.targetedAnimations[0]?.animation.framePerSecond || 30;
+    const len = Math.max(1, g.to - g.from);
+    p.frame = g.from + (((p.frame ?? g.from) - g.from + p.lodT * fps * g.speedRatio) % len);
+    g.goToFrame(p.frame);
+    p.lodT = 0;
   }
 
   // Lotto di riferimento: quello del giocatore (o il piu' vicino)
@@ -137,6 +160,7 @@ export class People {
           this.play(p, 'walk');
         }
       }
+      this.updateLod(p, dt, Math.hypot(p.x - player.x, p.z - player.z));
       p.root.position.set(p.x, 0, p.z);
       p.root.rotation.y = p.yaw;
       Object.assign(p.col, { minX: p.x - 0.28, maxX: p.x + 0.28, minZ: p.z - 0.28, maxZ: p.z + 0.28 });

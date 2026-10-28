@@ -4,6 +4,7 @@ import { Mesh } from '@babylonjs/core/Meshes/mesh.js';
 import { Vector3, Quaternion } from '@babylonjs/core/Maths/math.vector.js';
 import { LoadAssetContainerAsync } from '@babylonjs/core/Loading/sceneLoader.js';
 import '@babylonjs/loaders/glTF';
+import { createHeadlights } from './headlights.js';
 
 // Dimensioni condivise con la simulazione (metri).
 export const FORK = {
@@ -315,8 +316,15 @@ export async function createForkliftModel(scene, mats, vehicle) {
     if (parts.length > 1) mergeByMaterial(parts, node, node.name);
   }
 
-  const all = root.getChildMeshes();
-  return { root, mastPivot, middle, inner, carriage, chains, steerSpin, forkL, forkR, frontWheels, rearWheels, roof, meshes: all };
+  // fanali sul tettuccio davanti e luci rosse dietro (finti: si accendono di notte e col brutto tempo)
+  const s = geo.s, ly = geo.body.height * 0.8, lz = geo.mastZ - 0.2;
+  const lights = createHeadlights(scene, 'forkliftLights', {
+    lamps: [[0.5 * s, ly, lz], [-0.5 * s, ly, lz]],
+    tails: [[0.45 * s, 0.95 * s, geo.body.z0 + 0.05], [-0.45 * s, 0.95 * s, geo.body.z0 + 0.05]],
+    beam: { z0: geo.mastZ + 0.5, z1: geo.mastZ + 12, w0: 1.8, w1: 7 }, glow: 0.22, air: 5,
+  }, root);
+  const all = root.getChildMeshes().filter((m) => m !== lights && m !== lights.halo);
+  return { root, lights, mastPivot, middle, inner, carriage, chains, steerSpin, forkL, forkR, frontWheels, rearWheels, roof, meshes: all };
 }
 
 // Colore della cabina -> una delle tre motrici Tripo (rossa, blu, bianca)
@@ -354,6 +362,16 @@ export async function createTruckModel(scene, mats, color = '#d63a2f') {
   cab.position.x = L / 2 + 3.95;
   instantiateGLB(tractor, cab, 'tractor');
   mergeByMaterial(root.getChildMeshes().filter((m) => !m.name.startsWith('tractor')), root, 'truck');
+  // fanali della motrice e luci rosse in fondo al rimorchio (i fanali guardano +z: girati verso il muso, +x)
+  const lights = new TransformNode('truckLights', scene);
+  lights.parent = root;
+  lights.rotation.y = Math.PI / 2;
+  const front = L / 2 + 5;
+  createHeadlights(scene, 'truckLamps', {
+    lamps: [[1.0, 1.05, front], [-1.0, 1.05, front]],
+    tails: [[1.1, 0.95, -L / 2 - 0.05], [-1.1, 0.95, -L / 2 - 0.05]],
+    beam: { z0: front + 0.3, z1: front + 17, w0: 2.6, w1: 8.5 }, glow: 0.38, air: 7,
+  }, lights);
   return root;
 }
 

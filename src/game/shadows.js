@@ -7,7 +7,7 @@ export class ShadowCasters {
   }
 
   addShadowCaster(mesh) {
-    if (this.set.has(mesh)) return;
+    if (this.set.has(mesh) || mesh.metadata?.headlights) return; // i fanali finti non fanno ombra
     this.set.add(mesh);
     this.gen?.addShadowCaster(mesh);
     mesh.onDisposeObservable.addOnce(() => this.set.delete(mesh));

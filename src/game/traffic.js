@@ -1,21 +1,18 @@
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.js';
-import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.js';
-import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
-import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.js';
 import { Color3 } from '@babylonjs/core/Maths/math.color.js';
-import { Constants } from '@babylonjs/core/Engines/constants.js';
-import { tryLoadGLB, instantiateGLB, mergeByMaterial } from './models.js';
+import { tryLoadGLB, instantiateGLB } from './models.js';
+import { createHeadlights } from './headlights.js';
 import { WORLD } from '../data.js';
 
 // Traffico sulla strada principale: poche macchine (Tripo 3D, carrozzeria bianca tinta di colori diversi).
 // Frenano davanti al muletto, al camion e alle altre macchine; se il muletto resta davanti suonano il clacson.
 const MODELS = [
-  { file: 'car-sedan.glb', yaw: 0 }, // yaw: rotazione che porta il muso del modello verso +x
+  { file: 'car-sedan.glb', yaw: Math.PI }, // yaw: rotazione che porta il muso del modello verso +x
   { file: 'car-hatch.glb', yaw: Math.PI / 2 },
 ];
 const PAINT = ['#c8312b', '#1f4f9c', '#2b2d31', '#e8e8e8', '#8a9097', '#2f6b3f', '#d9a21b', '#6b2a45'];
 const CARS = 3;
-const LANE_Z = 3.5; // corsia verso +x a z = +3,5, verso -x a z = -3,5
+const LANE_Z = 3.5; // si guida a destra: verso +x sulla corsia z = -3,5, verso -x su z = +3,5
 const X_END = WORLD.maxX + WORLD.roadOut - 10;
 const ACC = 2.2, DEC = 5.5, GAP = 3.5;
 
@@ -25,13 +22,11 @@ export class Traffic {
     this.env = env;
     this.audio = audio;
     this.cars = [];
-    this.lightsOn = false;
   }
 
   async init() {
     const conts = await Promise.all(MODELS.map((m) => tryLoadGLB(this.scene, m.file)));
     if (conts.some((c) => !c)) return;
-    const pool = this.makeHeadlightPool();
     for (let i = 0; i < CARS; i++) {
       const kind = i % MODELS.length, M = MODELS[kind];
       const root = new TransformNode(`car${i}`, this.scene);
@@ -53,79 +48,29 @@ export class Traffic {
         hw = Math.max(hw, Math.abs(b.minimumWorld.z), Math.abs(b.maximumWorld.z));
       }
       const front = max, rear = min;
-      // fari: due luci davanti, due rosse dietro e una macchia di luce sull'asfalto (accese di notte e col brutto tempo)
+      // fanali finti (accesi di notte e col brutto tempo): fascio, aloni, luci rosse dietro
       const lights = new TransformNode(`carLights${i}`, this.scene);
       lights.parent = root;
-      const lamp = (name, x, z, mat, s) => {
-        const d = MeshBuilder.CreateDisc(name, { radius: s, tessellation: 10 }, this.scene);
-        d.parent = lights;
-        d.position.set(x, 0.68, z);
-        d.rotation.y = x > 0 ? -Math.PI / 2 : Math.PI / 2;
-        d.material = mat;
-        return d;
-      };
-      const parts = [
-        lamp('head', front + 0.02, hw * 0.62, this.lampMat('#fff6d8'), 0.11),
-        lamp('head', front + 0.02, -hw * 0.62, this.lampMat('#fff6d8'), 0.11),
-        lamp('tail', rear - 0.02, hw * 0.65, this.lampMat('#ff2a1a'), 0.08),
-        lamp('tail', rear - 0.02, -hw * 0.65, this.lampMat('#ff2a1a'), 0.08),
-      ];
-      const beam = pool.clone(`carBeam${i}`);
-      beam.parent = lights;
-      beam.position.set(front + 6, 0.035, 0);
-      mergeByMaterial(parts, lights, `carLamps${i}`);
-      lights.setEnabled(false);
+      lights.rotation.y = Math.PI / 2; // i fanali guardano +z: girati verso il muso (+x)
+      const ly = 0.68, lx = hw * 0.62;
+      createHeadlights(this.scene, `carLamps${i}`, {
+        lamps: [[lx, ly, front + 0.05], [-lx, ly, front + 0.05]],
+        tails: [[hw * 0.66, 0.8, rear - 0.05], [-hw * 0.66, 0.8, rear - 0.05]],
+        beam: { z0: front + 0.2, z1: front + 15, w0: 2.2, w1: 7.5 }, glow: 0.32, air: 6,
+      }, lights);
       const col = { minX: 0, maxX: 0, minZ: 0, maxZ: 0, y0: 0, y1: 1.5, tag: 'car' };
       this.env.colliders.push(col);
-      const car = { root, meshes, lights, col, front, rear, hw, v: 0, blockT: 0, hornT: 0 };
+      const car = { root, meshes, col, front, rear, hw, v: 0, blockT: 0, hornT: 0 };
       this.cars.push(car);
       this.respawn(car, true);
     }
-    pool.dispose();
-  }
-
-  lampMat(hex) {
-    const m = new StandardMaterial(`lamp${hex}`, this.scene);
-    m.emissiveColor = Color3.FromHexString(hex);
-    m.diffuseColor = Color3.Black();
-    m.specularColor = Color3.Black();
-    m.disableLighting = true;
-    return m;
-  }
-
-  // Macchia di luce allungata davanti alla macchina (finta luce additiva, nessuna luce vera)
-  makeHeadlightPool() {
-    // la texture va lungo x: chiara a sinistra (vicino al muso), sfuma in avanti
-    const tex = new DynamicTexture('beamTex', { width: 128, height: 64 }, this.scene, true);
-    const ctx = tex.getContext();
-    const g = ctx.createRadialGradient(6, 32, 4, 60, 32, 64);
-    g.addColorStop(0, 'rgba(255,240,200,0.7)');
-    g.addColorStop(0.5, 'rgba(255,235,190,0.25)');
-    g.addColorStop(1, 'rgba(255,230,180,0)');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, 128, 64);
-    tex.update();
-    tex.hasAlpha = true;
-    const mat = new StandardMaterial('beamMat', this.scene);
-    mat.diffuseColor = Color3.Black();
-    mat.specularColor = Color3.Black();
-    mat.emissiveTexture = tex;
-    mat.opacityTexture = tex;
-    mat.disableLighting = true;
-    mat.alphaMode = Constants.ALPHA_ADD;
-    mat.disableDepthWrite = true;
-    // lungo l'asse x della macchina: 11 m davanti, 4 m di larghezza
-    const p = MeshBuilder.CreateGround('beam', { width: 11, height: 4 }, this.scene);
-    p.material = mat;
-    p.isPickable = false;
-    return p;
   }
 
   // Nuova macchina a un capo della strada, su una corsia a caso, lontano dalle altre
   respawn(car, anywhere = false) {
     const dir = Math.random() < 0.5 ? 1 : -1;
     car.dir = dir;
-    car.z = dir > 0 ? LANE_Z : -LANE_Z;
+    car.z = dir > 0 ? -LANE_Z : LANE_Z;
     car.vmax = 8 + Math.random() * 3.5;
     car.v = car.vmax;
     let x = anywhere ? (Math.random() * 2 - 1) * (X_END - 20) : -dir * X_END;
@@ -138,12 +83,6 @@ export class Traffic {
     for (const m of car.meshes) m.material.albedoColor = paint;
     car.root.rotation.y = dir > 0 ? 0 : Math.PI;
     car.blockT = 0;
-  }
-
-  setLights(on) {
-    if (on === this.lightsOn) return;
-    this.lightsOn = on;
-    for (const c of this.cars) c.lights.setEnabled(on);
   }
 
   // obstacles: rettangoli { minX, maxX, minZ, maxZ } da rispettare (camion del contratto, persone); forklift: il muletto

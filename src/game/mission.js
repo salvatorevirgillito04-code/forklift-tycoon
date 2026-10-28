@@ -7,7 +7,7 @@ const TRUCK_COLORS = ['#d63a2f', '#1f5fa8', '#f0f0f0', '#2c8c4a', '#e3a01b'];
 // Ingombro del camion lungo il suo asse (cabina verso +x): dal fondo del pianale al muso della motrice
 const TRUCK_REAR = -TRUCK.bedLength / 2 - 0.2, TRUCK_FRONT = TRUCK.bedLength / 2 + 5;
 const TRUCK_HALF_W = TRUCK.bedWidth / 2 + 0.05;
-const ARRIVE_LANE = 3.5; // corsia (z) da cui arriva il camion, verso +x
+const ARRIVE_LANE = -3.5; // corsia (z) da cui arriva il camion: si guida a destra, verso +x su z = -3,5
 // distanza del centro del muletto da una scatola { minX, maxX, minZ, maxZ }
 const boxDist = (b, f) => Math.hypot(Math.max(b.minX - f.x, 0, f.x - b.maxX), Math.max(b.minZ - f.z, 0, f.z - b.maxZ));
 const line = (a, b) => bezierPath(a, [a[0] + (b[0] - a[0]) / 3, a[1] + (b[1] - a[1]) / 3], [a[0] + (b[0] - a[0]) * 2 / 3, a[1] + (b[1] - a[1]) * 2 / 3], b);
@@ -79,8 +79,8 @@ export class Mission {
       ];
       this.bedPose = { x: bx, z: bz, hw: L / 2, hd: W / 2, yaw: 0 };
       // Arriva dalla strada: avanti sulla corsia, poi in retromarcia fino al posto (il tempo parte quando e' fermo)
-      // corsia verso +x (z = +3,5); per i lotti a sud si sposta sulla corsia vicina prima della manovra
-      const zl = ARRIVE_LANE, zn = wh.side * ARRIVE_LANE, xs = bx + 26;
+      // corsia verso +x (z = -3,5); per i lotti a nord si sposta sulla corsia vicina prima della manovra
+      const zl = ARRIVE_LANE, zn = wh.side * Math.abs(ARRIVE_LANE), xs = bx + 26;
       this.drive = { mode: 'arrive', i: 0, s: 0, v: 13, legs: [
         { path: line([bx - 45, zl], [xs - 26, zl]), vmax: 13, keep: true, travel: true, fadeIn: true },
         { path: bezierPath([xs - 26, zl], [xs - 13, zl], [xs - 13, zn], [xs, zn]), vmax: 10 },
@@ -177,17 +177,22 @@ export class Mission {
       this.env.colliders = this.env.colliders.filter((c) => c.tag !== 'truck');
       if (this.truck) {
         // riparte in avanti verso la strada e se ne va
-        const { x: bx, z: bz } = this.bedPose, zl = ARRIVE_LANE, zn = this.wh.side * ARRIVE_LANE;
-        this.drive = { mode: 'leave', i: 0, s: 0, v: 0, legs: [
-          { path: bezierPath([bx, bz], [bx + 11, bz], [bx + 15, zn], [bx + 26, zn]), vmax: 4 },
-          { path: bezierPath([bx + 26, zn], [bx + 39, zn], [bx + 39, zl], [bx + 52, zl]), vmax: 7 },
-          { path: line([bx + 52, zl], [bx + 140, zl]), vmax: 12, travel: true, fadeOut: true },
-        ] };
+        this.drive = { mode: 'leave', i: 0, s: 0, v: 0, legs: this.leaveLegsFor() };
         this.env.colliders.push(this.moveCol);
       }
       return 'complete';
     }
     return null;
+  }
+
+  // Uscita: avanti fino alla corsia vicina, poi sulla corsia di marcia (verso +x) e via
+  leaveLegsFor() {
+    const { x: bx, z: bz } = this.bedPose, zl = ARRIVE_LANE, zn = Math.abs(ARRIVE_LANE) * this.wh.side;
+    return [
+      { path: bezierPath([bx, bz], [bx + 11, bz], [bx + 15, zn], [bx + 26, zn]), vmax: 4 },
+      { path: bezierPath([bx + 26, zn], [bx + 39, zn], [bx + 39, zl], [bx + 52, zl]), vmax: 7 },
+      { path: line([bx + 52, zl], [bx + 140, zl]), vmax: 12, travel: true, fadeOut: true },
+    ];
   }
 
   // Camion in movimento lungo le sue tratte: rallenta alla fine di ognuna e si ferma se il muletto e' davanti
