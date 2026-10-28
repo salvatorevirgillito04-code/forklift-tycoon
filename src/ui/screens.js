@@ -612,7 +612,7 @@ function openDevMenu(app, inGame, closeSettings) {
       const c = g.mission.contract;
       if (dev.time) c.time = dev.time;
       if (dev.weather) c.weather = dev.weather;
-      g.envFx.apply(c.time || 'day', c.weather || 'clear');
+      g.envFx.apply(c.time || 'day', c.weather || 'clear', g.envFx.rainLevel);
     }
   }));
   force('time', 'ftime');

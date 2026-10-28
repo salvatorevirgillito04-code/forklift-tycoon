@@ -217,7 +217,8 @@ export class Game {
     const vehicle = vehicleById(vehicleId);
     this.forklift = new Forklift(this.scene, this.mats, vehicle);
     await this.forklift.build(this.shadowGen);
-    this.envFx.apply(contract.time || 'day', contract.weather || 'clear');
+    // intensita' della pioggia: fissa per contratto (dal suo seme)
+    this.envFx.apply(contract.time || 'day', contract.weather || 'clear', ['light', 'medium', 'heavy'][(contract.seed || 0) % 3]);
     const start = await this.mission.start(contract);
     this.forklift.place(start.x, start.z, start.yaw);
     this.bots.setWorkers(workers);
@@ -310,7 +311,7 @@ export class Game {
       this.updateCamera(dt);
       this.audio.update(this.mode === 'play' ? this.forklift : null, this.mode === 'play' && !this.paused);
       this.envFx?.update(realDt, this.mode === 'play' ? this.forklift : null);
-      if (this.envFx && this.forklift) this.audio.setWeather(this.envFx.weather, this.envFx.isOutside(this.forklift.x, this.forklift.z));
+      if (this.envFx && this.forklift) this.audio.setWeather(this.envFx.weather, this.envFx.isOutside(this.forklift.x, this.forklift.z), this.envFx.rainLevel);
       // gocce sulla visuale: prima persona, pioggia, all'aperto
       if (this.hud) {
         const f = this.forklift;

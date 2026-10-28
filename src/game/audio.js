@@ -69,8 +69,25 @@ export class GameAudio {
         return null;
       }
     };
-    const [idle, rev, beep, up, down] = await Promise.all(
-      ['engine-idle.ogg', 'engine-rev.ogg', 'beeper.ogg', 'hydraulic-up.ogg', 'hydraulic-down.ogg'].map(load));
+    const [idle, rev, beep, up, down, rainL, rainM, rainH] = await Promise.all(
+      ['engine-idle.ogg', 'engine-rev.ogg', 'beeper.ogg', 'hydraulic-up.ogg', 'hydraulic-down.ogg',
+        'rain-light.ogg', 'rain-medium.ogg', 'rain-heavy.ogg'].map(load));
+    // pioggia registrata (leggera, media, forte): un anello per tipo, passa da un filtro che la attutisce dentro i magazzini
+    if (rainL && rainM && rainH) {
+      const w = this.weatherFx;
+      w.rainLoops = { light: rainL, medium: rainM, heavy: rainH };
+      w.real = {};
+      for (const [k, buf] of Object.entries(w.rainLoops)) {
+        const src = this.ctx.createBufferSource();
+        src.buffer = buf;
+        src.loop = true;
+        const g = this.ctx.createGain();
+        g.gain.value = 0;
+        src.connect(g).connect(w.muffle);
+        src.start(0, Math.random() * buf.duration);
+        w.real[k] = g;
+      }
+    }
     Object.assign(this.buffers, { beep, up, down });
     if (idle && rev) this.buildEngine(idle, rev);
     else this.buildSynthEngine();
@@ -227,21 +244,34 @@ export class GameAudio {
     wind.connect(wf).connect(wg).connect(this.sfx);
     rain.start();
     wind.start(0, 0.37);
-    this.weatherFx = { rg, rf, wg, wf, kind: 'clear', outside: 1 };
+    // filtro della pioggia vera: aperto fuori, chiuso (cupo, attutito dal tetto) dentro
+    const muffle = ctx.createBiquadFilter();
+    muffle.type = 'lowpass';
+    muffle.frequency.value = 18000;
+    muffle.connect(this.sfx);
+    this.weatherFx = { rg, rf, wg, wf, muffle, kind: 'clear', outside: 1, level: 'medium' };
   }
 
   // tipo di meteo della partita e quanto si e' all'aperto (dentro i magazzini e' attutito)
-  setWeather(kind, outside = 1) {
+  setWeather(kind, outside = 1, level = 'medium') {
     if (!this.weatherFx) return;
     this.weatherFx.kind = kind;
     this.weatherFx.outside = outside;
+    this.weatherFx.level = level;
   }
 
   updateWeather(t, playing) {
     const w = this.weatherFx;
     const out = playing ? 0.35 + 0.65 * w.outside : 0;
-    w.rg.gain.setTargetAtTime(w.kind === 'rain' ? 0.45 * out : 0, t, 0.4);
-    w.rf.frequency.setTargetAtTime(1200 + 1600 * w.outside, t, 0.4); // dentro: piu' cupo (tetto)
+    if (w.real) {
+      // registrazione: solo l'anello dell'intensita' del contratto
+      for (const [k, g] of Object.entries(w.real)) g.gain.setTargetAtTime(w.kind === 'rain' && k === w.level ? 1.6 * out : 0, t, 0.5);
+      w.muffle.frequency.setTargetAtTime(w.outside > 0.5 ? 18000 : 900, t, 0.4);
+      w.rg.gain.setTargetAtTime(0, t, 0.2);
+    } else {
+      w.rg.gain.setTargetAtTime(w.kind === 'rain' ? 0.45 * out : 0, t, 0.4);
+      w.rf.frequency.setTargetAtTime(1200 + 1600 * w.outside, t, 0.4); // dentro: piu' cupo (tetto)
+    }
     // vento: raffiche lente
     const gust = 0.6 + 0.4 * Math.sin(t * 0.7) * Math.sin(t * 0.23 + 1);
     w.wg.gain.setTargetAtTime(w.kind === 'snow' ? 0.7 * out * gust : 0, t, 0.6);
@@ -321,13 +351,13 @@ export class GameAudio {
       // dissolvenza a potenza costante tra minimo e su di giri
       e.idle.g.gain.setTargetAtTime(Math.cos(e.rpm * Math.PI / 2), t, 0.1);
       e.rev.g.gain.setTargetAtTime(Math.sin(e.rpm * Math.PI / 2), t, 0.1);
-      e.out.gain.setTargetAtTime(0.55 + e.rpm * 0.25, t, 0.15);
+      e.out.gain.setTargetAtTime(0.38 + e.rpm * 0.18, t, 0.15);
     } else {
       const f = 40 * size * (1 + e.rpm * 1.8);
       e.a.frequency.setTargetAtTime(f, t, 0.05);
       e.b.frequency.setTargetAtTime(f / 2, t, 0.05);
       e.lp.frequency.setTargetAtTime(300 + e.rpm * 900, t, 0.05);
-      e.out.gain.setTargetAtTime(0.15 * (0.55 + e.rpm * 0.6), t, 0.1);
+      e.out.gain.setTargetAtTime(0.105 * (0.55 + e.rpm * 0.6), t, 0.1);
     }
     // idraulica: registrazione di salita o discesa, oppure quella sintetica
     if (h.up && h.down) {

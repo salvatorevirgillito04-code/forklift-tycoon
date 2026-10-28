@@ -44,7 +44,7 @@ attribute vec3 position;
 attribute vec2 uv;
 uniform mat4 viewProjection;
 uniform vec3 cam;
-uniform float time, speed, size, len, drift;
+uniform float time, speed, size, len, drift, density;
 uniform vec4 roofs[10];
 varying vec2 vUv;
 varying float vFade;
@@ -70,7 +70,9 @@ void main() {
   vec3 side = vec3(-toCam.z, 0.0, toCam.x);
   w += side * (uv.x - 0.5) * size + vec3(0.0, 1.0, 0.0) * (uv.y - 0.5) * len;
   float d = length(w - cam);
-  vFade = (1.0 - inside) * clamp(d / 1.2, 0.0, 1.0) * clamp((BOX * 0.5 - d) / 4.0, 0.0, 1.0);
+  // intensita': solo una parte delle gocce (scelte a caso, sempre le stesse) e' visibile
+  float keep = step(fract(sin(dot(position.xz, vec2(12.9898, 78.233))) * 43758.5453), density);
+  vFade = keep * (1.0 - inside) * clamp(d / 1.2, 0.0, 1.0) * clamp((BOX * 0.5 - d) / 4.0, 0.0, 1.0);
   vUv = uv;
   gl_Position = viewProjection * vec4(w, 1.0);
 }`;
@@ -172,13 +174,14 @@ export class Environment {
       vd.applyToMesh(mesh);
       const mat = new ShaderMaterial(name + 'Mat', this.scene, 'precip', {
         attributes: ['position', 'uv'],
-        uniforms: ['viewProjection', 'cam', 'time', 'speed', 'size', 'len', 'drift', 'roofs', 'color', 'alpha', 'round'],
+        uniforms: ['viewProjection', 'cam', 'time', 'speed', 'size', 'len', 'drift', 'density', 'roofs', 'color', 'alpha', 'round'],
         needAlphaBlending: true,
       });
       mat.backFaceCulling = false;
       mat.disableDepthWrite = true;
       mat.alphaMode = Constants.ALPHA_COMBINE;
       mat.setFloat('round', round ? 1 : 0);
+      mat.setFloat('density', 1);
       // rettangoli dei tetti dei capannoni (niente pioggia dentro)
       const roofs = [];
       for (const wh of WAREHOUSES) {
@@ -196,7 +199,7 @@ export class Environment {
       mesh.setEnabled(false);
       return { mesh, mat };
     };
-    this.rain = make('rain', 2000, false);
+    this.rain = make('rain', 2800, false);
     const r = this.rain.mat;
     r.setFloat('speed', 14); r.setFloat('size', 0.018); r.setFloat('len', 0.55); r.setFloat('drift', 0.05);
     r.setColor3('color', new Color3(0.8, 0.85, 0.92)); r.setFloat('alpha', 0.55);
@@ -362,7 +365,9 @@ export class Environment {
     return this.ground;
   }
 
-  apply(time = 'day', weather = 'clear') {
+  apply(time = 'day', weather = 'clear', rainLevel = 'medium') {
+    this.rainLevel = rainLevel;
+    this.rain.mat.setFloat('density', { light: 0.35, medium: 0.65, heavy: 1 }[rainLevel] || 0.65);
     const T = TIMES[time] || TIMES.day, W = WEATHER[weather] || WEATHER.clear;
     this.time = time;
     this.weather = weather;
