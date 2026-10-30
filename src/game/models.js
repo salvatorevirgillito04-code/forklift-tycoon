@@ -316,6 +316,15 @@ export async function createForkliftModel(scene, mats, vehicle) {
     const parts = node.getChildMeshes(true);
     if (parts.length > 1) mergeByMaterial(parts, node, node.name);
   }
+  // Vernice esclusiva (premio degli eventi): montante e carrello metallizzati del colore vinto
+  if (vehicle.paintColor) {
+    const pm = mats.paint(vehicle.paintColor).clone(`eventPaint${vehicle.paintColor}`);
+    pm.metallic = 0.85;
+    pm.roughness = 0.28;
+    for (const node of [outer, middle, inner, carriage]) {
+      for (const m of node?.getChildMeshes() || []) if (m.material === mats.darkSteel || m.material === mats.steel) m.material = pm;
+    }
+  }
 
   // Fari da lavoro sugli angoli davanti del tettuccio (come sui muletti veri), luci rosse sul contrappeso.
   // Posizioni prese dal modello: bordo del tetto e superficie posteriore della carrozzeria.

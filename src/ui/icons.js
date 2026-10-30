@@ -38,6 +38,7 @@ export const ICONS = {
   snow: svg('<path d="M7 14a4.5 4.5 0 1 1 1-8.9A5.5 5.5 0 0 1 18.5 7 3.5 3.5 0 0 1 18 14z"/><path d="M8 18h.01M12 20h.01M16 18h.01M10 22h.01M14 22h.01"/>'),
   fog: svg('<path d="M4 9h16M2 13h20M5 17h14M8 21h8"/>'),
   headlight: svg('<path d="M10 5c-3.9 0-6 3-6 7s2.1 7 6 7z"/><path d="M14 8h7M14 12h7M14 16h7"/>'),
+  trophy: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h10v5a5 5 0 0 1-10 0z" fill="#ffd23f" stroke="#c99400" stroke-width="1.4"/><path d="M7 5H4v1.5A3.5 3.5 0 0 0 7.5 10M17 5h3v1.5A3.5 3.5 0 0 1 16.5 10" fill="none" stroke="#c99400" stroke-width="1.6"/><path d="M10.5 13h3l.6 4h-4.2z" fill="#e0a800"/><rect x="7.5" y="17" width="9" height="3.5" rx="1" fill="#8a5a1c"/></svg>',
   camera: svg('<path d="M3 8h4l2-3h6l2 3h4v11H3z"/><circle cx="12" cy="13" r="3.5"/>'),
   clock: svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
   pallets: svg('<path d="M4 4h7v6H4zM13 4h7v6h-7zM8.5 12h7v6h-7zM3 20h18"/>'),

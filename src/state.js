@@ -20,6 +20,14 @@ const defaults = () => ({
   candidateSeed: 1,
   workersPaidAt: 0, // ultimo accredito dei guadagni degli operai
   workerCarry: 0, // frazione di moneta non ancora accreditata
+  // premi degli eventi
+  trophies: [], // { event, tier, kind, theme }
+  titles: [], // { tier, kind, theme }
+  title: null, // indice del titolo mostrato in classifica
+  paints: [], // vernici vinte (chiavi di PAINTS)
+  paint: null, // vernice montata sul proprio muletto
+  payBonus: null, // { pct, until } bonus paga temporaneo
+  marathonPending: null, // { id, points } punti maratona non ancora inviati
   settings: { lang: detectLang(), view: 'third', sensitivity: 1, steering: 'arrows', invertGyro: false, quality: 'high', mirrors: true, sfxVolume: 0.8, musicVolume: 0.5 },
   savedAt: 0,
 });
@@ -179,6 +187,23 @@ export function buyWarehouse(id) {
   persist();
   return true;
 }
+
+// Premio di un evento finito (vedi events.js rewardFor): monete, trofeo, titolo, vernice, bonus paga
+export function applyEventReward(r) {
+  save.coins += r.coins;
+  save.stats.earned += r.coins;
+  if (r.trophy) save.trophies.push(r.trophy);
+  if (r.title) {
+    save.titles.push(r.title);
+    save.title = save.titles.length - 1;
+  }
+  if (r.paint && !save.paints.includes(r.paint)) save.paints.push(r.paint);
+  if (r.paint) save.paint = r.paint;
+  if (r.payBonus) save.payBonus = { pct: r.payBonus, until: Date.now() + 7 * 86400000 };
+  persist();
+}
+
+export const activePayBonus = () => (save.payBonus && save.payBonus.until > Date.now() ? save.payBonus.pct : 0);
 
 // Ritorna il nuovo livello se il giocatore e' salito di livello.
 export function addRewards({ coins, xp, pallets, contractLevel }) {

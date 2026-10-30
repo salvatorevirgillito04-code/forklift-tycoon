@@ -4,13 +4,16 @@ import { IS_NATIVE, APK_URL, APP_VERSION, BUILD_DATE } from '../config.js';
 import { $, esc, coinPill, coinText, openModal, confirmDialog, toast } from './ui.js';
 import {
   save, buyVehicle, buyWarehouse, resetSave, persist, equipVehicle, ownedCount, assignedCount, freeUnits,
-  freeSlots, canAfford, dev, hireWorker, trainWorker, fireWorker, setWorkerVehicle, workersNetPerHour, accrueWorkers,
+  freeSlots, canAfford, dev, hireWorker, trainWorker, fireWorker, setWorkerVehicle, workersNetPerHour, accrueWorkers, activePayBonus,
 } from '../state.js';
 import {
   VEHICLES, WAREHOUSES, DIFFICULTIES, TIMES, WEATHERS, unitPrice, makeContract, vehicleById, xpForLevel,
   workerSlots, hireCost, trainCost, workerIncome, makeCandidates, WORKER_MAX_LEVEL,
 } from '../data.js';
 import { isLinked, getUser, linkEmail, logout, isOnline } from '../cloud.js';
+import {
+  eventDef, eventContract, eventTimeLeft, formatScore, loadLeaderboard, nameAllowed, TIER_COINS, PAINTS, EVENT_VEHICLE,
+} from '../events.js';
 import { drawStaticMap, worldToMap, MAP_W, MAP_H } from '../game/hud.js';
 import { PLOT, plotToWorld } from '../game/world.js';
 import { Controls } from '../game/controls.js';
@@ -111,6 +114,7 @@ export function renderHub(app) {
         ${tile('warehouses', ICONS.warehouse, t('warehouses'), 'orange')}
         ${tile('free', ICONS.play, t('freeDrive'), 'purple')}
         ${tile('workers', ICONS.workers, t('workers'), 'slate')}
+        ${tile('events', ICONS.trophy, t('events'), 'gold')}
       </div>
     </div>`;
   bindBack(app);
@@ -119,6 +123,110 @@ export function renderHub(app) {
       app.startMission({ type: 'free', warehouseId: save.warehouses[0], level: 0, seed: 0, weight: 600, pallets: 3 });
     } else app.go(b.dataset.go);
   }));
+}
+
+// ---------- EVENTI ----------
+const evName = (def) => (def.theme ? `${t('th_' + def.theme)} · ` : '') + t('ev_' + def.kind);
+export const titleText = (ti) => `${t('tier_' + ti.tier)} · ${ti.theme ? t('th_' + ti.theme) : t('ev_' + ti.kind)}`;
+const timeLeftText = (ms) => {
+  const h = Math.floor(ms / 3600000), d = Math.floor(h / 24);
+  return d >= 1 ? `${d}${t('dShort')} ${h % 24}h` : h >= 1 ? `${h}h ${Math.floor(ms / 60000) % 60}m` : `${Math.max(1, Math.floor(ms / 60000))}m`;
+};
+// extra del podio per questo evento (cambia da evento a evento)
+function extraText(def, tier) {
+  if (def.extra === 'title') return t('ex_title');
+  if (def.extra === 'paint') return t('ex_paint');
+  return t('ex_payBonus', { n: { gold: 30, silver: 20, bronze: 10 }[tier] });
+}
+
+export function renderEvents(app) {
+  const def = eventDef();
+  const linked = isLinked();
+  const kindIcon = { time: ICONS.clock, marathon: ICONS.contract, precision: ICONS.pallets }[def.kind];
+  const rows = [['gold', '🥇'], ['silver', '🥈'], ['bronze', '🥉']].map(([tier, medal]) => `<li><span>${medal} ${t('tier_' + tier)}</span>
+      <b>${ICONS.coin}${fmt(TIER_COINS[tier])} + ${ICONS.trophy} + ${extraText(def, tier)}</b></li>`).join('')
+    + [['top10', t('evTop10')], ['top50', t('evTop50')], ['participant', t('evParticipant')]]
+      .map(([k, label]) => `<li><span>${label}</span><b>${ICONS.coin}${fmt(TIER_COINS[k])}</b></li>`).join('');
+  screenEl().innerHTML = `
+    <div class="page">
+      ${topBar(true)}
+      <h2 class="page-title">${t('events')}</h2>
+      <div class="event-wrap">
+        <div class="event-card ${def.theme || def.kind}">
+          <div class="event-head">${kindIcon}<b>${evName(def)}</b><span class="event-left">${ICONS.clock}${t('evEndsIn', { d: timeLeftText(eventTimeLeft()) })}</span></div>
+          <p>${t('ev_' + def.kind + '_d')}</p>
+          ${def.kind !== 'marathon' ? `<div class="contract-sky ${def.weather}">${ICONS[def.time === 'day' ? 'sun' : def.time === 'night' ? 'moon' : def.time]}<span>${t('t_' + def.time)}</span>
+            ${def.weather !== 'clear' ? `${ICONS[def.weather]}<span>${t('w_' + def.weather)}</span>` : ''}
+            <span>· ${ICONS.forklift} ${esc(vehicleById(EVENT_VEHICLE).name)}</span></div>` : ''}
+          ${linked ? `<label class="field event-name"><span>${t('evName')}</span>
+            <input type="text" maxlength="24" value="${esc(save.name)}" placeholder="Mulettista" data-evname></label>
+            <p class="event-warn" data-namewarn ${nameAllowed(save.name) ? 'hidden' : ''}>${t('evBadName')}</p>`
+    : `<p class="event-warn">${t('evNeedLogin')}</p><button class="pill-btn blue" data-login>${t('login')}</button>`}
+          <div class="event-me" data-me></div>
+          ${linked ? `<button class="pill-btn green big" data-evplay>${def.kind === 'marathon' ? t('evPlayContracts') : t('evPlay')}</button>` : ''}
+        </div>
+        <div class="event-side">
+          <div class="event-box"><h3>${ICONS.trophy}${t('evLeaderboard')}</h3><ol class="leaderboard" data-board><li class="muted">${t('evLoading')}</li></ol></div>
+          <div class="event-box"><h3>${ICONS.coin}${t('evRewards')}</h3><ul class="stats rewards">${rows}</ul></div>
+        </div>
+      </div>
+    </div>`;
+  bindBack(app, 'hub');
+  const el = screenEl();
+  el.querySelector('[data-login]')?.addEventListener('click', () => openLogin(app));
+  const input = el.querySelector('[data-evname]');
+  input?.addEventListener('input', () => {
+    el.querySelector('[data-namewarn]').hidden = nameAllowed(input.value);
+  });
+  input?.addEventListener('change', () => {
+    save.name = input.value.trim().slice(0, 24);
+    persist();
+  });
+  el.querySelector('[data-evplay]')?.addEventListener('click', () => {
+    if (!nameAllowed(save.name)) {
+      el.querySelector('[data-namewarn]').hidden = false;
+      input?.focus();
+      return;
+    }
+    if (def.kind === 'marathon') app.go('contracts');
+    else app.startMission(eventContract(def));
+  });
+  loadLeaderboard(def.id).then((data) => {
+    if (app.current !== 'events' || !document.body.contains(el.querySelector('[data-board]'))) return;
+    const board = el.querySelector('[data-board]');
+    if (!data) {
+      board.innerHTML = `<li class="muted">${t('evOffline')}</li>`;
+      return;
+    }
+    const medal = (r) => ['🥇', '🥈', '🥉'][r - 1] || `${r}.`;
+    const line = (r) => `<li class="${r.me ? 'me' : ''}"><i>${medal(r.rank)}</i><span>${esc(r.name)}${r.title ? `<small>${esc(r.title)}</small>` : ''}</span>
+      <b>${formatScore(def.kind, r.score)}</b></li>`;
+    board.innerHTML = data.top.length ? data.top.map(line).join('') : `<li class="muted">${t('evNoScores')}</li>`;
+    if (data.me && !data.top.some((r) => r.me)) {
+      board.insertAdjacentHTML('beforeend', `<li class="gap">…</li>${line({ ...data.me, name: save.name, me: true })}`);
+    }
+    el.querySelector('[data-me]').innerHTML = data.me
+      ? `${t('evRank', { r: data.me.rank, n: data.total })} · ${def.kind === 'marathon' ? '' : t('evBest') + ' '}<b>${formatScore(def.kind, data.me.score)}</b>${def.kind === 'marathon' ? ' ' + t('evPoints') : ''}`
+      : '';
+  });
+}
+
+// Premio di un evento finito: posizione e cosa si e' vinto
+export function openEventReward(app, claim, r) {
+  const def = eventDef(claim.id);
+  const medal = { gold: '🥇', silver: '🥈', bronze: '🥉' }[claim.tier] || ICONS.trophy;
+  const items = [`<li><span>${t('coins')}</span><b>${ICONS.coin}${fmt(r.coins)}</b></li>`];
+  if (r.trophy) items.push(`<li><span>${t('evTrophy')}</span><b>${ICONS.trophy}${t('tier_' + claim.tier)}</b></li>`);
+  if (r.title) items.push(`<li><span>${t('evTitle')}</span><b>${esc(titleText(r.title))}</b></li>`);
+  if (r.paint) items.push(`<li><span>${t('evPaint')}</span><b><i class="swatch" style="--c:${PAINTS[r.paint]}"></i>${t('paint_' + r.paint)}</b></li>`);
+  if (r.payBonus) items.push(`<li><span>${t('payBonusRow')}</span><b>+${r.payBonus}% · 7 ${t('days')}</b></li>`);
+  const { el, close } = openModal(`
+    <h2 class="modal-title good">${t('evRewardTitle')}</h2>
+    <div class="event-medal">${medal}</div>
+    <p class="modal-text">${t('evRewardText', { e: evName(def), r: claim.rank, n: claim.total })}</p>
+    <ul class="stats">${items.join('')}</ul>
+    <div class="row-btns"><button class="pill-btn green" data-ok>${t('continue')}</button></div>`, { className: 'result' });
+  el.querySelector('[data-ok]').addEventListener('click', close);
 }
 
 // ---------- CONTRATTI ----------
@@ -463,6 +571,15 @@ export function renderProfile(app) {
           <li><span>${t('workers')}</span><b>${save.workers.length} / ${WAREHOUSES.reduce((a, w) => a + workerSlots(w.id), 0)}</b></li>
           <li><span>${t('warehouses')}</span><b>${save.warehouses.length} / ${WAREHOUSES.length}</b></li>
         </ul>
+        ${save.trophies.length ? `<div class="trophies"><h3>${ICONS.trophy}${t('trophies')}</h3>
+          <div class="trophy-row">${save.trophies.map((tr) => `<span class="trophy ${tr.tier}" title="${esc(tr.event)}">${{ gold: '🥇', silver: '🥈', bronze: '🥉' }[tr.tier]}<small>${tr.event.slice(5)}</small></span>`).join('')}</div></div>` : ''}
+        ${save.titles.length ? `<label class="field"><span>${t('evTitle')}</span><select data-title>
+          <option value="">${t('evNone')}</option>
+          ${save.titles.map((ti, i) => `<option value="${i}" ${save.title === i ? 'selected' : ''}>${esc(titleText(ti))}</option>`).join('')}</select></label>` : ''}
+        ${save.paints.length ? `<label class="field"><span>${t('evPaint')}</span><select data-paint>
+          <option value="">${t('evNone')}</option>
+          ${save.paints.map((p) => `<option value="${p}" ${save.paint === p ? 'selected' : ''}>${t('paint_' + p)}</option>`).join('')}</select></label>` : ''}
+        ${activePayBonus() ? `<p class="hint-line">${t('evPayBonus', { n: activePayBonus(), d: new Date(save.payBonus.until).toLocaleDateString() })}</p>` : ''}
         <div class="account">${account} · <small>${isOnline() ? t('cloudOk') : t('cloudOffline')}</small></div>
         ${isLinked() ? `<button class="pill-btn grey" data-logout>${t('logout')}</button>` : `<button class="pill-btn blue" data-login>${t('login')}</button>`}
       </div>
@@ -471,6 +588,14 @@ export function renderProfile(app) {
   const input = screenEl().querySelector('[data-name]');
   input.addEventListener('change', () => {
     save.name = input.value.trim().slice(0, 24);
+    persist();
+  });
+  screenEl().querySelector('[data-title]')?.addEventListener('change', (e) => {
+    save.title = e.target.value === '' ? null : +e.target.value;
+    persist();
+  });
+  screenEl().querySelector('[data-paint]')?.addEventListener('change', (e) => {
+    save.paint = e.target.value || null;
     persist();
   });
   screenEl().querySelector('[data-login]')?.addEventListener('click', () => openLogin(app));
@@ -685,17 +810,26 @@ export function openResult(app, outcome, result, contract) {
     <h2 class="modal-title ${ok ? 'good' : 'bad'}">${ok ? t('missionComplete') : t('missionFailed')}</h2>
     ${ok ? `<div class="stars">${stars}</div>
       <ul class="stats">
-        ${row(t('reward'), fmt(result.base))}
+        ${result.event ? `${row(t('drops'), result.drops, result.drops ? 'bad' : '')}${row(t('bumps'), result.bumps, result.bumps ? 'bad' : '')}
+        ${row(t('evYourScore'), formatScore(result.event.kind, result.event.score), 'total')}` : `${row(t('reward'), fmt(result.base))}
         ${row(t('timeBonus'), `+${fmt(result.timeBonus)}`, 'good')}
         ${result.penalty ? row(`${t('penalty')} (${result.drops} ${t('drops').toLowerCase()})`, `-${fmt(result.penalty)}`, 'bad') : ''}
         ${result.bumpPenalty ? row(`${t('bumps')} (${result.bumps} · -${result.bumpPct}%)`, `-${fmt(result.bumpPenalty)}`, 'bad') : ''}
-        ${row(t('total'), `${fmt(result.coins)} 🪙`, 'total')}
+        ${result.payBonus ? row(t('payBonusRow'), `+${fmt(result.payBonus)}`, 'good') : ''}
+        ${row(t('total'), `${fmt(result.coins)} 🪙`, 'total')}`}
         ${row(t('xp'), `+${result.xp}`)}
-      </ul>` : `<p class="modal-text">${t('timeUp')}</p>`}
+      </ul>${result.event ? `<p class="modal-text small" data-evsent>${t('evSending')}</p>` : ''}` : `<p class="modal-text">${t('timeUp')}</p>`}
     <div class="row-btns">
-      ${ok ? '' : `<button class="pill-btn blue" data-retry>${t('retry')}</button>`}
+      ${ok && !contract.event ? '' : `<button class="pill-btn blue" data-retry>${t('retry')}</button>`}
       <button class="pill-btn green" data-continue>${t('continue')}</button>
-    </div>`, { className: 'result', onClose: () => app.exitMission(ok ? 'contracts' : 'contracts') });
+    </div>`, { className: 'result', onClose: () => app.exitMission(contract.event ? 'events' : 'contracts') });
+  // gara dell'evento: esito dell'invio in classifica
+  result.event?.pending.then((res) => {
+    const p = el.querySelector('[data-evsent]');
+    if (!p) return;
+    p.textContent = res.ok ? t('evSent', { s: formatScore(result.event.kind, res.data.score) }) : t('evNotSent', { e: t('everr_' + res.error) });
+    p.classList.add(res.ok ? 'good' : 'bad');
+  });
   el.querySelector('[data-continue]').addEventListener('click', close);
   el.querySelector('[data-retry]')?.addEventListener('click', () => {
     el.parentElement.remove();

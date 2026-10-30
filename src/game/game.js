@@ -233,10 +233,10 @@ export class Game {
     this.isLooking = () => !!last;
   }
 
-  async startMission(contract, { vehicleId, hudRoot, controlsRoot, onResult, onSettings, onMap, onCamera, owned, workers, coins }) {
+  async startMission(contract, { vehicleId, paint, hudRoot, controlsRoot, onResult, onSettings, onMap, onCamera, owned, workers, coins }) {
     this.stopMission();
     this.mode = 'loading';
-    const vehicle = vehicleById(vehicleId);
+    const vehicle = paint ? { ...vehicleById(vehicleId), paintColor: paint } : vehicleById(vehicleId);
     this.forklift = new Forklift(this.scene, this.mats, vehicle);
     await this.forklift.build(this.shadowGen);
     // intensita' della pioggia: fissa per contratto (dal suo seme)

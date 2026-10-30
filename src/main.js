@@ -2,8 +2,9 @@ import * as Sentry from '@sentry/browser';
 import './style.css';
 import { SENTRY_DSN, APP_VERSION, IS_NATIVE } from './config.js';
 import { setLang, t, fmt } from './i18n.js';
-import { save, loadLocal, syncFromCloud, addRewards, persist, accrueWorkers, dev } from './state.js';
-import { initAuth, onAuthChange, checkDeveloper, handleLoginUrl } from './cloud.js';
+import { save, loadLocal, syncFromCloud, addRewards, persist, accrueWorkers, dev, applyEventReward, activePayBonus } from './state.js';
+import { initAuth, onAuthChange, checkDeveloper, handleLoginUrl, isLinked } from './cloud.js';
+import { eventDef, currentEventId, eventScore, marathonPoints, submitScore, claimPending, rewardFor, nameAllowed, PAINTS } from './events.js';
 import { Game } from './game/game.js';
 import { Controls } from './game/controls.js';
 import { $, openModal, toast, coinText } from './ui/ui.js';
@@ -26,6 +27,7 @@ const SCREENS = {
   warehouses: S.renderWarehouses,
   profile: S.renderProfile,
   workers: S.renderWorkers,
+  events: S.renderEvents,
 };
 
 const app = {
@@ -50,7 +52,9 @@ const app = {
     try {
       await gyro;
       await this.game.startMission(contract, {
-        vehicleId: save.activeVehicle,
+        // gare degli eventi: stesso muletto per tutti; la vernice vinta va sul proprio muletto
+        vehicleId: contract.vehicle || save.activeVehicle,
+        paint: !contract.vehicle && save.paint ? PAINTS[save.paint] : null,
         owned: save.warehouses,
         workers: save.workers,
         hudRoot: $('#hud'),
@@ -93,8 +97,21 @@ const app = {
 
   finishMission(outcome, result, contract) {
     // Contratti nuovi nella finestra di scelta (anche se fallito)
-    save.contractSeed = (save.contractSeed || 1) + 1;
+    if (!contract.event) save.contractSeed = (save.contractSeed || 1) + 1;
     persist();
+    if (outcome === 'complete' && contract.event) {
+      // gara dell'evento: punteggio in classifica (il premio arriva a fine settimana)
+      const m = this.game.mission;
+      result.event = { kind: contract.event.kind, score: eventScore(contract.event.kind, { seconds: contract.timeLimit - m.timeLeft, drops: m.drops, bumps: m.bumps }) };
+      result.event.pending = this.sendEventScore(contract.event.id, result.event.score);
+    } else if (outcome === 'complete' && contract.type !== 'free') {
+      const bonus = activePayBonus();
+      if (bonus) {
+        result.payBonus = Math.round(result.coins * bonus / 100);
+        result.coins += result.payBonus;
+      }
+      this.addMarathon(contract, result.stars);
+    }
     if (outcome === 'complete') {
       const levelUp = addRewards({
         coins: result.coins, xp: result.xp, pallets: contract.pallets, contractLevel: contract.level,
@@ -103,6 +120,42 @@ const app = {
     }
     Sentry.addBreadcrumb({ category: 'mission', message: `${outcome} lv${contract.level}` });
     S.openResult(this, outcome, result, contract);
+  },
+
+  // Invia un punteggio dell'evento in corso. Ritorna { ok, data } oppure { error }.
+  async sendEventScore(id, score) {
+    if (!isLinked()) return { error: 'not_member' };
+    if (!nameAllowed(save.name)) return { error: 'bad_name' };
+    const title = save.titles[save.title] ? S.titleText(save.titles[save.title]) : null;
+    const res = await submitScore(id, score, save.name.trim(), title);
+    return res?.error ? res : { ok: true, data: res };
+  },
+
+  // Maratona: ogni contratto normale completato aggiunge punti (inviati subito, o al prossimo se troppo ravvicinati)
+  async addMarathon(contract, stars) {
+    const def = eventDef();
+    if (def.kind !== 'marathon' || !isLinked() || !nameAllowed(save.name)) return;
+    const prev = save.marathonPending?.id === def.id ? save.marathonPending.points : 0;
+    const points = Math.min(600, prev + marathonPoints(contract, stars));
+    save.marathonPending = { id: def.id, points };
+    persist();
+    const res = await this.sendEventScore(def.id, points);
+    if (res.ok) {
+      save.marathonPending = null;
+      persist();
+      setTimeout(() => toast(t('evMarathonPts', { n: points }), 'good'), 1600);
+    }
+  },
+
+  // Premi degli eventi finiti: ritirati una volta sola, poi mostrati
+  async collectEventRewards() {
+    const list = await claimPending();
+    for (const c of list) {
+      const r = rewardFor(c.id, c.tier);
+      applyEventReward(r);
+      S.openEventReward(this, c, r);
+    }
+    if (list.length && this.game.mode !== 'play' && !document.querySelector('.modal-backdrop')) this.go(this.current);
   },
 
   exitMission(target = 'hub') {
@@ -151,6 +204,7 @@ async function boot() {
     if (!user) return;
     await syncFromCloud();
     payWorkers(true);
+    app.collectEventRewards();
     setLang(save.settings.lang);
     game.world?.setSaleLabel(t('saleSign'));
     game.setOwnedWarehouses(save.warehouses);
