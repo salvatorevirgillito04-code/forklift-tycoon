@@ -61,9 +61,10 @@ function rng(seed) {
 }
 
 const DIFF = {
-  easy: { mult: 1, pallets: 2, perLvl: 0.2, secPerPallet: 110, minSec: 70, maxTime: 300, fragile: false },
-  normal: { mult: 1.6, pallets: 3, perLvl: 0.28, secPerPallet: 95, minSec: 60, maxTime: 360, fragile: false },
-  hard: { mult: 2.5, pallets: 4, perLvl: 0.36, secPerPallet: 85, minSec: 50, maxTime: 420, fragile: true },
+  // minSec: secondi minimi per pallet (mai meno, a qualunque livello: sotto ~50 s un pallet non si sposta)
+  easy: { mult: 1, pallets: 2, perLvl: 0.2, secPerPallet: 110, minSec: 75, fragile: false },
+  normal: { mult: 1.6, pallets: 3, perLvl: 0.28, secPerPallet: 95, minSec: 65, fragile: false },
+  hard: { mult: 2.5, pallets: 4, perLvl: 0.36, secPerPallet: 85, minSec: 55, fragile: true },
 };
 
 export const DIFFICULTIES = Object.keys(DIFF);
@@ -92,6 +93,9 @@ const pickWeather = (r) => (r() < 2 / 3 ? 'clear' : WEATHERS[1 + Math.floor(r() 
 const KG_PER_LEVEL = { easy: 50, normal: 75, hard: 100 };
 const MAX_WEIGHT = 8000; // portata del muletto piu' grande
 
+// Crescita della paga: +13% a livello fino al 20, poi +4% (cosi' prezzi e premi restano sensati a lungo)
+const payCurve = (level) => Math.pow(1.13, Math.min(level, 20) - 1) * Math.pow(1.04, Math.max(0, level - 20));
+
 // Livelli infiniti: paga, numero di pallet e peso crescono con il livello.
 // seed: cambia dopo ogni contratto giocato, cosi' nella finestra di scelta escono contratti nuovi a caso.
 export function makeContract(level, difficulty, warehouseId, seed = 0) {
@@ -104,12 +108,13 @@ export function makeContract(level, difficulty, warehouseId, seed = 0) {
   const pallets = Math.min(12, Math.floor(d.pallets + (level - 1) * d.perLvl));
   // Il peso cresce con il livello (+-10% a caso): ai livelli alti servono muletti piu' potenti.
   const weight = Math.min(MAX_WEIGHT, Math.max(100, Math.round((KG_PER_LEVEL[difficulty] * level * (0.9 + r() * 0.2)) / 10) * 10));
-  // Tempo: piu' secondi per pallet, fino a 5/6/7 minuti (facile/normale/difficile); con gli scaffali un po' di piu'
+  // Tempo: i secondi per pallet calano col livello fino al minimo della difficolta' (con gli scaffali +20%);
+  // il totale cresce con il numero di pallet
   const perPallet = Math.max(d.minSec, d.secPerPallet - level * 0.5) * (rack ? 1.2 : 1);
-  const timeLimit = Math.round(Math.min(d.maxTime * (rack ? 1.2 : 1), pallets * perPallet + 60) / 5) * 5;
+  const timeLimit = Math.round((pallets * perPallet + 60) / 5) * 5;
   const time = pickTime(r), weather = pickWeather(r);
   const bonus = 1 + (BONUS[time] || 0) + (BONUS[weather] || 0);
-  const reward = Math.round(90 * Math.pow(1.13, level - 1) * d.mult * wh.rewardMult * (rack ? 1.15 : 1) * bonus * (0.95 + r() * 0.1));
+  const reward = Math.round(90 * payCurve(level) * d.mult * wh.rewardMult * (rack ? 1.15 : 1) * bonus * (0.95 + r() * 0.1));
   const xp = Math.round((40 + level * 12) * d.mult * (rack ? 1.15 : 1));
   return {
     level,
