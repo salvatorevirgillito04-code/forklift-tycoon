@@ -7,3 +7,4 @@ dist
 tools/tripo/out
 .env.*
 *.key
+perf-out
