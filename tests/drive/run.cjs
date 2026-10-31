@@ -41,7 +41,7 @@ async function measureVehicle({ vehId, weather }) {
   const step = (i) => f.update(DT, i, env);
   const run = (n, i, each) => { for (let k = 0; k < n; k++) { step(i); each?.(k); } };
   const stopWith = (i, max = 1200) => { let k = 0; while (Math.abs(f.v) > 0.01 && k++ < max) step(i); return k * DT; };
-  const r = { vehicle: veh.name, speed: veh.speed, lift: veh.lift };
+  const r = { vehicle: veh.name, speed: veh.speed, lift: veh.lift, weather };
 
   // velocita' massime, accelerazione, frenata, freno motore
   reset(-80, 0);
@@ -60,6 +60,25 @@ async function measureVehicle({ vehId, weather }) {
   let y0 = f.yaw, dist = 0;
   run(240, inp({ throttle: 0.3, steerAxis: 1 }), () => { dist += Math.abs(f.v) * DT; });
   r.turnRadius = dist / Math.max(Math.abs(f.yaw - y0), 1e-3);
+
+  // Sterzo: tempo per arrivare al 90% della sterzata chiesta (frecce e volante) a varie velocita'
+  // e stessa manovra a 60, 30 e 20 FPS (passo del gioco: f.step divide in sottopassi)
+  const steerTime = (v, o) => {
+    reset(-60, 0); f.v = v; f.steer = 0;
+    const keep = v ? Math.min(1, v / veh.speed + 0.02) : 0;
+    for (let k = 1; k <= 240; k++) { step(inp({ ...o, throttle: keep })); if (f.steer >= 0.9) return k * DT; }
+    return Infinity;
+  };
+  r.steer = {};
+  for (const v of [0, 1, 3, 6].filter((x) => x <= veh.speed)) {
+    r.steer[`arrows${v}`] = steerTime(v, { steerAxis: 1 });
+    r.steer[`wheel${v}`] = steerTime(v, { steerTarget: 1 });
+  }
+  r.steerFps = [60, 30, 20].map((fps) => {
+    reset(-60, 0); f.v = 1.5; f.steer = 0;
+    for (let k = 0; k < fps * 1.5; k++) f.step(1 / fps, inp({ steerAxis: 1, throttle: 1.5 / veh.speed + 0.02 }), env);
+    return { fps, yaw: f.yaw, x: f.x, z: f.z };
+  });
 
   // carico (80% della portata): prende il pallet davanti alle forche e lo porta all'altezza h
   const withLoad = async (h, test) => {
@@ -184,6 +203,11 @@ const CHECKS = [
   ['acceleratore 10% = passo d\'uomo (≤ 0,8 m/s)', (r) => r.v10 > 0.2 && r.v10 <= 0.8],
   ['acceleratore 30% = 30% della massima (±10%)', (r) => Math.abs(r.v30 / r.speed - 0.3) < 0.03],
   ['raggio di sterzata in manovra 0,7-1,8 m', (r) => r.turnRadius > 0.7 && r.turnRadius < 1.8],
+  ['sterzo da fermo: frecce ≤ 0,35 s, volante ≤ 0,25 s', (r) => r.steer.arrows0 <= 0.35 && r.steer.wheel0 <= 0.25],
+  ['sterzo a passo d\'uomo (1 m/s): frecce ≤ 0,45 s, volante ≤ 0,3 s', (r) => r.steer.arrows1 <= 0.45 && r.steer.wheel1 <= 0.3],
+  ['sterzo a 3 m/s: sterzata piena entro 0,8 s (rallentando)', (r) => r.steer.arrows3 <= 0.8 && r.steer.wheel3 <= 0.8],
+  ['sterzo a 6 m/s: sterzata piena entro 1,2 s, 1,5 s sulla neve (rallentando)', (r) => { const lim = r.weather === 'snow' ? 1.5 : 1.2; return r.steer.arrows6 === undefined || (r.steer.arrows6 <= lim && r.steer.wheel6 <= lim); }],
+  ['stessa traiettoria a 60/30/20 FPS (≤ 0,5° e 2 cm)', (r) => r.steerFps.every((s) => Math.abs(s.yaw - r.steerFps[0].yaw) < 0.5 * Math.PI / 180 && Math.hypot(s.x - r.steerFps[0].x, s.z - r.steerFps[0].z) < 0.02)],
   ['carico basso: frenata piena, resta', (r) => r.load.brakeLow.picked && !r.load.brakeLow.dropped],
   ['carico basso: curva a tutta velocita\', resta', (r) => r.load.curveLow.picked && !r.load.curveLow.dropped],
   ['carico basso: urto lento contro muro, resta', (r) => r.load.bumpSlow.picked && !r.load.bumpSlow.dropped],

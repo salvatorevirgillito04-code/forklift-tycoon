@@ -176,11 +176,13 @@ export class Controls {
     s.steerTarget = null;
     const sens = this.settings.sensitivity;
     if (this.settings.steering === 'wheel' && s.steerAxis === 0) {
-      if (!this.wheelDragging) this.wheelAngle *= Math.max(0, 1 - dt * 4);
+      if (!this.wheelDragging) this.wheelAngle *= Math.exp(-dt * 4); // ritorno al centro solo a dito alzato
       s.steerTarget = Math.max(-1, Math.min(1, (this.wheelAngle / (Math.PI * 1.25)) * sens));
       if (this.wheelEl) this.wheelEl.style.transform = `rotate(${this.wheelAngle}rad)`;
     } else if (this.settings.steering === 'gyro' && s.steerAxis === 0) {
-      const v = this.gyroValue;
+      // filtro unico sul giroscopio (l'accelerometro trema): costante di tempo 70 ms, uguale a ogni FPS
+      this.gyroSmooth = (this.gyroSmooth ?? this.gyroValue) + (this.gyroValue - (this.gyroSmooth ?? this.gyroValue)) * (1 - Math.exp(-dt / 0.07));
+      const v = this.gyroSmooth;
       const dead = Math.abs(v) < 0.04 ? 0 : v;
       s.steerTarget = Math.max(-1, Math.min(1, (dead / 0.55) * sens));
     }

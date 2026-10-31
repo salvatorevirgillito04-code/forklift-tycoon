@@ -5,6 +5,8 @@ export const SENTRY_DSN = import.meta.env.VITE_SENTRY_DSN
   || 'https://6f3dfce0ff1632c88ef2cb09068dc166@o4512301577076736.ingest.de.sentry.io/4512308270989392';
 export const APP_VERSION = __APP_VERSION__; // da package.json
 export const BUILD_DATE = __BUILD_DATE__;
+// APK di prova (VITE_TEST_BUILD=1): mostra nelle impostazioni il contatore delle prestazioni
+export const TEST_BUILD = import.meta.env.VITE_TEST_BUILD === '1';
 
 // App nativa Android (Capacitor) e indirizzi pubblici del gioco
 export const IS_NATIVE = !!window.Capacitor?.isNativePlatform?.();

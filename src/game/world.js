@@ -20,6 +20,11 @@ export const PLOT = {
 
 // Rotazione del lampione Tripo che porta il braccio verso -z (centro strada per i lampioni a z > 0)
 const LAMP_ROT = Math.PI / 2;
+// Oltre questo raggio un oggetto fisso resta unito per tutto il quartiere (terreno, strade, recinzione lunga)
+const ZONE_MAX_R = 30;
+// Sotto questi triangoli (in tutto il quartiere) un materiale resta un pezzo unico
+const ZONE_MIN_TRIS = 10000;
+const ZONE_COLS = 2; // colonne di zone lungo la strada (per lato nord e sud)
 
 export const plotToWorld = (wh, u, w) => [wh.cx + u, wh.side * w];
 
@@ -496,6 +501,19 @@ export class World {
     return true;
   }
 
+  // Zone oltre la fine della foschia: tanto non si vedrebbero (sono gia' del colore della nebbia), non si disegnano.
+  // Conta soprattutto con pioggia e neve, quando la foschia e' piu' vicina.
+  cullFogged(cam, fogEnd) {
+    const lim2 = fogEnd * fogEnd;
+    for (const m of this.zoneMeshes || []) {
+      const b = m.getBoundingInfo().boundingBox;
+      const dx = Math.max(b.minimumWorld.x - cam.x, 0, cam.x - b.maximumWorld.x);
+      const dz = Math.max(b.minimumWorld.z - cam.z, 0, cam.z - b.maximumWorld.z);
+      const on = dx * dx + dz * dz < lim2;
+      if (on !== m.isEnabled(false)) m.setEnabled(on);
+    }
+  }
+
   // Testo del cartello vendita nella lingua del gioco
   setSaleLabel(label) {
     if (label === this.saleLabel) return;
@@ -519,11 +537,33 @@ export class World {
   // Restano separati muri (trasparenza e camera), portoni e insegne.
   freezeStatics() {
     const keep = new Set([...this.doors.values()].map((d) => d.mesh));
+    // Uniti per materiale e per zona (4 zone: 2 colonne di lotti x lato nord/sud): una zona fuori dall'inquadratura
+    // non si disegna e nella mappa d'ombra entrano solo le zone vicine. Prima era un pezzo unico per tutto il
+    // quartiere: barili, siepi e cartelli di tutti i lotti si disegnavano sempre, anche alle spalle.
+    // Gli oggetti grandi (terreno, strade, recinzione lunga) restano interi.
     const groups = new Map();
+    const zoneOf = (m) => {
+      const bs = m.getBoundingInfo().boundingSphere;
+      if (bs.radiusWorld > ZONE_MAX_R) return 'all';
+      const c = bs.centerWorld;
+      return `${Math.max(0, Math.min(ZONE_COLS - 1, Math.floor((c.x - WORLD.minX) / ((WORLD.maxX - WORLD.minX) / ZONE_COLS))))}${c.z >= 0 ? 'n' : 's'}`;
+    };
+    // Solo i materiali con molti triangoli si dividono per zona (ogni pezzo in piu' e' una chiamata di disegno):
+    // gli altri restano un pezzo unico come prima
+    const byMat = new Map();
     for (const m of this.statics) {
       if (m.isDisposed() || m.isPickable || keep.has(m) || !m.material || m.parent) continue;
-      if (!groups.has(m.material)) groups.set(m.material, []);
-      groups.get(m.material).push(m);
+      m.computeWorldMatrix(true);
+      if (!byMat.has(m.material)) byMat.set(m.material, []);
+      byMat.get(m.material).push(m);
+    }
+    for (const [mat, list] of byMat) {
+      const tris = list.reduce((n, m) => n + m.getTotalIndices() / 3, 0);
+      for (const m of list) {
+        const k = `${mat.uniqueId}|${tris >= ZONE_MIN_TRIS ? zoneOf(m) : 'all'}`;
+        if (!groups.has(k)) groups.set(k, []);
+        groups.get(k).push(m);
+      }
     }
     // Pareti alte (che diventano trasparenti davanti alla camera): unite per magazzino e materiale
     const walls = new Map();
@@ -545,8 +585,10 @@ export class World {
       this.statics.push(out);
     }
     const merged = [];
-    for (const [mat, list] of groups) {
+    this.zoneMeshes = [];
+    for (const [key, list] of groups) {
       if (list.length < 2) continue;
+      const mat = list[0].material;
       const caster = list.some((m) => m.metadata?.caster);
       const receive = list.some((m) => m.receiveShadows);
       const out = Mesh.MergeMeshes(list, true, true);
@@ -559,6 +601,7 @@ export class World {
         this.shadowGen?.addShadowCaster(out);
       }
       merged.push(out);
+      if (!key.endsWith('|all')) this.zoneMeshes.push(out);
     }
     this.statics = this.statics.filter((m) => !m.isDisposed()).concat(merged);
     for (const m of this.statics) m.freezeWorldMatrix();

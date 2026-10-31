@@ -1,6 +1,6 @@
 import { t, fmt, LANGS, getLang, setLang } from '../i18n.js';
 import { ICONS } from './icons.js';
-import { IS_NATIVE, APK_URL, APP_VERSION, BUILD_DATE } from '../config.js';
+import { IS_NATIVE, APK_URL, APP_VERSION, BUILD_DATE, TEST_BUILD } from '../config.js';
 import { $, esc, coinPill, coinText, openModal, confirmDialog, toast } from './ui.js';
 import {
   save, buyVehicle, buyWarehouse, resetSave, persist, equipVehicle, ownedCount, assignedCount, freeUnits,
@@ -626,6 +626,8 @@ export function openSettings(app, { inGame = false, onClose } = {}) {
       <input type="range" min="0" max="1" step="0.05" value="${s.musicVolume ?? 0.5}" data-vol="musicVolume"></div>
     <label class="setting check" data-mirrors><span>${t('mirrors')}</span>
       <input type="checkbox" ${s.mirrors !== false ? 'checked' : ''}></label>
+    ${TEST_BUILD ? `<label class="setting check" data-perf-test><span>${t('perfOverlay')}</span>
+      <input type="checkbox" ${app.game.perfEl ? 'checked' : ''}></label>` : ''}
     ${dev.on ? `<button class="pill-btn purple" data-dev>${ICONS.gear}${t('devMenu')}</button>` : ''}
     ${inGame
     ? `<div class="row-btns"><button class="pill-btn red" data-exit>${t('exitMission')}</button><button class="pill-btn green" data-resume>${t('resume')}</button></div>`
@@ -650,6 +652,11 @@ export function openSettings(app, { inGame = false, onClose } = {}) {
   el.querySelector('[data-mirrors] input').addEventListener('change', (e) => {
     s.mirrors = e.target.checked;
     apply();
+  });
+  // APK di prova: contatore prestazioni (ricordato su questo telefono, fuori dal salvataggio)
+  el.querySelector('[data-perf-test] input')?.addEventListener('change', (e) => {
+    app.game.setPerfOverlay(e.target.checked);
+    try { localStorage.setItem('forklift-perf', e.target.checked ? '1' : ''); } catch { /* storage non disponibile */ }
   });
   el.querySelector('[data-invert] input').addEventListener('change', (e) => {
     s.invertGyro = e.target.checked;

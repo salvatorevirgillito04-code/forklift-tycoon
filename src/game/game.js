@@ -34,6 +34,7 @@ import { People } from './people.js';
 import { setOwnLights, headlightsLevel } from './headlights.js';
 import { vehicleById } from '../data.js';
 import { t } from '../i18n.js';
+import { TEST_BUILD } from '../config.js';
 
 // Cielo e luce ambiente dallo stesso HDRI (Poly Haven, CC0): riflessi coerenti con il cielo visibile
 const TEX_URL = `${import.meta.env.BASE_URL}textures/`;
@@ -132,6 +133,8 @@ export class Game {
 
     window.addEventListener('resize', () => this.engine.resize());
     this.engine.runRenderLoop(() => this.frame());
+    // APK di prova: contatore prestazioni acceso se lo era l'ultima volta
+    try { if (TEST_BUILD && localStorage.getItem('forklift-perf') === '1') this.setPerfOverlay(true); } catch { /* storage non disponibile */ }
   }
 
   // Bassa: niente ombre ne' cielo, risoluzione ridotta; Media: nitida, ombre leggere;
@@ -184,22 +187,34 @@ export class Game {
     this.applyQuality(this.quality);
   }
 
-  // Contatore prestazioni (solo menu sviluppatore): FPS, chiamate di disegno, oggetti visibili
+  // Contatore prestazioni (menu sviluppatore e APK di prova): FPS medi, minimi e 1% peggiore degli ultimi 5 s,
+  // millisecondi per fotogramma (logica + disegno), chiamate di disegno, triangoli e oggetti visibili
   setPerfOverlay(on) {
     this.perfEl?.remove();
     this.perfEl = null;
     clearInterval(this.perfTimer);
+    this.perfFrames = null;
     if (!on) return;
     this.instr ||= new SceneInstrumentation(this.scene);
     this.instr.captureFrameTime = true;
+    this.perfFrames = [];
     const el = document.createElement('div');
     el.className = 'perf-overlay';
     document.querySelector('#app').appendChild(el);
     this.perfEl = el;
     this.perfTimer = setInterval(() => {
+      const fr = this.perfFrames;
+      if (!fr.length) return;
+      const avg = fr.reduce((a, b) => a + b, 0) / fr.length;
+      const worst = [...fr].sort((a, b) => b - a);
+      const low1 = worst.slice(0, Math.max(1, Math.floor(fr.length / 100)));
+      const fps = (ms) => (1000 / ms).toFixed(0);
       const ms = this.instr.frameTimeCounter.lastSecAverage;
-      el.textContent = `${this.engine.getFps().toFixed(0)} FPS · ${ms.toFixed(1)} ms · draw ${this.instr.drawCallsCounter.current}`
-        + ` · mesh ${this.scene.getActiveMeshes().length} · ${this.quality} ×${(1 / this.engine.getHardwareScalingLevel()).toFixed(2)}`;
+      const heap = performance.memory ? ` · ${(performance.memory.usedJSHeapSize / 1048576).toFixed(0)} MB` : '';
+      el.textContent = `${fps(avg)} FPS (min ${fps(worst[0])} · 1% ${fps(low1.reduce((a, b) => a + b, 0) / low1.length)})`
+        + ` · ${avg.toFixed(1)} ms (CPU ${ms.toFixed(1)}) · draw ${this.instr.drawCallsCounter.current}`
+        + ` · tri ${(this.scene.getActiveIndices() / 3000).toFixed(0)}k · mesh ${this.scene.getActiveMeshes().length}`
+        + ` · ${this.quality} ×${(1 / this.engine.getHardwareScalingLevel()).toFixed(2)}${heap}`;
     }, 500);
   }
 
@@ -345,10 +360,20 @@ export class Game {
 
   frame() {
     const realDt = Math.min(0.25, this.engine.getDeltaTime() / 1000);
+    if (this.perfFrames) {
+      this.perfFrames.push(this.engine.getDeltaTime());
+      if (this.perfFrames.length > 300) this.perfFrames.shift(); // ultimi ~5 s
+    }
     this.adaptResolution(realDt);
-    const dt = Math.min(0.05, this.engine.getDeltaTime() / 1000) * (this.timeScale || 1);
+    // Passo di gioco: il tempo vero (fino a 0,25 s) diviso in sottopassi di al massimo 1/30 s.
+    // Prima il passo era tagliato a 0,05 s: sotto 20 FPS il gioco andava al rallentatore e lo sterzo sembrava molle.
+    const frameDt = realDt * (this.timeScale || 1);
+    const dt = Math.min(0.05, frameDt);
     try {
-      if (this.mode === 'play' && !this.paused) this.step(dt);
+      if (this.mode === 'play' && !this.paused) {
+        const n = Math.max(1, Math.ceil(frameDt / (1 / 30) - 1e-6));
+        for (let i = 0; i < n && this.mode === 'play' && !this.paused; i++) this.step(frameDt / n);
+      }
       else if (this.mode === 'play' && this.mission.finished) this.mission.driveTruck(dt, null, this.traffic.cars, this.people.list);
       // traffico: sempre in movimento (anche nel menu); col gioco in pausa resta fermo
       if (!(this.mode === 'play' && this.paused)) {
@@ -356,6 +381,14 @@ export class Game {
         this.traffic.update(dt, playing, this.mission.drive ? [this.mission.moveCol] : []);
       }
       this.updateCamera(dt);
+      this.fogCull = (this.fogCull || 0) - realDt;
+      if (this.fogCull <= 0) {
+        this.fogCull = 0.25;
+        // fine della foschia: lineare = fogEnd; esponenziale (nebbia) = dove resta meno di 1/255 di colore
+        const sc = this.scene;
+        const end = sc.fogMode === Scene.FOGMODE_EXP2 ? 2.4 / Math.max(1e-4, sc.fogDensity) : sc.fogEnd;
+        this.world?.cullFogged(this.camera.position, end + 5);
+      }
       // il cielo segue la camera (infiniteDistance non vale per la cupola, che ha un genitore): senza, dai lotti
       // lontani la parte opposta della cupola finiva oltre la distanza di disegno e restava un buco grigio
       this.sky.position.copyFrom(this.camera.position);
@@ -379,7 +412,7 @@ export class Game {
   step(dt) {
     const input = this.controls.update(dt);
     const f = this.forklift;
-    f.update(dt, input, this.env);
+    f.step(dt, input, this.env);
     this.shadowCull = (this.shadowCull || 0) - dt;
     if (this.shadowCull <= 0) {
       this.shadowCull = 0.5;

@@ -8,9 +8,16 @@ const MAX_STEER = 1.05; // rad, angolo massimo ruote posteriori
 const BRAKE_DECEL = 4.5; // m/s^2 col freno di servizio (a vuoto, asciutto)
 const ENGINE_DECEL = 1.6; // m/s^2 rilasciando l'acceleratore (freno motore / recupero)
 const BRAKE_RAMP = 0.15; // s per arrivare alla frenata piena (niente strappi)
-const STEER_RATE = 2.6; // corsa dello sterzo al secondo (idroguida)
+// Sterzo (idroguida): corsa al secondo da fermo, con frecce e con volante/giroscopio; piu' lenta andando forte
+export const STEER = {
+  rateArrows: 3.2, // da fermo: fine corsa in ~0,3 s
+  rateTarget: 5.0, // volante e giroscopio seguono il dito: fine corsa in ~0,2 s (come nella 2.9.0)
+  rateSpeed: 5.0, // m/s: a questa velocita' la corsa e' dimezzata
+  centerBoost: 1.3, // frecce rilasciate: lo sterzo torna al centro un po' piu' in fretta
+  lat: 5.0, // m/s^2: a velocita' alta l'angolo di sterzo e' limitato a questa accelerazione laterale
+  yawK: 30, // risposta del telaio allo sterzo (1/s), sull'asciutto
+};
 const CURVE_LAT = 2.6; // m/s^2: oltre questa accelerazione laterale il mezzo rallenta da solo in curva
-const STEER_LAT = 4.0; // m/s^2: a velocita' alta l'angolo di sterzo e' limitato a questa accelerazione laterale
 const CURVE_DECEL = 3.0; // m/s^2 di rallentamento automatico in curva
 const SLIDE_MAX_COS = 0.6; // urto di striscio (scivola) se il moto e' quasi parallelo al muro
 const SLIDE_MAX_VN = 1.4; // m/s: oltre questa velocita' contro il muro e' un urto, non uno strisciamento
@@ -51,7 +58,10 @@ export class Forklift {
 
   dispose() {
     if (this.carried) this.carried.p.node.parent = null;
+    // il tetto ha un materiale proprio (copia, con le sue texture): va liberato, altrimenti restava a ogni contratto
+    const roofMats = new Set((this.model?.roof || []).map((m) => m.material).filter(Boolean));
     this.model?.root.dispose();
+    roofMats.forEach((m) => m.dispose(false, true));
   }
 
   place(x, z, yaw) {
@@ -260,6 +270,13 @@ export class Forklift {
     return map.size ? map : null;
   }
 
+  // Passo del muletto del giocatore: diviso in sottopassi di al massimo 1/60 s, cosi' sterzo e traiettoria
+  // sono gli stessi a 30 e a 60 FPS (con un passo unico piu' lungo la curva veniva un po' piu' stretta)
+  step(dt, input, env) {
+    const n = Math.max(1, Math.ceil(dt * 60 - 1e-6));
+    for (let i = 0; i < n; i++) this.update(dt / n, input, env);
+  }
+
   update(dt, input, env) {
     const veh = this.vehicle;
     this.stuck = this.findStuck(env);
@@ -272,11 +289,19 @@ export class Forklift {
     // A velocita' alta l'angolo massimo e' ridotto (sterzo assistito): niente sterzate a fondo a tutta velocita'
     const speed = Math.abs(this.v);
     const steerLimit = this.steerLimitAt(speed, loadRatio, grip);
-    const target = Math.max(-steerLimit, Math.min(steerLimit, input.steerTarget !== null ? input.steerTarget : input.steerAxis));
-    const rate = (target === 0 && input.steerTarget === null ? STEER_RATE * 1.2 : STEER_RATE) * input.sensitivity / (1 + speed * 0.06);
+    const asked = input.steerTarget !== null ? input.steerTarget : input.steerAxis;
+    const target = Math.max(-steerLimit, Math.min(steerLimit, asked));
+    const base = input.steerTarget !== null ? STEER.rateTarget : STEER.rateArrows * (target === 0 ? STEER.centerBoost : 1);
+    const rate = base * input.sensitivity / (1 + speed / STEER.rateSpeed);
     const sd = target - this.steer;
     this.steer += Math.sign(sd) * Math.min(Math.abs(sd), rate * dt);
     this.steer = Math.max(-1, Math.min(1, this.steer));
+
+    // Sterzando piu' di quanto permette la velocita', il mezzo rallenta fino alla velocita' in cui quell'angolo e'
+    // consentito: lo sterzo arriva dove chiesto senza attese lunghe (prima rallentava solo per l'angolo gia' raggiunto)
+    // L'acceleratore non spinge oltre questa velocita' (il controllo in curva vince sul pedale)
+    const vCurve = Math.min(this.curveSpeed(this.steer * MAX_STEER, loadRatio, grip),
+      Math.abs(asked) > steerLimit + 0.02 ? this.speedForSteer(Math.abs(asked), loadRatio, grip) : Infinity);
 
     // --- Marcia, acceleratore, freno motore ---
     // La marcia si puo' cambiare anche in movimento: premendo l'acceleratore
@@ -292,11 +317,14 @@ export class Forklift {
     const throttle = Math.max(0, Math.min(1, input.throttle));
     if (throttle > 0) {
       if (this.v === 0 || Math.sign(this.v) === dir) {
-        const want = throttle * maxV;
+        const want = Math.min(throttle * maxV, vCurve);
         if (Math.abs(this.v) < want) {
           const acc = veh.accel * grip.accel * (1 - loadRatio * 0.3) / mass * (0.45 + 0.55 * throttle);
           this.v = dir * Math.min(want, Math.abs(this.v) + acc * dt);
-        } else slow(Math.min(Math.abs(this.v) - want, ENGINE_DECEL * grip.brake / mass * dt)); // pedale rilasciato un po'
+        } else if (Math.abs(this.v) > throttle * maxV) {
+          // pedale rilasciato un po' (il rallentamento in curva e' piu' sotto: non si sommano)
+          slow(Math.min(Math.abs(this.v) - throttle * maxV, ENGINE_DECEL * grip.brake / mass * dt));
+        }
       } else {
         const dec = (1.2 + throttle * 0.8) * dt; // inversione dolce: max 2 m/s²
         if (Math.abs(this.v) <= dec) {
@@ -311,7 +339,6 @@ export class Forklift {
     if (this.brakeLevel > 0) slow(this.brakeLevel * BRAKE_DECEL * grip.brake / mass * dt);
     else if (throttle === 0) slow(ENGINE_DECEL * grip.brake / mass * dt); // freno motore (non si somma al freno)
     // In curva il mezzo rallenta da solo (come i muletti con controllo di velocita' in curva)
-    const vCurve = this.curveSpeed(this.steer * MAX_STEER, loadRatio, grip);
     if (Math.abs(this.v) > vCurve) slow(Math.min(Math.abs(this.v) - vCurve, CURVE_DECEL * dt));
     if (Math.abs(this.v) > maxV) this.v = Math.sign(this.v) * maxV;
 
@@ -361,7 +388,7 @@ export class Forklift {
     const delta = this.steer * MAX_STEER;
     // sul bagnato/neve la rotazione segue lo sterzo in ritardo: il muletto "scivola" un po' in curva
     const wantYaw = this.v * Math.tan(delta) / this.geo.wheelbase;
-    this.yawRateNow = (this.yawRateNow ?? wantYaw) + (wantYaw - (this.yawRateNow ?? wantYaw)) * Math.min(1, dt * grip.steer);
+    this.yawRateNow = (this.yawRateNow ?? wantYaw) + (wantYaw - (this.yawRateNow ?? wantYaw)) * (1 - Math.exp(-dt * grip.steer * STEER.yawK / 30)); // uguale a 30 e 60 FPS
     const yawRate = this.yawRateNow;
     const nYaw = this.yaw + yawRate * dt;
     const nx = this.x + Math.sin(nYaw) * this.v * dt;
@@ -419,9 +446,15 @@ export class Forklift {
   // Angolo di sterzo massimo (0..1) alla velocita' data: a bassa velocita' tutto, a velocita' alta meno
   steerLimitAt(speed, loadRatio, grip) {
     if (speed < 0.5) return 1;
-    const lat = Math.max(1.5, (STEER_LAT - 0.3 * this.forkY - 0.8 * loadRatio) * (grip?.stability ?? 1));
+    const lat = Math.max(1.5, (STEER.lat - 0.3 * this.forkY - 0.8 * loadRatio) * (grip?.stability ?? 1));
     const delta = Math.atan(lat * this.geo.wheelbase / (speed * speed));
     return Math.min(1, delta / MAX_STEER);
+  }
+
+  // Velocita' alla quale l'angolo di sterzo s (0..1) e' consentito (inversa di steerLimitAt)
+  speedForSteer(s, loadRatio, grip) {
+    const lat = Math.max(1.5, (STEER.lat - 0.3 * this.forkY - 0.8 * loadRatio) * (grip?.stability ?? 1));
+    return Math.max(0.5, Math.sqrt(lat * this.geo.wheelbase / Math.tan(Math.min(1, s) * MAX_STEER)));
   }
 
   // Strisciamento lungo un ostacolo fisso (muri, recinzioni, scaffali): solo se il contatto e' di striscio

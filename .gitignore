@@ -2,3 +2,8 @@ node_modules
 dist
 .env
 .netlify
+
+# strumenti di sviluppo: file generati e chiavi (mai in Git)
+tools/tripo/out
+.env.*
+*.key
