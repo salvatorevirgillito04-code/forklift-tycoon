@@ -2,6 +2,7 @@ import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTextur
 import { PBRMaterial } from '@babylonjs/core/Materials/PBR/pbrMaterial.js';
 import { Color3 } from '@babylonjs/core/Maths/math.color.js';
 import { Texture } from '@babylonjs/core/Materials/Textures/texture.js';
+import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
 
 const TEX_URL = `${import.meta.env.BASE_URL}textures/`;
 
@@ -275,6 +276,54 @@ function groundMarkTexture(scene, kind) {
   return tex;
 }
 
+// Ombra di contatto: striscia scura al centro che sfuma ai due lati (alla base di muri e recinzioni)
+function contactShadowTexture(scene) {
+  const tex = new DynamicTexture('contactShadow', { width: 4, height: 64 }, scene, true);
+  const c = tex.getContext();
+  const g = c.createLinearGradient(0, 0, 0, 64);
+  g.addColorStop(0, 'rgba(0,0,0,0)');
+  g.addColorStop(0.5, 'rgba(0,0,0,1)');
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  c.clearRect(0, 0, 4, 64);
+  c.fillStyle = g;
+  c.fillRect(0, 0, 4, 64);
+  tex.update();
+  tex.hasAlpha = true;
+  tex.wrapU = tex.wrapV = Texture.CLAMP_ADDRESSMODE;
+  return tex;
+}
+
+// Macchie d'olio e usura sul cemento (scure, irregolari, sfumate)
+function stainTexture(scene) {
+  const tex = new DynamicTexture('stain', 128, scene, true);
+  const c = tex.getContext();
+  c.clearRect(0, 0, 128, 128);
+  for (let i = 0; i < 9; i++) {
+    const x = 34 + Math.random() * 60, y = 34 + Math.random() * 60, r = 12 + Math.random() * 26;
+    const g = c.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, 'rgba(20,18,15,0.55)');
+    g.addColorStop(1, 'rgba(20,18,15,0)');
+    c.fillStyle = g;
+    c.fillRect(0, 0, 128, 128);
+  }
+  tex.update();
+  tex.hasAlpha = true;
+  return tex;
+}
+
+const decalMat = (scene, name, tex, alpha) => {
+  const m = new StandardMaterial(name, scene);
+  m.diffuseColor = Color3.Black();
+  m.specularColor = Color3.Black();
+  m.emissiveColor = Color3.Black();
+  m.opacityTexture = tex;
+  m.disableLighting = true;
+  m.disableDepthWrite = true;
+  m.alpha = alpha;
+  m.zOffset = -1;
+  return m;
+};
+
 export function createMaterials(scene) {
   const grassTex = canvasTexture(scene, 'grassTex', 256, (ctx, s) => {
     noise(ctx, s, '#4f7a35', 90, 6000, 0.25);
@@ -331,6 +380,8 @@ export function createMaterials(scene) {
       return m;
     })(),
     hatch: pbr(scene, 'hatch', { color: '#f4c20d', rough: 0.6, emissive: '#3a2d00' }),
+    contactShadow: decalMat(scene, 'contactShadowMat', contactShadowTexture(scene), 0.5),
+    stain: decalMat(scene, 'stainMat', stainTexture(scene), 0.6),
     groundMark: memo((kind) => {
       const tex = groundMarkTexture(scene, kind);
       const m = pbr(scene, 'groundMark' + kind, { color: '#ffffff', rough: 0.7, tex });

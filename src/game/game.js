@@ -69,6 +69,12 @@ export class Game {
     scene.imageProcessingConfiguration.toneMappingEnabled = true;
     scene.imageProcessingConfiguration.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_ACES;
     scene.imageProcessingConfiguration.exposure = 1.4;
+    // un po' piu' di contrasto e angoli appena piu' scuri (gratis: dentro lo shader dei materiali)
+    scene.imageProcessingConfiguration.contrast = 1.06;
+    scene.imageProcessingConfiguration.vignetteEnabled = true;
+    scene.imageProcessingConfiguration.vignetteWeight = 0.7;
+    scene.imageProcessingConfiguration.vignetteStretch = 0.4;
+    scene.imageProcessingConfiguration.vignetteCameraFov = 0.8;
     try {
       scene.environmentTexture = CubeTexture.CreateFromPrefilteredData(ENV_URL, scene);
       scene.environmentIntensity = 0.75;

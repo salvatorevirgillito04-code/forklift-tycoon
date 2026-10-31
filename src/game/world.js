@@ -188,6 +188,30 @@ export class World {
     }
   }
 
+  // Ombra di contatto a terra lungo una linea (x0,z0)-(x1,z1), larga 'width', scura al centro
+  contactShadow(x0, z0, x1, z1, width, y = 0.009) {
+    const len = Math.hypot(x1 - x0, z1 - z0);
+    const p = MeshBuilder.CreateGround('contactShadow', { width: len, height: width }, this.scene);
+    p.position.set((x0 + x1) / 2, y, (z0 + z1) / 2);
+    p.rotation.y = -Math.atan2(z1 - z0, x1 - x0);
+    p.material = this.mats.contactShadow;
+    p.isPickable = false;
+    p.bakeCurrentTransformIntoVertices();
+    this.statics.push(p);
+  }
+
+  // Macchia d'olio / usura sul piazzale (u, w nel lotto)
+  stain(wh, u, w, size) {
+    const [x, z] = plotToWorld(wh, u, w);
+    const p = MeshBuilder.CreateGround('stain', { width: size, height: size * 0.8 }, this.scene);
+    p.position.set(x, 0.007, z);
+    p.rotation.y = (u * 7 + w * 3) % Math.PI;
+    p.material = this.mats.stain;
+    p.isPickable = false;
+    p.bakeCurrentTransformIntoVertices();
+    this.statics.push(p);
+  }
+
   // Cespuglio basso (sfera schiacciata) nell'aiuola, in coordinate del lotto
   bush(wh, u, w, r, h, mat) {
     const [x, z] = plotToWorld(wh, u, w);
@@ -303,6 +327,18 @@ export class World {
       box('hedgeBed', Math.min(h0, h1), Math.max(h0, h1), 0, 0.12, 9.2, 26.5, mats.soil, { collide: false, shadow: false, receive: true });
       box('hedge', Math.min(h0, h1) + 0.03, Math.max(h0, h1) - 0.03, 0.12, 0.62, 9.4, 26.3, mats.bush, { shadow: false, tag: 'hedge' });
     }
+    // ombre di contatto alla base delle pareti (dentro e fuori), sotto gli scaffali e lungo le recinzioni laterali
+    const P = (u, w) => plotToWorld(wh, u, w);
+    const line = (u0, w0, u1, w1, width) => this.contactShadow(...P(u0, w0), ...P(u1, w1), width);
+    line(B.u[0], B.w[1], B.u[1], B.w[1], 1.8);
+    line(B.u[0], B.w[0], B.u[0], B.w[1], 1.8);
+    line(B.u[1], B.w[0], B.u[1], B.w[1], 1.8);
+    line(B.u[0], B.w[0], D.u[0] - 0.2, B.w[0], 1.8);
+    line(D.u[1] + 0.2, B.w[0], B.u[1], B.w[0], 1.8);
+    line(PLOT.racks.u[0], (PLOT.racks.w[0] + PLOT.racks.w[1]) / 2, PLOT.racks.u[1], (PLOT.racks.w[0] + PLOT.racks.w[1]) / 2, 2.2);
+    for (const s of [-1, 1]) line(s * PLOT.halfWidth, PLOT.yard[0] + 1, s * PLOT.halfWidth, B.w[0], 1.2);
+    // macchie d'olio dove si fermano i mezzi (davanti al portone, allo stallo del camion, alla zona operai)
+    for (const [u, w, sz] of [[-1.5, 24.5, 2.4], [2.2, 20, 1.8], [-6, 18.5, 2.6], [5, 13, 2], [-15.5, 15, 2.2], [16, 21, 2.4], [0.5, 34, 2], [-3, 42, 2.4]]) this.stain(wh, u, w, sz);
     // stallo del camion del contratto (contorno bianco)
     const lw2 = 0.1, st = { u: [-9.5, 8.5], w: [14.4, 17.6] };
     const sl = (u0, u1, w0, w1) => box('stall', u0, u1, 0.008, 0.018, w0, w1, mats.lineWhite, { collide: false, shadow: false, receive: true });
