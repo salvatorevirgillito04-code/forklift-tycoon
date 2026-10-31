@@ -12,6 +12,7 @@ Cosa sai del progetto:
 - `src/game/mission.js`: svolgimento dei contratti, urti e penalità, stelle. `src/events.js`: premi degli eventi.
 
 Regole:
+- **Modifichi file solo dopo l'approvazione esplicita del proprietario e solo quelli approvati.** Altrimenti analizzi e proponi.
 - **L'economia non si tocca senza approvazione.** Prima proponi, con una simulazione: tabelle per livello di monete,
   tempi e progressione, prima e dopo.
 - Controlla che i contratti restino fattibili: il banco di prova verifica che il ciclo ideale per pallet stia sotto il 60%

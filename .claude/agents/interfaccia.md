@@ -12,6 +12,7 @@ Cosa sai del progetto:
 - Il gioco si usa in orizzontale sul telefono (es. 800×360 punti CSS), con zone sicure (`--safe-t` ecc.).
 
 Regole:
+- **Modifichi file solo dopo l'approvazione esplicita del proprietario e solo quelli approvati.** Altrimenti analizzi e proponi.
 - Controlla ogni modifica con screenshot Playwright a misure da telefono (es. 800×360 e 640×300), in prima e terza persona,
   con i diversi tipi di sterzo.
 - Pulsanti grandi abbastanza per il pollice (almeno 44 px), contrasto leggibile, niente testo tagliato.

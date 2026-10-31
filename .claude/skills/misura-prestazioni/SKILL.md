@@ -24,9 +24,10 @@ npx vite --port 5173                       # C: lavoro attuale
   `node tools/perf/sweep.cjs A=5181 B=5182 C=5173`
 - **Scenari** (piazzale, interno, guida, operai, pioggia, neve, prima persona):
   `node tools/perf/scenari.cjs A=5181 C=5173 --out perf-out/scenari.json`
-  (`SC=guida` per un solo scenario). Pochi fotogrammi e rumore: usali per tempi della logica, memoria e GC, non per gli FPS.
+  (`SC=guida node tools/perf/scenari.cjs ...` per un solo scenario). Pochi fotogrammi e rumore: usali per tempi della logica, memoria e GC, non per gli FPS.
 - **Allocazioni** (chi produce lavoro per il GC):
-  `node tools/perf/allocazioni.cjs clear` e le varianti `nomirror`, `noshadow`, `nopeople` per isolare le cause.
+  `node tools/perf/allocazioni.cjs <meteo> [varianti] [porta]`, es. `node tools/perf/allocazioni.cjs clear nomirror 5173`.
+  Varianti per isolare le cause: `nomirror`, `noshadow`, `nopeople`, `nolights` (anche unite: `nomirror,noshadow`).
 - **Aspetto**: `node tools/perf/shots.cjs <porta> <etichetta> [meteo] perf-out`.
 
 ## 3. Rapporto

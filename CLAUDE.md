@@ -11,7 +11,7 @@ Sito: https://salvatorevirgillito04-code.github.io/forklift-tycoon/ (GitHub Page
 4. **Non dichiarare mai test non eseguiti**: distingui sempre misure reali, ipotesi e test manuali da fare sul telefono.
    Le misure fatte sul computer (Chromium senza schermo, grafica software SwiftShader) non valgono come FPS del telefono.
 5. **Mai su `main` senza approvazione**: niente merge, niente push su `main`, niente pubblicazione (sito, APK
-   ufficiale, `downloads/forklift-tycoon.apk`) senza un "sì" esplicito. Commit e push sono permessi solo sui rami di lavoro,
+   ufficiale, `downloads/forklift-tycoon.apk`, `gh workflow run` del deploy) senza un "sì" esplicito. Commit e push sono permessi solo sui rami di lavoro,
    dopo che i test sono passati.
 6. **Non toccare ciò che non è stato chiesto**: la logica gestionale, gli operai IA, i contratti, il garage, i magazzini,
    l'economia, la fisica e lo sterzo già approvati si cambiano solo se il lavoro lo richiede e con approvazione.
@@ -35,6 +35,7 @@ Ogni lavoro passa dagli agenti giusti, in quest'ordine:
 7. `rilascio`: prepara l'APK di prova. La pubblicazione avviene solo dopo l'approvazione.
 
 Per le piccole correzioni la sessione principale può saltare i passaggi 1 e 2, ma non 4, 5 e 6.
+**L'approvazione del proprietario serve comunque prima di scrivere codice** (regola 3).
 
 ## Procedure ripetibili (`.claude/skills/`)
 - `build-apk`: APK di prova o ufficiale, con firma e versionCode verificati.
@@ -48,6 +49,7 @@ Per le piccole correzioni la sessione principale può saltare i passaggi 1 e 2, 
 - `npm run test:drive`: banco di prova della guida (6 muletti, sereno e neve). Deve finire con "Tutte le prove passate".
 - `node tools/tripo/tripo.mjs balance|usage|task|estimate`: Tripo, senza crediti.
 - `tools/perf/`: script di misura (vedi la skill `misura-prestazioni`).
+- `android/VERSIONI.md`: storico dei versionCode (unica fonte, il prossimo deve essere libero).
 
 ## Mappa del codice
 - `src/game/forklift.js`: fisica del muletto (sterzo posteriore, freni, carico, collisioni). Costanti dello sterzo in `STEER`.

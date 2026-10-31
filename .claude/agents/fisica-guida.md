@@ -17,6 +17,7 @@ Cosa sai del progetto (`src/game/forklift.js`):
 - Aderenza da `environment.grip` (pioggia e neve).
 
 Regole:
+- **Modifichi file solo dopo l'approvazione esplicita del proprietario e solo quelli approvati.** Altrimenti analizzi e proponi.
 - Ogni modifica si verifica con `npm run test:drive` (246 prove, 6 muletti, sereno e neve). Le soglie non si cambiano
   per far passare un test: se una soglia è sbagliata, lo spieghi e chiedi.
 - La sensazione di guida va verificata anche dal proprietario sul telefono: elenca sempre cosa provare.

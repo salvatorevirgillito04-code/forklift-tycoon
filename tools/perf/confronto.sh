@@ -3,16 +3,18 @@
 # Uso:   tools/perf/confronto.sh <ramo-o-commit> <porta>        es. tools/perf/confronto.sh main 5181
 # Ferma: tools/perf/confronto.sh --stop <porta>   (rimuove anche la cartella)
 # Ogni versione ha la sua cache di Vite: con la cache condivisa i server si rompevano a vicenda (errore 504).
+# node_modules e' quello del ramo attuale: per rami molto vecchi con dipendenze diverse la versione puo' non partire.
 set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 BASE="${TMPDIR:-/tmp}/forklift-confronto"
 porta() { [[ "$1" =~ ^[0-9]{2,5}$ ]] || { echo "porta non valida: $1" >&2; exit 1; }; }
 if [ "${1:-}" = "--stop" ]; then
-  PORT="$2"; porta "$PORT"; DIR="$BASE/$PORT"
+  PORT="${2:-}"; porta "$PORT"; DIR="$BASE/$PORT"
   for pid in $(ps -eo pid,args | grep -E "[v]ite.*--port $PORT( |$)" | awk '{print $1}'); do kill "$pid" 2>/dev/null || true; done
   [ -d "$DIR" ] && git -C "$ROOT" worktree remove --force "$DIR"
   echo "fermato $PORT"; exit 0
 fi
+[ $# -ge 2 ] || { echo "uso: $0 <ramo-o-commit> <porta> | --stop <porta>" >&2; exit 1; }
 REF="$1"; PORT="$2"; porta "$PORT"; DIR="$BASE/$PORT"
 mkdir -p "$BASE"
 [ -d "$DIR" ] && git -C "$ROOT" worktree remove --force "$DIR"
@@ -25,4 +27,5 @@ export default { ...cfg, cacheDir: '.vite-confronto-cache' };
 CFG
 (cd "$DIR" && nohup npx vite --config vite.confronto.config.js --port "$PORT" --strictPort > "$DIR/vite.log" 2>&1 &)
 for i in $(seq 1 30); do curl -s -o /dev/null "http://localhost:$PORT/" && break; sleep 1; done
+curl -s -o /dev/null "http://localhost:$PORT/" || { echo "il server non risponde: vedi $DIR/vite.log" >&2; exit 1; }
 echo "$REF ($(git -C "$DIR" rev-parse --short HEAD)) su http://localhost:$PORT/  (log: $DIR/vite.log)"

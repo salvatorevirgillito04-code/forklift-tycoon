@@ -1,5 +1,7 @@
 // Profilo delle allocazioni (campionamento V8) durante 10 s di gioco: quali funzioni allocano di piu' (= lavoro per il GC).
-// Uso: node tools/perf/allocazioni.cjs [meteo] [varianti: nomirror,noshadow,nopeople] [porta]
+// Uso: node tools/perf/allocazioni.cjs <meteo> [varianti] [porta]
+//   es. node tools/perf/allocazioni.cjs clear nomirror 5181   (meteo: clear, rain, snow, fog)
+//   varianti (anche unite con la virgola): nomirror, noshadow, nopeople, nolights; '' = nessuna
 const { chromium } = require('playwright');
 const weather = process.argv[2] || 'clear';
 const variant = process.argv[3] || '';

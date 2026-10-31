@@ -37,8 +37,9 @@ Confronta le immagini (affiancale e guardale). Le macchie a terra sono casuali a
 Ripeti con `rain` o `snow` se la modifica riguarda meteo o ambienti.
 
 ## 5. Salvataggi
-- Se cambia `src/state.js` o la struttura dei dati, carica un salvataggio vecchio (es. dalla tabella di backup
-  o creato con la versione su `main`) e controlla che si apra senza perdite.
+- Se cambia `src/state.js` o la struttura dei dati, crea un salvataggio con la versione su `main`
+  (`tools/perf/confronto.sh main 5181`, gioca e copia il localStorage) e caricalo nella versione nuova: deve aprirsi senza perdite.
+- Mai usare dati reali dei giocatori (tabelle di backup) per le prove, e mai scrivere i salvataggi di prova sul cloud.
 - I campi nuovi devono avere un valore predefinito.
 
 ## 6. Rapporto

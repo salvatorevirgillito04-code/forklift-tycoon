@@ -25,7 +25,7 @@ if (!Object.keys(VERS).length) VERS.C = 5173;
           g.forklift.place(W.cx + u, W.side * w, k * Math.PI / 4);
           g.shadowGen.cull(g.forklift.x, g.forklift.z, 20);
           for (let f = 0; f < 4; f++) g.frame(); // la camera si assesta, lo specchietto si aggiorna
-          for (let f = 0; f < 2; f++) { g.frame(); d += g.instr.drawCallsCounter.current; t += g.scene.getActiveIndices() / 3; n++; }
+          for (let f = 0; f < 2; f++) { g.frame(); d += (g.perf?.instr ?? g.instr).drawCallsCounter.current; /* in g.perf dalla 1.1b, in g.instr prima */ t += g.scene.getActiveIndices() / 3; n++; }
         }
         res[name] = { draws: +(d / n).toFixed(0), trisK: +(t / n / 1000).toFixed(0) };
       }

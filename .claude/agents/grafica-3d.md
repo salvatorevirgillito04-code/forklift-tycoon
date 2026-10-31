@@ -16,6 +16,7 @@ Cosa sai del progetto:
   non nel progetto (es. `npm i @gltf-transform/core @gltf-transform/functions @gltf-transform/extensions meshoptimizer`).
 
 Regole:
+- **Modifichi file solo dopo l'approvazione esplicita del proprietario e solo quelli approvati.** Altrimenti analizzi e proponi.
 - Prima di sostituire un modello salva l'originale e fai screenshot prima/dopo (`tools/perf/shots.cjs`). Nessuna differenza
   visibile = ok; altrimenti mostra il confronto e chiedi.
 - Non sostituire asset senza approvazione. Nessuna operazione Tripo a pagamento senza approvazione esplicita.

@@ -1,9 +1,11 @@
 // Scenari di gioco (piazzale, interno, guida, operai, pioggia, neve, prima persona) per una o piu' versioni.
 // Desktop, Chromium senza schermo + SwiftShader: gli FPS NON sono quelli del telefono; valgono draw call, triangoli,
-// tempi della logica, memoria e GC. Uso: node tools/perf/scenari.cjs A=5181 C=5173 [SC=guida] [--out file.json]
+// tempi della logica, memoria e GC. Uso: [SC=guida] node tools/perf/scenari.cjs A=5181 C=5173 [--out perf-out/scenari.json]
+// SC (variabile d'ambiente, oppure argomento SC=nome) sceglie un solo scenario.
 const { chromium } = require('playwright');
 const VERS = Object.fromEntries(process.argv.slice(2).filter((a) => /^\w+=\d+$/.test(a)).map((a) => a.split('=')).map(([k, v]) => [k, +v]));
 if (!Object.keys(VERS).length) VERS.C = 5173;
+const ONLY = process.env.SC || (process.argv.find((a) => a.startsWith('SC=')) || '').slice(3);
 
 const SCEN = [
   { id: 'piazzale', weather: 'clear', view: 'third', at: [9, 22] },
@@ -24,10 +26,9 @@ const SCEN = [
     await p.waitForFunction(() => window.__app?.game?.world, null, { timeout: 120000 });
     await p.waitForTimeout(2000);
     res[ver] = {};
-    for (const sc of SCEN.filter((x) => !process.env.SC || x.id === process.env.SC)) {
+    for (const sc of SCEN.filter((x) => !ONLY || x.id === ONLY)) {
       res[ver][sc.id] = await p.evaluate(async (sc) => {
         const app = window.__app, g = app.game;
-        const { SceneInstrumentation } = g.__SI || {};
         g.settings.view = sc.view;
         await app.startMission({ type: 'free', warehouseId: 0, level: 0, seed: 1, weight: 600, pallets: 0, vehicle: 'd18', time: 'day', weather: sc.weather, timeLimit: null });
         g.settings.view = sc.view;
@@ -37,7 +38,6 @@ const SCEN = [
           g.bots.setWorkers(Array.from({ length: sc.workers }, (_, i) => ({ id: 'p' + i, name: 'W' + i, avatar: 0, level: 3, warehouse: 0, vehicle: 'd18' })));
           await g.bots.prewarm(g.forklift);
         }
-        const wh = { cx: 0 };
         const f = g.forklift;
         const W = g.mission.wh;
         f.place(W.cx + sc.at[0], W.side * sc.at[1], W.side > 0 ? 0 : Math.PI);
@@ -56,7 +56,7 @@ const SCEN = [
         const draws = [], meshes = [], tris = [];
         const obs = g.scene.onAfterRenderObservable.add(() => {
           if (!rec) return;
-          draws.push(g.engine._drawCalls ? g.engine._drawCalls.current : (g.instr?.drawCallsCounter.current ?? NaN));
+          draws.push((g.perf?.instr ?? g.instr)?.drawCallsCounter.current ?? NaN);
           meshes.push(g.scene.getActiveMeshes().length);
           tris.push(g.scene.getActiveIndices() / 3);
         });
@@ -78,7 +78,6 @@ const SCEN = [
         });
         rec = false;
         g.scene.onAfterRenderObservable.remove(obs);
-        const dcs = g.instr ? g.instr.drawCallsCounter : null;
         g.setPerfOverlay?.(false);
         const avg = (a) => a.reduce((s, x) => s + x, 0) / Math.max(1, a.length);
         const pct = (a, q) => { const s = [...a].sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(s.length * q))]; };
@@ -102,5 +101,9 @@ const SCEN = [
     await b.close();
   }
   const o = process.argv.indexOf('--out');
-  if (o > 0) require('fs').writeFileSync(process.argv[o + 1], JSON.stringify(res, null, 1));
+  if (o > 0) {
+    const path = require('path');
+    require('fs').mkdirSync(path.dirname(process.argv[o + 1]), { recursive: true });
+    require('fs').writeFileSync(process.argv[o + 1], JSON.stringify(res, null, 1));
+  }
 })();

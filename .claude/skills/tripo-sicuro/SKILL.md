@@ -23,7 +23,8 @@ node tools/tripo/tripo.mjs balance        # saldo
 node tools/tripo/tripo.mjs usage 20       # ultimi consumi reali
 node tools/tripo/tripo.mjs estimate text-to-3d+texture +smart-low-poly
 ```
-Oppure, con la connessione Tripo della sessione, solo `TRIPO3D_GET_BALANCE` e `TRIPO3D_LIST_USAGE` (gratuite).
+Oppure, solo dalla sessione principale (non dagli agenti), con la connessione Tripo della sessione: solo saldo e
+consumi, cioè le operazioni gratuite. Gli agenti usano solo `tools/tripo/tripo.mjs`, che non ha comandi a pagamento.
 
 ## Costi
 Listino ufficiale (ottobre 2026), in crediti:
