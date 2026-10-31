@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --host",
     "build": "vite build",
-    "preview": "vite preview --host"
+    "preview": "vite preview --host",
+    "test:drive": "node tests/drive/run.cjs"
   },
   "dependencies": {
     "@babylonjs/core": "9.32.0",
