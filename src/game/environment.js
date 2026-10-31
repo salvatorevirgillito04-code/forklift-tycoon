@@ -446,6 +446,9 @@ export class Environment {
     this.pools.setEnabled(!!T.lights);
     this.rackGlow.setEnabled(!!T.lights);
     this.mats.light.emissiveColor = T.lights ? c3('#fff2b0').scale(2.2) : c3('#fff2b0');
+    // lucernari del controsoffitto: chiari di giorno, piu' spenti col cielo coperto, al tramonto e di notte
+    const sky = T.lights ? 0.04 : time === 'day' ? (weather === 'clear' ? 0.9 : 0.55) : 0.4;
+    this.mats.ceiling.emissiveColor = new Color3(0.85, 0.9, 0.95).scale(sky);
     // fanali finti di tutti i mezzi: pieni di notte, piu' tenui con la luce del giorno
     setHeadlights(T.lights ? 1 : time !== 'day' ? 0.6 : weather === 'fog' ? 0.55 : weather === 'clear' ? 0 : 0.4);
     // ombre del sole solo col sereno di giorno (col cielo coperto e di notte non si vedono: si risparmia molto)

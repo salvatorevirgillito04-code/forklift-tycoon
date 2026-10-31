@@ -243,6 +243,46 @@ export class World {
     zl(Z.u[0], Z.u[1], Z.w[1] - lw, Z.w[1]);
     zl(Z.u[0], Z.u[0] + lw, Z.w[0], Z.w[1]);
     zl(Z.u[1] - lw, Z.u[1], Z.w[0], Z.w[1]);
+    // Controsoffitto con lucernari (sotto il tetto, visto dall'interno)
+    const cl = MeshBuilder.CreatePlane('ceiling' + wh.id, { width: B.u[1] - B.u[0] - 2 * t, height: B.w[1] - B.w[0] - 2 * t, sideOrientation: Mesh.DOUBLESIDE }, this.scene);
+    const [ccx, ccz] = plotToWorld(wh, 0, (B.w[0] + B.w[1]) / 2);
+    cl.position.set(ccx, B.height - 0.02, ccz);
+    cl.rotation.x = -Math.PI / 2; // rivolto verso il basso
+    cl.material = mats.ceiling;
+    cl.isPickable = false;
+    this.statics.push(cl);
+    // travi d'acciaio sotto il soffitto, una ogni 6 m
+    for (let w = B.w[0] + 4; w < B.w[1] - 1; w += 6) {
+      box('beam', B.u[0] + t, B.u[1] - t, B.height - 0.75, B.height - 0.05, w - 0.1, w + 0.1, mats.beam, { collide: false, shadow: false });
+      box('beamFlange', B.u[0] + t, B.u[1] - t, B.height - 0.8, B.height - 0.72, w - 0.18, w + 0.18, mats.beam, { collide: false, shadow: false });
+    }
+    // corsie pedonali gialle lungo le pareti laterali
+    for (const u of [B.u[0] + 1.6, B.u[1] - 1.6]) {
+      const r = rangeToBox(wh, u - 0.06, u + 0.06, B.w[0] + 1, B.w[1] - 2.2);
+      this.addBox('walkLine', r.minX, r.maxX, 0.01, 0.02, r.minZ, r.maxZ, mats.lineYellow, { collide: false, shadow: false, receive: true });
+    }
+    // cartelli di sicurezza (solo simboli) ed estintori sulle pareti laterali, rivolti verso l'interno
+    const signs = [['fire', 33], ['forklift', 39], ['aid', 45], ['helmet', 51]];
+    for (const [i, side] of [-1, 1].entries()) {
+      for (const [kind, w] of signs) {
+        const u = side < 0 ? B.u[0] + t + 0.02 : B.u[1] - t - 0.02;
+        const [x, z] = plotToWorld(wh, u, w + i * 1.5);
+        const p = MeshBuilder.CreatePlane('safetySign', { size: 0.7 }, this.scene);
+        p.position.set(x, 2.3, z);
+        p.rotation.y = side < 0 ? -Math.PI / 2 : Math.PI / 2; // la faccia del cartello guarda dentro il capannone
+        p.material = mats.safety(kind);
+        p.isPickable = false;
+        this.statics.push(p);
+        if (kind === 'fire') {
+          const [ex, ez] = plotToWorld(wh, u - side * 0.14, w + i * 1.5);
+          const e = MeshBuilder.CreateCylinder('extinguisher', { diameter: 0.18, height: 0.6, tessellation: 10 }, this.scene);
+          e.position.set(ex, 0.7, ez);
+          e.material = mats.extinguisher;
+          e.isPickable = false;
+          this.statics.push(e);
+        }
+      }
+    }
     // Lampade a soffitto
     for (const u of [-8, 0, 8]) {
       box('lamp', u - 0.8, u + 0.8, B.height - 0.5, B.height - 0.4, 40, 41, mats.light, { collide: false, shadow: false });

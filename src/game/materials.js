@@ -158,6 +158,64 @@ function companySignTexture(scene, name, color, num) {
   return tex;
 }
 
+// Controsoffitto del capannone (30 x 26 m): pannelli chiari e tre lucernari lungo la larghezza.
+// Restituisce colore e maschera dei lucernari (la luce cambia con l'ora: vedi environment.js)
+function ceilingTextures(scene) {
+  const S = 512;
+  const col = new DynamicTexture('ceilingCol', S, scene, true);
+  const mask = new DynamicTexture('ceilingMask', S, scene, true);
+  const c = col.getContext(), k = mask.getContext();
+  c.fillStyle = '#cfd4d8';
+  c.fillRect(0, 0, S, S);
+  c.strokeStyle = 'rgba(0,0,0,0.14)';
+  c.lineWidth = 2;
+  for (let x = 0; x < S; x += S / 30) { c.beginPath(); c.moveTo(x, 0); c.lineTo(x, S); c.stroke(); }
+  k.fillStyle = '#000';
+  k.fillRect(0, 0, S, S);
+  // lucernari: strisce lungo u (x della texture), a 1/4, 1/2 e 3/4 della profondita'
+  for (const f of [0.22, 0.5, 0.78]) {
+    const y = f * S;
+    c.fillStyle = '#e9f2f8';
+    c.fillRect(S * 0.08, y - 14, S * 0.84, 28);
+    c.fillStyle = '#7d8790';
+    for (let x = S * 0.08; x <= S * 0.92; x += S * 0.084) c.fillRect(x - 1, y - 14, 3, 28);
+    k.fillStyle = '#fff';
+    k.fillRect(S * 0.08, y - 14, S * 0.84, 28);
+  }
+  col.update();
+  mask.update();
+  return { col, mask };
+}
+
+// Cartelli di sicurezza (solo simboli, valgono in ogni lingua)
+function safetySignTexture(scene, kind) {
+  const S = 256;
+  const tex = new DynamicTexture('safety' + kind, S, scene, true);
+  const c = tex.getContext();
+  const bg = { fire: '#d0261d', aid: '#1f9a4b', forklift: '#f4c20d', helmet: '#1f5fa8' }[kind];
+  c.fillStyle = '#ffffff';
+  c.fillRect(0, 0, S, S);
+  c.fillStyle = bg;
+  if (kind === 'forklift') {
+    c.beginPath(); c.moveTo(S / 2, 18); c.lineTo(S - 18, S - 26); c.lineTo(18, S - 26); c.closePath(); c.fill();
+    c.lineWidth = 12; c.strokeStyle = '#111'; c.stroke();
+    c.fillStyle = '#111';
+    c.fillRect(82, 130, 70, 50); c.fillRect(150, 100, 10, 80); c.fillRect(150, 170, 40, 8);
+    c.beginPath(); c.arc(100, 186, 12, 0, 7); c.arc(140, 186, 12, 0, 7); c.fill();
+  } else if (kind === 'helmet') {
+    c.beginPath(); c.arc(S / 2, S / 2, S / 2 - 12, 0, 7); c.fill();
+    c.fillStyle = '#fff';
+    c.beginPath(); c.arc(S / 2, 150, 62, Math.PI, 0); c.fill(); c.fillRect(56, 146, 144, 16);
+  } else {
+    c.fillRect(14, 14, S - 28, S - 28);
+    c.fillStyle = '#fff';
+    if (kind === 'aid') { c.fillRect(104, 56, 48, 144); c.fillRect(56, 104, 144, 48); }
+    else { c.fillRect(100, 92, 48, 120); c.fillRect(92, 70, 64, 26); c.fillRect(150, 74, 40, 12); c.fillRect(184, 74, 10, 50); }
+  }
+  tex.update();
+  return tex;
+}
+
 export function createMaterials(scene) {
   const grassTex = canvasTexture(scene, 'grassTex', 256, (ctx, s) => {
     noise(ctx, s, '#4f7a35', 90, 6000, 0.25);
@@ -197,6 +255,7 @@ export function createMaterials(scene) {
     lineYellow: pbr(scene, 'lineYellow', { color: '#f4c20d', rough: 0.6, emissive: '#3a2d00' }),
     fence: pbr(scene, 'fence', { color: '#8e969c', metal: 0.7, rough: 0.4 }),
     plinth: pbr(scene, 'plinth', { color: '#8d9196', rough: 0.92 }),
+    beam: pbr(scene, 'beam', { color: '#6f8194', metal: 0.55, rough: 0.45 }),
     gutter: pbr(scene, 'gutter', { color: '#9aa2aa', metal: 0.6, rough: 0.4 }),
     container: memo((c) => pbr(scene, 'container' + c, { color: c, metal: 0.5, rough: 0.6 })),
     paint: memo((c) => pbr(scene, 'paint' + c, { color: c, metal: 0.35, rough: 0.35 })),
@@ -206,6 +265,21 @@ export function createMaterials(scene) {
       m.metadata = { tile: 6, tileY: 9 };
       return m;
     }),
+    ceiling: (() => {
+      const { col, mask } = ceilingTextures(scene);
+      const m = pbr(scene, 'ceiling', { color: '#ffffff', rough: 0.85, tex: col });
+      m.emissiveTexture = mask; // lucernari: la luce la regola l'ora del giorno
+      m.emissiveColor = new Color3(0.85, 0.9, 0.95);
+      return m;
+    })(),
+    safety: memo((kind) => {
+      const tex = safetySignTexture(scene, kind);
+      const m = pbr(scene, 'safety' + kind, { color: '#ffffff', rough: 0.6, tex });
+      m.emissiveTexture = tex;
+      m.emissiveColor = new Color3(0.25, 0.25, 0.25);
+      return m;
+    }),
+    extinguisher: pbr(scene, 'extinguisher', { color: '#c4161c', metal: 0.3, rough: 0.35 }),
     companySign: memo((name, color, num) => {
       const tex = companySignTexture(scene, name, color, num);
       const m = pbr(scene, 'companySign' + name, { color: '#ffffff', rough: 0.5, tex });
