@@ -216,6 +216,65 @@ function safetySignTexture(scene, kind) {
   return tex;
 }
 
+// Autobloccanti del marciapiede (1 m): mattoncini sfalsati grigio-sabbia
+function pavingTexture(scene) {
+  return canvasTexture(scene, 'paving', 256, (c, s) => {
+    c.fillStyle = '#b9b3a8';
+    c.fillRect(0, 0, s, s);
+    const bw = s / 4, bh = s / 8;
+    for (let r = 0; r < 8; r++) {
+      for (let k = -1; k < 5; k++) {
+        const x = k * bw + (r % 2 ? bw / 2 : 0);
+        const v = 165 + Math.floor(Math.random() * 30);
+        c.fillStyle = `rgb(${v},${v - 6},${v - 14})`;
+        c.fillRect(x + 2, r * bh + 2, bw - 4, bh - 4);
+      }
+    }
+  });
+}
+
+// Rete metallica a maglie romboidali (trasparente tra i fili)
+function wireTexture(scene) {
+  const tex = new DynamicTexture('wire', 128, scene, true);
+  const c = tex.getContext();
+  c.clearRect(0, 0, 128, 128);
+  c.strokeStyle = 'rgba(70,92,74,1)';
+  c.lineWidth = 3;
+  for (let k = -128; k <= 256; k += 32) {
+    c.beginPath(); c.moveTo(k, 0); c.lineTo(k + 128, 128); c.stroke();
+    c.beginPath(); c.moveTo(k, 128); c.lineTo(k + 128, 0); c.stroke();
+  }
+  tex.update();
+  tex.hasAlpha = true;
+  tex.wrapU = tex.wrapV = Texture.WRAP_ADDRESSMODE;
+  return tex;
+}
+
+// Scritte e segni a terra (bianco su trasparente): STOP, freccia
+function groundMarkTexture(scene, kind) {
+  const tex = new DynamicTexture('mark' + kind, { width: 512, height: 256 }, scene, true);
+  const c = tex.getContext();
+  c.clearRect(0, 0, 512, 256);
+  // il piano a terra mostra la texture specchiata: si disegna gia' specchiata
+  c.translate(512, 0);
+  c.scale(-1, 1);
+  c.fillStyle = 'rgba(240,240,232,1)';
+  if (kind === 'stop') {
+    c.font = '900 200px Arial';
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    c.fillText('STOP', 256, 136);
+  } else {
+    c.beginPath();
+    c.moveTo(40, 100); c.lineTo(330, 100); c.lineTo(330, 40); c.lineTo(480, 128);
+    c.lineTo(330, 216); c.lineTo(330, 156); c.lineTo(40, 156);
+    c.closePath(); c.fill();
+  }
+  tex.update();
+  tex.hasAlpha = true;
+  return tex;
+}
+
 export function createMaterials(scene) {
   const grassTex = canvasTexture(scene, 'grassTex', 256, (ctx, s) => {
     noise(ctx, s, '#4f7a35', 90, 6000, 0.25);
@@ -256,6 +315,30 @@ export function createMaterials(scene) {
     fence: pbr(scene, 'fence', { color: '#8e969c', metal: 0.7, rough: 0.4 }),
     plinth: pbr(scene, 'plinth', { color: '#8d9196', rough: 0.92 }),
     beam: pbr(scene, 'beam', { color: '#6f8194', metal: 0.55, rough: 0.45 }),
+    paving: (() => { const m = pbr(scene, 'paving', { color: '#ffffff', rough: 0.9, tex: pavingTexture(scene) }); m.metadata = { tile: 1 }; return m; })(),
+    curb: pbr(scene, 'curb', { color: '#a9adb0', rough: 0.85 }),
+    soil: pbr(scene, 'soil', { color: '#4a3b2c', rough: 1 }),
+    bush: pbr(scene, 'bush', { color: '#3f6b2e', rough: 0.95 }),
+    bush2: pbr(scene, 'bush2', { color: '#577f34', rough: 0.95 }),
+    fencePost: pbr(scene, 'fencePost', { color: '#3c5a42', metal: 0.5, rough: 0.5 }),
+    wire: (() => {
+      const m = pbr(scene, 'wireMesh', { color: '#ffffff', metal: 0.6, rough: 0.45, tex: wireTexture(scene) });
+      m.transparencyMode = 1; // solo i fili: niente fusione trasparente
+      m.useAlphaFromAlbedoTexture = true;
+      m.alphaCutOff = 0.4;
+      m.backFaceCulling = false;
+      m.metadata = { tile: 1 };
+      return m;
+    })(),
+    hatch: pbr(scene, 'hatch', { color: '#f4c20d', rough: 0.6, emissive: '#3a2d00' }),
+    groundMark: memo((kind) => {
+      const tex = groundMarkTexture(scene, kind);
+      const m = pbr(scene, 'groundMark' + kind, { color: '#ffffff', rough: 0.7, tex });
+      m.useAlphaFromAlbedoTexture = true;
+      m.transparencyMode = 1;
+      m.alphaCutOff = 0.5;
+      return m;
+    }),
     gutter: pbr(scene, 'gutter', { color: '#9aa2aa', metal: 0.6, rough: 0.4 }),
     container: memo((c) => pbr(scene, 'container' + c, { color: c, metal: 0.5, rough: 0.6 })),
     paint: memo((c) => pbr(scene, 'paint' + c, { color: c, metal: 0.35, rough: 0.35 })),

@@ -144,25 +144,72 @@ export class World {
       this.colliders.push({ minX: x, maxX: x + f, minZ: -rh, maxZ: rh, y0: 0, y1: 4, tag: 'edge' });
     }
 
+    this.buildSidewalks();
     WAREHOUSES.forEach((wh) => this.buildPlot(wh));
     this.group = undefined;
     this.buildDecor();
   }
 
+  // Recinzione: muretto basso in cemento, rete metallica sopra, pali e corrimano (tutto unito per materiale)
   fence(minX, maxX, minZ, maxZ) {
     const { mats } = this;
-    this.addBox('fenceBase', minX, maxX, 0, 0.3, minZ, maxZ, mats.concrete, { shadow: false });
-    const mesh = MeshBuilder.CreateBox('fenceMesh', { width: maxX - minX, height: 1.9, depth: Math.max(0.03, maxZ - minZ) }, this.scene);
-    mesh.position.set((minX + maxX) / 2, 1.25, (minZ + maxZ) / 2);
-    // Un solo materiale per tutte le recinzioni: vengono unite in un'unica mesh
-    if (!mats.fenceGlass) {
-      mats.fenceGlass = mats.fence.clone('fenceMat');
-      mats.fenceGlass.alpha = 0.35;
+    const cx = (minX + maxX) / 2, cz = (minZ + maxZ) / 2;
+    const alongX = maxX - minX > maxZ - minZ;
+    this.addBox('fenceBase', minX, maxX, 0, 0.6, minZ, maxZ, mats.plinth, { collide: false, shadow: false, receive: true });
+    const thin = (a0, a1) => (alongX ? [minX, maxX, cz - a0, cz + a1] : [cx - a0, cx + a1, minZ, maxZ]);
+    const [wx0, wx1, wz0, wz1] = thin(0.01, 0.01);
+    this.addBox('fenceWire', wx0, wx1, 0.6, 2.1, wz0, wz1, mats.wire, { collide: false, shadow: false });
+    const [rx0, rx1, rz0, rz1] = thin(0.03, 0.03);
+    this.addBox('fenceRail', rx0, rx1, 2.06, 2.12, rz0, rz1, mats.fencePost, { collide: false, shadow: false });
+    const len = alongX ? maxX - minX : maxZ - minZ;
+    for (let s = 0; s <= len + 0.01; s += 2.5) {
+      const p = Math.min(s, len);
+      const x = alongX ? minX + p : cx, z = alongX ? cz : minZ + p;
+      this.addBox('fencePost', x - 0.035, x + 0.035, 0.55, 2.15, z - 0.035, z + 0.035, mats.fencePost, { collide: false, shadow: false });
     }
-    mesh.material = mats.fenceGlass;
-    mesh.isPickable = false;
-    this.statics.push(mesh);
     this.colliders.push({ minX, maxX, minZ, maxZ, y0: 0, y1: 2.2, tag: 'fence' });
+  }
+
+  // Marciapiedi con cordolo lungo la strada (si cammina a 8,3 m dal centro strada)
+  buildSidewalks() {
+    const { mats } = this;
+    const W = WORLD;
+    for (const s of [-1, 1]) {
+      const z0 = s * (W.roadHalf + 0.15), z1 = s * 8.9;
+      this.addBox('sidewalk', W.minX, W.maxX, 0, 0.05, Math.min(z0, z1), Math.max(z0, z1), mats.paving, { collide: false, shadow: false, receive: true });
+      const c0 = s * W.roadHalf, c1 = s * (W.roadHalf + 0.15);
+      this.addBox('curb', W.minX, W.maxX, 0, 0.1, Math.min(c0, c1), Math.max(c0, c1), mats.curb, { collide: false, shadow: false, receive: true });
+    }
+    // strisce pedonali davanti a ogni lotto (barre parallele alla strada)
+    for (const x of new Set(WAREHOUSES.map((wh) => wh.cx - 14))) {
+      for (let z = -W.roadHalf + 0.5; z < W.roadHalf - 0.4; z += 1) {
+        this.addBox('zebra', x - 1.5, x + 1.5, 0.006, 0.016, z, z + 0.5, mats.lineWhite, { collide: false, shadow: false, receive: true });
+      }
+    }
+  }
+
+  // Cespuglio basso (sfera schiacciata) nell'aiuola, in coordinate del lotto
+  bush(wh, u, w, r, h, mat) {
+    const [x, z] = plotToWorld(wh, u, w);
+    const b = MeshBuilder.CreateSphere('bush', { diameter: 1, segments: 6 }, this.scene);
+    b.scaling.set(r * 2, h * 2, r * 2);
+    b.position.set(x, 0.32 + h * 0.75, z);
+    b.material = mat;
+    b.isPickable = false;
+    b.bakeCurrentTransformIntoVertices();
+    this.statics.push(b);
+  }
+
+  // Segni a terra piatti (scritte, frecce) in coordinate del lotto: centro (u, w), dimensioni, rotazione
+  groundMark(wh, kind, u, w, sizeU, sizeW, yaw) {
+    const [x, z] = plotToWorld(wh, u, w);
+    const p = MeshBuilder.CreateGround('mark' + kind, { width: sizeU, height: sizeW }, this.scene);
+    p.position.set(x, 0.02, z);
+    p.rotation.y = yaw;
+    p.material = this.mats.groundMark(kind);
+    p.isPickable = false;
+    p.receiveShadows = true;
+    this.statics.push(p);
   }
 
   buildPlot(wh) {
@@ -243,6 +290,47 @@ export class World {
     zl(Z.u[0], Z.u[1], Z.w[1] - lw, Z.w[1]);
     zl(Z.u[0], Z.u[0] + lw, Z.w[0], Z.w[1]);
     zl(Z.u[1] - lw, Z.u[1], Z.w[0], Z.w[1]);
+    // --- Piazzale: aiuole, siepi lungo le recinzioni, segnaletica a terra ---
+    const face = wh.side > 0 ? 0 : Math.PI; // verso il capannone
+    for (const s of [-1, 1]) {
+      // aiuole ai lati del portone, davanti alla facciata
+      const u0 = s * 12.6, u1 = s * 15.4;
+      box('planter', Math.min(u0, u1), Math.max(u0, u1), 0, 0.32, 27.3, 29.4, mats.curb, { shadow: false, receive: true, tag: 'planter' });
+      box('soil', Math.min(u0, u1) + 0.12, Math.max(u0, u1) - 0.12, 0.32, 0.36, 27.42, 29.28, mats.soil, { collide: false, shadow: false });
+      for (let k = 0; k < 3; k++) this.bush(wh, s * (13.1 + k * 0.9), 28.1 + (k % 2) * 0.55, 0.42 + (k % 2) * 0.1, 0.36, k % 2 ? mats.bush2 : mats.bush);
+      // siepe bassa lungo la recinzione laterale (fuori dal passaggio dei camion degli operai, u = 20,1)
+      const h0 = s * 21.45, h1 = s * 21.92;
+      box('hedgeBed', Math.min(h0, h1), Math.max(h0, h1), 0, 0.12, 9.2, 26.5, mats.soil, { collide: false, shadow: false, receive: true });
+      box('hedge', Math.min(h0, h1) + 0.03, Math.max(h0, h1) - 0.03, 0.12, 0.62, 9.4, 26.3, mats.bush, { shadow: false, tag: 'hedge' });
+    }
+    // stallo del camion del contratto (contorno bianco)
+    const lw2 = 0.1, st = { u: [-9.5, 8.5], w: [14.4, 17.6] };
+    const sl = (u0, u1, w0, w1) => box('stall', u0, u1, 0.008, 0.018, w0, w1, mats.lineWhite, { collide: false, shadow: false, receive: true });
+    sl(st.u[0], st.u[1], st.w[0], st.w[0] + lw2);
+    sl(st.u[0], st.u[1], st.w[1] - lw2, st.w[1]);
+    sl(st.u[0], st.u[0] + lw2, st.w[0], st.w[1]);
+    sl(st.u[1] - lw2, st.u[1], st.w[0], st.w[1]);
+    const sl2 = (u0, u1, w0, w1) => box('keepClear', u0, u1, 0.008, 0.018, w0, w1, mats.lineYellow, { collide: false, shadow: false, receive: true });
+    // zona da tenere libera davanti al portone: bordo e strisce gialle diagonali
+    const kz = { u: [-3.6, 3.6], w: [26.2, 29.85] };
+    sl2(kz.u[0], kz.u[1], kz.w[0], kz.w[0] + lw2);
+    sl2(kz.u[0], kz.u[0] + lw2, kz.w[0], kz.w[1]);
+    sl2(kz.u[1] - lw2, kz.u[1], kz.w[0], kz.w[1]);
+    for (let u = kz.u[0] + 0.9; u < kz.u[1] - 0.5; u += 1.1) {
+      const [x, z] = plotToWorld(wh, u, (kz.w[0] + kz.w[1]) / 2);
+      const d = MeshBuilder.CreateBox('hatch', { width: 0.14, height: 0.01, depth: 3.4 }, this.scene);
+      d.position.set(x, 0.013, z);
+      d.rotation.y = 0.55 * wh.side;
+      d.material = mats.hatch;
+      d.isPickable = false;
+      d.receiveShadows = true;
+      this.statics.push(d);
+    }
+    // freccia verso il portone e STOP all'uscita verso la strada
+    this.groundMark(wh, 'arrow', 0, 22.5, 4.5, 2.2, face + Math.PI / 2);
+    box('stopLine', -7, 7, 0.008, 0.018, 9.1, 9.35, mats.lineWhite, { collide: false, shadow: false, receive: true });
+    this.groundMark(wh, 'stop', 0, 10.4, 3.2, 1.6, face); // leggibile da chi esce verso la strada
+
     // Controsoffitto con lucernari (sotto il tetto, visto dall'interno)
     const cl = MeshBuilder.CreatePlane('ceiling' + wh.id, { width: B.u[1] - B.u[0] - 2 * t, height: B.w[1] - B.w[0] - 2 * t, sideOrientation: Mesh.DOUBLESIDE }, this.scene);
     const [ccx, ccz] = plotToWorld(wh, 0, (B.w[0] + B.w[1]) / 2);
@@ -350,9 +438,10 @@ export class World {
       this.prop('barrel', ...at(-17, 49.5), i * 0.7, { r: 0.32, h: 0.9 });
       this.prop('barrel', ...at(-17.7, 50.3), i * 1.3, { r: 0.32, h: 0.9 });
       this.prop('barrel', ...at(-16.9, 51.1), i * 2.1, { r: 0.32, h: 0.9 });
-      this.prop('barrier', ...at(20.5, 9), face + Math.PI / 2, { r: 0.6, h: 0.8 });
-      this.prop('cone', ...at(19.2, 8.2), i, { r: 0.2, h: 0.75 });
-      this.prop('cone', ...at(19.2, 10.2), i + 1, { r: 0.2, h: 0.75 });
+      // transenna e coni accanto all'aiuola di sinistra (fuori dai passaggi di camion e muletti)
+      this.prop('barrier', ...at(-17.6, 28.2), face, { r: 0.6, h: 0.8 });
+      this.prop('cone', ...at(-16.4, 27.4), i, { r: 0.2, h: 0.75 });
+      this.prop('cone', ...at(-18.8, 27.4), i + 1, { r: 0.2, h: 0.75 });
     });
   }
 
