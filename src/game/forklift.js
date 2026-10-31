@@ -4,6 +4,17 @@ import { rectsOverlap, aabbToRect, aabbIntoRect, verticalOverlap, toLocal, toWor
 const TMP_RECT = { x: 0, z: 0, hw: 0, hd: 0, yaw: 0 };
 
 const MAX_STEER = 1.05; // rad, angolo massimo ruote posteriori
+// Guida (valori di un muletto vero, poi 'assistiti' per il telefono)
+const BRAKE_DECEL = 4.5; // m/s^2 col freno di servizio (a vuoto, asciutto)
+const ENGINE_DECEL = 1.6; // m/s^2 rilasciando l'acceleratore (freno motore / recupero)
+const BRAKE_RAMP = 0.15; // s per arrivare alla frenata piena (niente strappi)
+const STEER_RATE = 2.6; // corsa dello sterzo al secondo (idroguida)
+const CURVE_LAT = 2.6; // m/s^2: oltre questa accelerazione laterale il mezzo rallenta da solo in curva
+const STEER_LAT = 4.0; // m/s^2: a velocita' alta l'angolo di sterzo e' limitato a questa accelerazione laterale
+const CURVE_DECEL = 3.0; // m/s^2 di rallentamento automatico in curva
+const SLIDE_MAX_COS = 0.6; // urto di striscio (scivola) se il moto e' quasi parallelo al muro
+const SLIDE_MAX_VN = 1.4; // m/s: oltre questa velocita' contro il muro e' un urto, non uno strisciamento
+const SCRAPE_DECEL = 1.5; // m/s^2 di attrito strisciando contro il muro
 const SPREAD = [0.25, 1.0];
 const TILT = [-0.09, 0.17]; // negativo = in avanti
 const QUARTER = Math.PI / 2;
@@ -257,15 +268,14 @@ export class Forklift {
     const grip = env.grip?.(this.x, this.z) || { brake: 1, accel: 1, steer: 30, stability: 1 };
     this.grip = grip;
 
-    // --- Sterzo ---
-    if (input.steerTarget !== null) {
-      this.steer += (input.steerTarget - this.steer) * Math.min(1, dt * 10);
-    } else {
-      const target = input.steerAxis;
-      const rate = (target === 0 ? 3 : 2.4) * input.sensitivity;
-      const d = target - this.steer;
-      this.steer += Math.sign(d) * Math.min(Math.abs(d), rate * dt);
-    }
+    // --- Sterzo (idroguida: corsa a velocita' limitata, piu' lenta quando si va forte) ---
+    // A velocita' alta l'angolo massimo e' ridotto (sterzo assistito): niente sterzate a fondo a tutta velocita'
+    const speed = Math.abs(this.v);
+    const steerLimit = this.steerLimitAt(speed, loadRatio, grip);
+    const target = Math.max(-steerLimit, Math.min(steerLimit, input.steerTarget !== null ? input.steerTarget : input.steerAxis));
+    const rate = (target === 0 && input.steerTarget === null ? STEER_RATE * 1.2 : STEER_RATE) * input.sensitivity / (1 + speed * 0.06);
+    const sd = target - this.steer;
+    this.steer += Math.sign(sd) * Math.min(Math.abs(sd), rate * dt);
     this.steer = Math.max(-1, Math.min(1, this.steer));
 
     // --- Marcia, acceleratore, freno motore ---
@@ -275,27 +285,34 @@ export class Forklift {
     const maxV = (this.gear > 0 ? veh.speed : veh.speed * 0.6) * (1 - loadRatio * 0.25);
     const prevV = this.v;
     const dir = this.gear;
-    if (input.throttle > 0) {
+    // massa: col carico il muletto accelera e frena piu' piano (inerzia)
+    const mass = 1 + loadRatio * 0.45;
+    const slow = (amount) => { this.v = Math.abs(this.v) <= amount ? 0 : this.v - Math.sign(this.v) * amount; };
+    // Acceleratore analogico: decide la velocita' voluta (10% = passo d'uomo), non solo la spinta
+    const throttle = Math.max(0, Math.min(1, input.throttle));
+    if (throttle > 0) {
       if (this.v === 0 || Math.sign(this.v) === dir) {
-        this.v += dir * input.throttle * veh.accel * grip.accel * (1 - loadRatio * 0.3) * dt;
+        const want = throttle * maxV;
+        if (Math.abs(this.v) < want) {
+          const acc = veh.accel * grip.accel * (1 - loadRatio * 0.3) / mass * (0.45 + 0.55 * throttle);
+          this.v = dir * Math.min(want, Math.abs(this.v) + acc * dt);
+        } else slow(Math.min(Math.abs(this.v) - want, ENGINE_DECEL * grip.brake / mass * dt)); // pedale rilasciato un po'
       } else {
-        const dec = (1.2 + input.throttle * 0.8) * dt; // inversione dolce: max 2 m/s²
+        const dec = (1.2 + throttle * 0.8) * dt; // inversione dolce: max 2 m/s²
         if (Math.abs(this.v) <= dec) {
           // supera lo zero e inizia a muoversi nel nuovo senso
           const left = 1 - Math.abs(this.v) / dec;
-          this.v = dir * input.throttle * veh.accel * dt * left;
+          this.v = dir * throttle * veh.accel * dt * left;
         } else this.v -= Math.sign(this.v) * dec;
       }
     }
-    if (input.brake > 0) {
-      const dec = input.brake * 7 * grip.brake * dt;
-      this.v = Math.abs(this.v) <= dec ? 0 : this.v - Math.sign(this.v) * dec;
-    }
-    if (input.throttle === 0) {
-      // freno motore: rilasciando l'acceleratore il muletto rallenta deciso
-      const engine = 1.9 * grip.brake * dt;
-      this.v = Math.abs(this.v) <= engine ? 0 : this.v - Math.sign(this.v) * engine;
-    }
+    // Freno di servizio: entra in 0,15 s (niente strappi), meno efficace col carico e sul bagnato
+    this.brakeLevel = input.brake > 0 ? Math.min(input.brake, (this.brakeLevel || 0) + dt / BRAKE_RAMP) : 0;
+    if (this.brakeLevel > 0) slow(this.brakeLevel * BRAKE_DECEL * grip.brake / mass * dt);
+    else if (throttle === 0) slow(ENGINE_DECEL * grip.brake / mass * dt); // freno motore (non si somma al freno)
+    // In curva il mezzo rallenta da solo (come i muletti con controllo di velocita' in curva)
+    const vCurve = this.curveSpeed(this.steer * MAX_STEER, loadRatio, grip);
+    if (Math.abs(this.v) > vCurve) slow(Math.min(Math.abs(this.v) - vCurve, CURVE_DECEL * dt));
     if (Math.abs(this.v) > maxV) this.v = Math.sign(this.v) * maxV;
 
     // --- Forche (idraulica con inerzia) ---
@@ -365,6 +382,8 @@ export class Forklift {
       const heavy = touched.reduce((m, p) => Math.max(m, p.weight), 0) / veh.capacity;
       const maxPush = Math.max(0.6, 1.6 - heavy * 0.6);
       if (Math.abs(this.v) > maxPush) this.v = Math.sign(this.v) * maxPush;
+    } else if (!touched && this.slideAlong(env, blocker, nYaw, dt)) {
+      // contatto leggero di striscio con un muro: il muletto scorre lungo di esso
     } else if (!this.collides(env, this.x, this.z, nYaw)) {
       this.yaw = nYaw;
       hit = true;
@@ -373,8 +392,9 @@ export class Forklift {
     }
     if (hit) {
       if (Math.abs(this.v) > 1.6 && this.carried) this.dropCarried(env);
-      // Contro un pallet in attesa di smuoverlo: si ferma senza rimbalzare
-      this.v *= touched && touched.length && (this.pushTime > 0 || this.pushGrace > 0) ? 0 : -0.15;
+      // Urto frontale: il mezzo si ferma (senza rimbalzi); i pallet non spinti lo fermano allo stesso modo
+      this.v = 0;
+      this.brakeLevel = 0;
       const tag = blocker?.tag;
       if (tag === 'car' || tag === 'person') {
         this.lastHit = blocker;
@@ -386,6 +406,51 @@ export class Forklift {
     this.checkPickup(env, input);
     this.wheelSpin += this.v * dt / 0.33;
     this.sync(delta);
+  }
+
+  // Velocita' massima in curva con questo angolo di sterzo (accelerazione laterale CURVE_LAT, meno con carico alto)
+  curveSpeed(delta, loadRatio, grip) {
+    const k = Math.abs(Math.tan(delta)) / this.geo.wheelbase; // curvatura (1/raggio)
+    if (k < 1e-3) return Infinity;
+    const lat = Math.max(1, (CURVE_LAT - 0.25 * this.forkY - 0.6 * loadRatio) * (grip?.stability ?? 1));
+    return Math.max(0.8, Math.sqrt(lat / k));
+  }
+
+  // Angolo di sterzo massimo (0..1) alla velocita' data: a bassa velocita' tutto, a velocita' alta meno
+  steerLimitAt(speed, loadRatio, grip) {
+    if (speed < 0.5) return 1;
+    const lat = Math.max(1.5, (STEER_LAT - 0.3 * this.forkY - 0.8 * loadRatio) * (grip?.stability ?? 1));
+    const delta = Math.atan(lat * this.geo.wheelbase / (speed * speed));
+    return Math.min(1, delta / MAX_STEER);
+  }
+
+  // Strisciamento lungo un ostacolo fisso (muri, recinzioni, scaffali): solo se il contatto e' di striscio
+  // e lento; il mezzo scorre parallelo all'ostacolo senza entrarci. Ritorna true se si e' mosso.
+  slideAlong(env, c, nYaw, dt) {
+    if (!c || c.tag === 'car' || c.tag === 'person' || Math.abs(this.v) < 0.05) return false;
+    const body = this.bodyRect();
+    // normale della faccia piu' vicina della scatola (ostacoli allineati agli assi)
+    const ox = Math.max(c.minX - body.x, body.x - c.maxX);
+    const oz = Math.max(c.minZ - body.z, body.z - c.maxZ);
+    const n = ox > oz ? [body.x < c.minX ? -1 : 1, 0] : [0, body.z < c.minZ ? -1 : 1];
+    const dx = Math.sin(this.yaw) * Math.sign(this.v), dz = Math.cos(this.yaw) * Math.sign(this.v);
+    const into = -(dx * n[0] + dz * n[1]); // quanto il moto va contro l'ostacolo (0..1)
+    if (into <= 0) return false; // ci si sta gia' allontanando: il blocco viene da altro
+    if (into > SLIDE_MAX_COS || Math.abs(this.v) * into > SLIDE_MAX_VN) return false; // urto frontale o troppo forte
+    // si muove solo la parte del moto parallela al muro; strisciando si perde un po' di velocita'
+    const tx = dx + n[0] * into, tz = dz + n[1] * into;
+    const speed = Math.max(0, Math.abs(this.v) - SCRAPE_DECEL * dt);
+    const sx = this.x + tx * speed * dt, sz = this.z + tz * speed * dt;
+    // la rotazione si tiene solo se non porta dentro l'ostacolo
+    for (const yaw of [nYaw, this.yaw]) {
+      const t = this.contacts(env, sx, sz, yaw);
+      if (t && t.length === 0) {
+        this.x = sx; this.z = sz; this.yaw = yaw;
+        this.v = Math.sign(this.v) * speed;
+        return true;
+      }
+    }
+    return false;
   }
 
   // Abbassamento delle punte dovuto all'inclinazione in avanti.
