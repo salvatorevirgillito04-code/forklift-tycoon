@@ -14,7 +14,7 @@ import { ImageProcessingConfiguration } from '@babylonjs/core/Materials/imagePro
 import { Ray } from '@babylonjs/core/Culling/ray.js';
 import { Scalar } from '@babylonjs/core/Maths/math.scalar.js';
 import { PhotoDome } from '@babylonjs/core/Helpers/photoDome.js';
-import { SceneInstrumentation } from '@babylonjs/core/Instrumentation/sceneInstrumentation.js';
+import { PerfMonitor } from './perfmonitor.js';
 import * as Sentry from '@sentry/browser';
 import { createMaterials } from './materials.js';
 import { ShadowCasters } from './shadows.js';
@@ -187,35 +187,51 @@ export class Game {
     this.applyQuality(this.quality);
   }
 
-  // Contatore prestazioni (menu sviluppatore e APK di prova): FPS medi, minimi e 1% peggiore degli ultimi 5 s,
-  // millisecondi per fotogramma (logica + disegno), chiamate di disegno, triangoli e oggetti visibili
+  // Contatore prestazioni (menu sviluppatore e APK di prova): vedi perfmonitor.js per come si misura.
+  // Riga 1: FPS medio, minimo e 1% low della stessa finestra (ultimi 10 s di gioco, senza menu/pausa/caricamento)
+  // Riga 2: tempo per fotogramma (medio, 99°, massimo) e da cosa e' fatto (logica, disegno con ombre e specchietto)
+  // Grafico: tempi dei fotogrammi (barre rosse = picchi), linee a 16,7 / 33 / 50 ms. Sotto: ultimi picchi e causa.
   setPerfOverlay(on) {
     this.perfEl?.remove();
     this.perfEl = null;
     clearInterval(this.perfTimer);
-    this.perfFrames = null;
+    this.perf?.dispose();
+    this.perf = null;
+    document.removeEventListener('visibilitychange', this.onPerfVisibility || (() => {}));
     if (!on) return;
-    this.instr ||= new SceneInstrumentation(this.scene);
-    this.instr.captureFrameTime = true;
-    this.perfFrames = [];
+    this.perf = new PerfMonitor(this.scene, this.engine);
+    this.onPerfVisibility = () => this.perf?.reset();
+    document.addEventListener('visibilitychange', this.onPerfVisibility);
     const el = document.createElement('div');
     el.className = 'perf-overlay';
+    el.innerHTML = '<div data-l1></div><div data-l2></div><canvas width="300" height="56"></canvas><div data-sp></div>';
     document.querySelector('#app').appendChild(el);
     this.perfEl = el;
+    const l1 = el.querySelector('[data-l1]'), l2 = el.querySelector('[data-l2]'), sp = el.querySelector('[data-sp]');
+    const cv = el.querySelector('canvas'), ctx = cv.getContext('2d');
+    const f0 = (x) => x.toFixed(0), f1 = (x) => x.toFixed(1);
     this.perfTimer = setInterval(() => {
-      const fr = this.perfFrames;
-      if (!fr.length) return;
-      const avg = fr.reduce((a, b) => a + b, 0) / fr.length;
-      const worst = [...fr].sort((a, b) => b - a);
-      const low1 = worst.slice(0, Math.max(1, Math.floor(fr.length / 100)));
-      const fps = (ms) => (1000 / ms).toFixed(0);
-      const ms = this.instr.frameTimeCounter.lastSecAverage;
-      const heap = performance.memory ? ` · ${(performance.memory.usedJSHeapSize / 1048576).toFixed(0)} MB` : '';
-      el.textContent = `${fps(avg)} FPS (min ${fps(worst[0])} · 1% ${fps(low1.reduce((a, b) => a + b, 0) / low1.length)})`
-        + ` · ${avg.toFixed(1)} ms (CPU ${ms.toFixed(1)}) · draw ${this.instr.drawCallsCounter.current}`
-        + ` · tri ${(this.scene.getActiveIndices() / 3000).toFixed(0)}k · mesh ${this.scene.getActiveMeshes().length}`
-        + ` · ${this.quality} ×${(1 / this.engine.getHardwareScalingLevel()).toFixed(2)}${heap}`;
-    }, 500);
+      const s = this.perf?.stats();
+      if (!s) { l1.textContent = this.mode === 'play' ? (this.paused ? 'in pausa: misura ferma' : 'misura in corso...') : 'misura solo durante un contratto'; l2.textContent = ''; sp.textContent = ''; ctx.clearRect(0, 0, cv.width, cv.height); return; }
+      const heap = performance.memory ? ` · ${f0(performance.memory.usedJSHeapSize / 1048576)} MB` : '';
+      l1.textContent = `${f0(s.fpsAvg)} FPS · min ${f0(s.fpsMin)} · 1% low ${f0(s.fps1Low)} (${f1(s.seconds)} s, ${s.frames} fotogrammi) · picchi ${s.spikes.length}`;
+      l2.textContent = `ms medio ${f1(s.msAvg)} · 99° ${f1(s.msP99)} · max ${f0(s.msMax)} | logica ${f1(s.step)} · disegno ${f1(s.render)} (ombre ${f1(s.shadow)} specchio ${f1(s.mirror)}) · fuori ${f1(s.gap)} · draw ${f0(s.draws)}`
+        + ` · tri ${f0(this.scene.getActiveIndices() / 3000)}k · ${this.quality} ×${(1 / this.engine.getHardwareScalingLevel()).toFixed(2)}${heap}`;
+      // grafico degli ultimi fotogrammi (uno per pixel, i piu' recenti a destra), scala 0-80 ms
+      const fr = this.perf.frames.slice(-cv.width), H = cv.height, y = (ms) => H - Math.min(ms, 80) / 80 * H;
+      ctx.clearRect(0, 0, cv.width, H);
+      ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(0, 0, cv.width, H);
+      fr.forEach((f, i) => {
+        const x = cv.width - fr.length + i;
+        ctx.fillStyle = f.dt > 50 ? '#ff4d4d' : f.dt > 33.4 ? '#ffc94d' : '#7CFC9A';
+        ctx.fillRect(x, y(f.dt), 1, H - y(f.dt));
+      });
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      for (const ms of [16.7, 33.3, 50]) ctx.fillRect(0, Math.round(y(ms)), cv.width, 1);
+      // ultimi 3 picchi: durata e cosa e' successo in quel fotogramma
+      sp.textContent = s.spikes.slice(-3).reverse().map((p) => `${f0(p.dt)} ms: logica ${f1(p.step)} disegno ${f1(p.render)} (ombre ${f1(p.shadow)} specchio ${f1(p.mirror)}) fuori ${f0(p.gap)}`
+        + `${p.causes.length ? ' · ' + p.causes.join(', ') : ''}`).join('\n');
+    }, 250);
   }
 
   setSettings(settings) {
@@ -354,16 +370,15 @@ export class Game {
       this.lowCount = 0;
       this.highCount = 0;
       this.engine.setHardwareScalingLevel(1 / next);
+      this.perf?.mark(`risoluzione ×${next.toFixed(2)}`); // solo per il contatore: un cambio di risoluzione ridimensiona tutto
       try { localStorage.setItem(`forklift-res-${this.quality}`, next.toFixed(2)); } catch { /* storage non disponibile */ }
     }
   }
 
   frame() {
     const realDt = Math.min(0.25, this.engine.getDeltaTime() / 1000);
-    if (this.perfFrames) {
-      this.perfFrames.push(this.engine.getDeltaTime());
-      if (this.perfFrames.length > 300) this.perfFrames.shift(); // ultimi ~5 s
-    }
+    const perf = this.perf;
+    perf?.frameStart(this.mode === 'play' && !this.paused);
     this.adaptResolution(realDt);
     // Passo di gioco: il tempo vero (fino a 0,25 s) diviso in sottopassi di al massimo 1/30 s.
     // Prima il passo era tagliato a 0,05 s: sotto 20 FPS il gioco andava al rallentatore e lo sterzo sembrava molle.
@@ -372,7 +387,9 @@ export class Game {
     try {
       if (this.mode === 'play' && !this.paused) {
         const n = Math.max(1, Math.ceil(frameDt / (1 / 30) - 1e-6));
+        const t0 = perf ? performance.now() : 0;
         for (let i = 0; i < n && this.mode === 'play' && !this.paused; i++) this.step(frameDt / n);
+        if (perf) perf.addStep(performance.now() - t0);
       }
       else if (this.mode === 'play' && this.mission.finished) this.mission.driveTruck(dt, null, this.traffic.cars, this.people.list);
       // traffico: sempre in movimento (anche nel menu); col gioco in pausa resta fermo
@@ -401,7 +418,9 @@ export class Game {
         this.hud.rainDrops.frame(realDt, this.mode === 'play' && !this.paused && this.settings.view === 'first'
           && this.envFx.weather === 'rain' && this.envFx.isWetAt(f.x, f.z) > 0.5);
       }
+      const r0 = perf ? performance.now() : 0;
       this.scene.render();
+      if (perf) { perf.addRender(performance.now() - r0); perf.frameEnd(); }
     } catch (err) {
       Sentry.captureException(err);
       this.engine.stopRenderLoop();
