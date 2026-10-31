@@ -6,13 +6,14 @@
 set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 BASE="${TMPDIR:-/tmp}/forklift-confronto"
+porta() { [[ "$1" =~ ^[0-9]{2,5}$ ]] || { echo "porta non valida: $1" >&2; exit 1; }; }
 if [ "${1:-}" = "--stop" ]; then
-  PORT="$2"; DIR="$BASE/$PORT"
-  for pid in $(ps -eo pid,args | grep "[v]ite.*--port $PORT" | awk '{print $1}'); do kill "$pid" 2>/dev/null || true; done
+  PORT="$2"; porta "$PORT"; DIR="$BASE/$PORT"
+  for pid in $(ps -eo pid,args | grep -E "[v]ite.*--port $PORT( |$)" | awk '{print $1}'); do kill "$pid" 2>/dev/null || true; done
   [ -d "$DIR" ] && git -C "$ROOT" worktree remove --force "$DIR"
   echo "fermato $PORT"; exit 0
 fi
-REF="$1"; PORT="$2"; DIR="$BASE/$PORT"
+REF="$1"; PORT="$2"; porta "$PORT"; DIR="$BASE/$PORT"
 mkdir -p "$BASE"
 [ -d "$DIR" ] && git -C "$ROOT" worktree remove --force "$DIR"
 git -C "$ROOT" worktree add --detach "$DIR" "$REF" >/dev/null

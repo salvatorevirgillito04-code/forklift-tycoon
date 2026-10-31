@@ -8,3 +8,8 @@ tools/tripo/out
 .env.*
 *.key
 perf-out
+# chiave di firma Android: mai nel repository
+*.keystore
+*.jks
+password.txt
+LEGGIMI.txt
