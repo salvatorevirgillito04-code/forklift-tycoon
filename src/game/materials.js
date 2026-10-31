@@ -53,6 +53,111 @@ function texturedPbr(scene, name, key, { color = '#ffffff', tile = 0, metal = 0,
   return m;
 }
 
+// Facciata del capannone (9 m di altezza, si ripete ogni 6 m): lamiera grecata chiara, fascia del colore
+// dell'azienda in alto, finestre a nastro, sporco alla base. Tutto disegnato: nessun pezzo 3D in piu'.
+function facadeTexture(scene, color) {
+  const W = 512, H = 1024, pxm = H / 9; // pixel per metro in altezza
+  const tex = new DynamicTexture('facade' + color, { width: W, height: H }, scene, true);
+  const ctx = tex.getContext();
+  const y = (m) => H - m * pxm; // altezza in metri -> riga (in alto = 9 m)
+  // lamiera: nervature verticali ogni 25 cm (6 m = 512 px)
+  ctx.fillStyle = '#c9ced3';
+  ctx.fillRect(0, 0, W, H);
+  const rib = W / 24;
+  for (let x = 0; x < W; x += rib) {
+    const g = ctx.createLinearGradient(x, 0, x + rib, 0);
+    g.addColorStop(0, 'rgba(255,255,255,0.35)');
+    g.addColorStop(0.18, 'rgba(255,255,255,0.05)');
+    g.addColorStop(0.62, 'rgba(0,0,0,0.04)');
+    g.addColorStop(0.8, 'rgba(0,0,0,0.22)');
+    g.addColorStop(1, 'rgba(255,255,255,0.25)');
+    ctx.fillStyle = g;
+    ctx.fillRect(x, 0, rib, H);
+  }
+  // giunti orizzontali tra i pannelli
+  ctx.fillStyle = 'rgba(0,0,0,0.12)';
+  for (const m of [3, 5.9]) ctx.fillRect(0, y(m), W, 3);
+  // fascia in alto col colore dell'azienda
+  ctx.fillStyle = color;
+  ctx.fillRect(0, 0, W, y(8.35));
+  ctx.fillStyle = 'rgba(255,255,255,0.18)';
+  ctx.fillRect(0, y(8.35) - 6, W, 3);
+  // finestre a nastro (6,4 - 7,4 m): telaio scuro, vetri con riflesso
+  const top = y(7.4), bot = y(6.4);
+  ctx.fillStyle = '#3a4048';
+  ctx.fillRect(0, top - 6, W, bot - top + 12);
+  const pane = W / 4;
+  for (let x = 0; x < W; x += pane) {
+    const g = ctx.createLinearGradient(x, top, x + pane, bot);
+    g.addColorStop(0, '#9fb7c9');
+    g.addColorStop(0.45, '#5f7a90');
+    g.addColorStop(0.5, '#b7cad8');
+    g.addColorStop(0.56, '#58718a');
+    g.addColorStop(1, '#3f566b');
+    ctx.fillStyle = g;
+    ctx.fillRect(x + 5, top, pane - 10, bot - top);
+  }
+  // colature sotto le finestre e sporco alla base
+  for (let x = 6; x < W; x += pane / 2) {
+    const g = ctx.createLinearGradient(0, bot + 6, 0, bot + 150);
+    g.addColorStop(0, 'rgba(60,55,50,0.18)');
+    g.addColorStop(1, 'rgba(60,55,50,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(x + Math.random() * 40, bot + 6, 10 + Math.random() * 14, 150);
+  }
+  const dirt = ctx.createLinearGradient(0, y(1.2), 0, H);
+  dirt.addColorStop(0, 'rgba(70,62,52,0)');
+  dirt.addColorStop(1, 'rgba(70,62,52,0.45)');
+  ctx.fillStyle = dirt;
+  ctx.fillRect(0, y(1.2), W, H - y(1.2));
+  for (let i = 0; i < 2500; i++) {
+    const v = Math.floor(Math.random() * 120);
+    ctx.fillStyle = `rgba(${v},${v},${v},0.06)`;
+    ctx.fillRect(Math.random() * W, Math.random() * H, 2, 2);
+  }
+  tex.update();
+  tex.wrapU = Texture.WRAP_ADDRESSMODE;
+  tex.wrapV = Texture.CLAMP_ADDRESSMODE;
+  tex.anisotropicFilteringLevel = 8;
+  return tex;
+}
+
+// Insegna dell'azienda: nome grande, logo semplice e numero del magazzino
+function companySignTexture(scene, name, color, num) {
+  const W = 1024, H = 256;
+  const tex = new DynamicTexture('company' + name, { width: W, height: H }, scene, true);
+  const ctx = tex.getContext();
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = color;
+  ctx.fillRect(0, 0, W, 18);
+  ctx.fillRect(0, H - 18, W, 18);
+  // logo: cerchio con freccia (merce in movimento)
+  ctx.beginPath();
+  ctx.arc(128, H / 2, 82, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.moveTo(80, 104); ctx.lineTo(150, 104); ctx.lineTo(150, 78); ctx.lineTo(192, 128);
+  ctx.lineTo(150, 178); ctx.lineTo(150, 152); ctx.lineTo(80, 152);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#1f2933';
+  ctx.textBaseline = 'middle';
+  let size = 96;
+  ctx.font = `900 ${size}px Arial`;
+  const maxW = W - 260 - 150;
+  while (ctx.measureText(name).width > maxW && size > 40) { size -= 4; ctx.font = `900 ${size}px Arial`; }
+  ctx.fillText(name, 240, H / 2 + 4);
+  ctx.fillStyle = color;
+  ctx.font = '900 64px Arial';
+  ctx.textAlign = 'right';
+  ctx.fillText(`#${num}`, W - 40, H / 2 + 4);
+  tex.update();
+  tex.anisotropicFilteringLevel = 8;
+  return tex;
+}
+
 export function createMaterials(scene) {
   const grassTex = canvasTexture(scene, 'grassTex', 256, (ctx, s) => {
     noise(ctx, s, '#4f7a35', 90, 6000, 0.25);
@@ -91,8 +196,23 @@ export function createMaterials(scene) {
     lineWhite: pbr(scene, 'lineWhite', { color: '#e9e9e2', rough: 0.7 }),
     lineYellow: pbr(scene, 'lineYellow', { color: '#f4c20d', rough: 0.6, emissive: '#3a2d00' }),
     fence: pbr(scene, 'fence', { color: '#8e969c', metal: 0.7, rough: 0.4 }),
+    plinth: pbr(scene, 'plinth', { color: '#8d9196', rough: 0.92 }),
+    gutter: pbr(scene, 'gutter', { color: '#9aa2aa', metal: 0.6, rough: 0.4 }),
     container: memo((c) => pbr(scene, 'container' + c, { color: c, metal: 0.5, rough: 0.6 })),
     paint: memo((c) => pbr(scene, 'paint' + c, { color: c, metal: 0.35, rough: 0.35 })),
+    // facciata del capannone: u ogni 6 m, v da terra (0) al tetto (9 m)
+    facade: memo((c) => {
+      const m = pbr(scene, 'facadeMat' + c, { color: '#ffffff', metal: 0.3, rough: 0.55, tex: facadeTexture(scene, c) });
+      m.metadata = { tile: 6, tileY: 9 };
+      return m;
+    }),
+    companySign: memo((name, color, num) => {
+      const tex = companySignTexture(scene, name, color, num);
+      const m = pbr(scene, 'companySign' + name, { color: '#ffffff', rough: 0.5, tex });
+      m.emissiveTexture = tex;
+      m.emissiveColor = new Color3(0.3, 0.3, 0.3);
+      return m;
+    }),
     light: pbr(scene, 'light', { color: '#fff7d6', emissive: '#fff2b0' }),
     sign: memo((text, bg, fg) => {
       const tex = canvasTexture(scene, 'sign' + text, 512, (ctx, s) => {

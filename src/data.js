@@ -32,6 +32,15 @@ export const vehicleById = (id) => VEHICLES.find((v) => v.id === id) || VEHICLES
 const PLOT_X = [-88, -44, 0, 44, 88];
 const PRICES = [0, 3000, 8000, 18000, 35000, 60000, 100000, 160000, 250000, 400000];
 
+// Aziende inventate dei 10 magazzini (insegna e colore della fascia in alto)
+const COMPANIES = [
+  { name: 'NorthCargo', color: '#1f5fa8' }, { name: 'Atlas Storage', color: '#c0392b' },
+  { name: 'Vertex Freight', color: '#2e8b57' }, { name: 'Orbit Supply', color: '#e08a00' },
+  { name: 'Polar Distribution', color: '#3aa6c9' }, { name: 'Summit Logistics', color: '#6c3fb0' },
+  { name: 'Harbor Goods', color: '#0f6e6e' }, { name: 'Crestline Depot', color: '#b5422e' },
+  { name: 'Ironvale Freight', color: '#4a5560' }, { name: 'Meridian Hub', color: '#c79a00' },
+];
+
 export const WAREHOUSES = PRICES.map((price, i) => {
   const north = i % 2 === 0;
   const cx = PLOT_X[Math.floor(i / 2)];
@@ -41,6 +50,7 @@ export const WAREHOUSES = PRICES.map((price, i) => {
     rewardMult: +(1 + i * 0.25).toFixed(2),
     cx,
     side: north ? 1 : -1, // 1 = lotto a nord (z positiva), porta rivolta a sud
+    company: COMPANIES[i],
   };
 });
 

@@ -53,7 +53,7 @@ export function zoneRect(wh) {
 
 // UV calcolati dalle coordinate del mondo: la texture si ripete ogni 'tile' metri su ogni faccia,
 // qualunque sia la dimensione dell'oggetto (niente texture stirate su muri e pavimenti grandi).
-function worldUV(mesh, tile) {
+function worldUV(mesh, tile, tileY = tile) {
   const pos = mesh.getVerticesData(VertexBuffer.PositionKind);
   const nor = mesh.getVerticesData(VertexBuffer.NormalKind);
   if (!pos || !nor) return;
@@ -63,8 +63,8 @@ function worldUV(mesh, tile) {
     const x = pos[i] + o.x, y = pos[i + 1] + o.y, z = pos[i + 2] + o.z;
     const ax = Math.abs(nor[i]), ay = Math.abs(nor[i + 1]), az = Math.abs(nor[i + 2]);
     if (ay >= ax && ay >= az) { uv[j] = x / tile; uv[j + 1] = z / tile; }
-    else if (ax >= az) { uv[j] = z / tile; uv[j + 1] = y / tile; }
-    else { uv[j] = x / tile; uv[j + 1] = y / tile; }
+    else if (ax >= az) { uv[j] = z / tile; uv[j + 1] = y / tileY; }
+    else { uv[j] = x / tile; uv[j + 1] = y / tileY; }
   }
   mesh.setVerticesData(VertexBuffer.UVKind, uv);
 }
@@ -88,7 +88,7 @@ export class World {
     const m = MeshBuilder.CreateBox(name, { width: maxX - minX, height: y1 - y0, depth: maxZ - minZ }, this.scene);
     m.position.set((minX + maxX) / 2, (y0 + y1) / 2, (minZ + maxZ) / 2);
     m.material = mat;
-    if (mat.metadata?.tile) worldUV(m, mat.metadata.tile);
+    if (mat.metadata?.tile) worldUV(m, mat.metadata.tile, mat.metadata.tileY);
     m.receiveShadows = receive;
     m.isPickable = fade && collide && y1 - y0 > 2.5; // muri alti: trasparenti se coprono la camera
     if (m.isPickable) {
@@ -183,15 +183,28 @@ export class World {
     // Pavimento interno
     const fl = rangeToBox(wh, B.u[0], B.u[1], B.w[0], B.w[1]);
     this.ground('floor' + wh.id, fl.minX, fl.maxX, fl.minZ, fl.maxZ, 0.005, mats.floor);
-    // Pareti
-    box('wallBack', B.u[0], B.u[1], 0, B.height, B.w[1] - t, B.w[1], mats.metalWall);
-    box('wallL', B.u[0], B.u[0] + t, 0, B.height, B.w[0], B.w[1], mats.metalWall);
-    box('wallR', B.u[1] - t, B.u[1], 0, B.height, B.w[0], B.w[1], mats.metalWall);
-    box('wallFrontL', B.u[0], D.u[0], 0, B.height, B.w[0], B.w[0] + t, mats.metalWall);
-    box('wallFrontR', D.u[1], B.u[1], 0, B.height, B.w[0], B.w[0] + t, mats.metalWall);
-    box('wallFrontTop', D.u[0], D.u[1], D.height, B.height, B.w[0], B.w[0] + t, mats.metalWall);
+    // Pareti: lamiera chiara con finestre a nastro e fascia del colore dell'azienda
+    const wallMat = mats.facade(wh.company.color);
+    box('wallBack', B.u[0], B.u[1], 0, B.height, B.w[1] - t, B.w[1], wallMat);
+    box('wallL', B.u[0], B.u[0] + t, 0, B.height, B.w[0], B.w[1], wallMat);
+    box('wallR', B.u[1] - t, B.u[1], 0, B.height, B.w[0], B.w[1], wallMat);
+    box('wallFrontL', B.u[0], D.u[0], 0, B.height, B.w[0], B.w[0] + t, wallMat);
+    box('wallFrontR', D.u[1], B.u[1], 0, B.height, B.w[0], B.w[0] + t, wallMat);
+    box('wallFrontTop', D.u[0], D.u[1], D.height, B.height, B.w[0], B.w[0] + t, wallMat);
     box('roof', B.u[0] - 0.4, B.u[1] + 0.4, B.height, B.height + 0.35, B.w[0] - 0.4, B.w[1] + 0.4, mats.roof, { collide: false });
-    box('trimTop', B.u[0] - 0.45, B.u[1] + 0.45, B.height - 0.6, B.height, B.w[0] - 0.45, B.w[0] - 0.05, mats.trim, { collide: false });
+    // zoccolo in cemento alla base delle pareti esterne (interrotto dal portone)
+    const pz = 0.09, ph = 0.75;
+    const plinth = (u0, u1, w0, w1) => box('plinth', u0, u1, 0, ph, w0, w1, mats.plinth, { collide: false, shadow: false, receive: true });
+    plinth(B.u[0] - pz, D.u[0] - 0.3, B.w[0] - pz, B.w[0]);
+    plinth(D.u[1] + 0.3, B.u[1] + pz, B.w[0] - pz, B.w[0]);
+    plinth(B.u[0] - pz, B.u[1] + pz, B.w[1], B.w[1] + pz);
+    plinth(B.u[0] - pz, B.u[0], B.w[0], B.w[1]);
+    plinth(B.u[1], B.u[1] + pz, B.w[0], B.w[1]);
+    // grondaie sui lati lunghi e pluviali agli angoli
+    for (const w of [B.w[0] - 0.42, B.w[1] + 0.25]) box('gutter', B.u[0] - 0.4, B.u[1] + 0.4, B.height - 0.12, B.height + 0.08, w, w + 0.17, mats.gutter, { collide: false, shadow: false });
+    for (const u of [B.u[0] + 0.35, B.u[1] - 0.47]) {
+      for (const w of [B.w[0] - 0.2, B.w[1] + 0.08]) box('downpipe', u, u + 0.12, 0.1, B.height - 0.1, w, w + 0.12, mats.gutter, { collide: false, shadow: false });
+    }
     box('doorFrameL', D.u[0] - 0.3, D.u[0], 0, D.height + 0.3, B.w[0] - 0.15, B.w[0], mats.lineYellow, { collide: false });
     box('doorFrameR', D.u[1], D.u[1] + 0.3, 0, D.height + 0.3, B.w[0] - 0.15, B.w[0], mats.lineYellow, { collide: false });
     // Portone (chiuso finche' il magazzino non e' tuo)
@@ -234,12 +247,12 @@ export class World {
     for (const u of [-8, 0, 8]) {
       box('lamp', u - 0.8, u + 0.8, B.height - 0.5, B.height - 0.4, 40, 41, mats.light, { collide: false, shadow: false });
     }
-    // Insegna con numero e cartello vendita
-    const signR = rangeToBox(wh, -2.5, 2.5, B.w[0] - 0.5, B.w[0] - 0.42);
-    const sign = MeshBuilder.CreatePlane('sign' + wh.id, { width: 5, height: 1.6 }, this.scene);
-    sign.position.set((signR.minX + signR.maxX) / 2, D.height + 1.8, (signR.minZ + signR.maxZ) / 2);
+    // Insegna dell'azienda sopra il portone (nome, logo e numero del magazzino) e cartello vendita
+    const signR = rangeToBox(wh, -4.4, 4.4, B.w[0] - 0.07, B.w[0] - 0.06);
+    const sign = MeshBuilder.CreatePlane('sign' + wh.id, { width: 8.8, height: 2.2 }, this.scene);
+    sign.position.set((signR.minX + signR.maxX) / 2, D.height + 1.45, (signR.minZ + signR.maxZ) / 2);
     sign.rotation.y = wh.side > 0 ? 0 : Math.PI;
-    sign.material = this.mats.sign(`${wh.id + 1}`, '#1d3f66', '#ffffff');
+    sign.material = this.mats.companySign(wh.company.name, wh.company.color, wh.id + 1);
     this.statics.push(sign);
 
     const [sx, sz] = plotToWorld(wh, 12, 10);
