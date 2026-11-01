@@ -388,7 +388,8 @@ export class Game {
       this.highCount = 0;
       this.engine.setHardwareScalingLevel(1 / next);
       this.perf?.mark(`risoluzione ×${next.toFixed(2)}`); // solo per il contatore: un cambio di risoluzione ridimensiona tutto
-      try { localStorage.setItem(`forklift-res-${this.quality}`, next.toFixed(2)); } catch { /* storage non disponibile */ }
+      // durante la diagnostica la nitidezza trovata non si ricorda (le prove la abbassano apposta)
+      if (!this.diag?.active) try { localStorage.setItem(`forklift-res-${this.quality}`, next.toFixed(2)); } catch { /* storage non disponibile */ }
     }
   }
 

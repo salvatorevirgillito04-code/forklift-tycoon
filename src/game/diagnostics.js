@@ -35,6 +35,7 @@ export class Diagnostics {
     this.g.diag = this;
     this.toggles = { ...OFF };
     this.recording = false;
+    this.active = false; // prova automatica in corso: la risoluzione trovata non viene ricordata
     this.report = null;
   }
 
@@ -137,6 +138,11 @@ export class Diagnostics {
     g.bots.setWorkers(TEST_WORKERS);
     await g.bots.prewarm(g.forklift);
     this.installAutopilot();
+    // ogni caso parte dalla stessa nitidezza (la risoluzione dinamica la cambia durante il caso: la si annota)
+    this.active = true;
+    const scale0 = g.scale;
+    const setScale = () => { g.scale = scale0; g.engine.setHardwareScalingLevel(1 / scale0); };
+    this.phaseScale = {};
     const wait = (s) => new Promise((res) => { this.waitTimer = setTimeout(res, s * 1000); });
     const all = [];
     const perf = g.ensurePerf();
@@ -149,6 +155,7 @@ export class Diagnostics {
       for (const [i, [label, toggles, sky]] of phases.entries()) {
         if (this.cancelled || g.mode !== 'play') break;
         this.reset();
+        setScale();
         if (sky && (g.envFx.time !== sky.time || g.envFx.weather !== sky.weather)) {
           g.envFx.apply(sky.time, sky.weather);
           await wait(2);
@@ -165,16 +172,19 @@ export class Diagnostics {
         perf.setPhase(label);
         await wait(MEASURE_S);
         all.push(...perf.stopRecording());
+        this.phaseScale[label] = Math.round(100 / g.engine.getHardwareScalingLevel()) / 100; // nitidezza a fine caso
         this.recording = false;
       }
+      setScale();
     } finally {
       this.removeAutopilot();
       this.recording = false;
+      this.active = false;
       perf.light = false;
       const done = !this.cancelled;
       if (g.mode === 'play') app.exitMission(); // uscita: interruttori annullati, operai veri al loro posto
       if (!g.perfEl) g.disposePerf();
-      this.report = buildReport(all, g, { modo: 'automatico', completa: done, fasi: this.phases().map((p) => p[0]) });
+      this.report = buildReport(all, g, { modo: 'automatico', completa: done, fasi: this.phases().map((p) => p[0]), nitidezzaFineCaso: this.phaseScale, nitidezzaIniziale: Math.round(scale0 * 100) / 100 });
       onDone?.(this.report);
     }
   }

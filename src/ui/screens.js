@@ -695,7 +695,8 @@ export function openSettings(app, { inGame = false, onClose } = {}) {
 // Interruttori di isolamento, registrazione manuale, prova automatica ed esportazione dei risultati.
 // Il modulo si carica solo qui: la versione pubblica non mostra mai questo pannello.
 async function openDiagnostics(app, inGame, closeSettings) {
-  if (!TEST_BUILD) return;
+  // condizione scritta qui (sostituita alla compilazione): nella build pubblica il modulo non viene neanche incluso
+  if (import.meta.env.VITE_TEST_BUILD !== '1') return;
   const { Diagnostics, TOGGLE_INFO } = await import('../game/diagnostics.js');
   const d = app.game.diag || new Diagnostics(app);
   const tg = d.toggles;
@@ -731,7 +732,9 @@ async function openDiagnostics(app, inGame, closeSettings) {
     toast('Registrazione: 60 s di gioco', 'good');
     d.recordFor(60, (rep) => toast(`Registrazione finita: ${reportLine(rep)}`, 'good'));
   });
-  el.querySelector('[data-auto]').addEventListener('click', () => {
+  el.querySelector('[data-auto]').addEventListener('click', async () => {
+    // la prova esce dal contratto in corso: chiede prima (il contratto si perde, senza ricompensa)
+    if (inGame && !(await confirmDialog('La prova automatica chiude il contratto in corso (senza ricompensa). Continuare?'))) return;
     close();
     closeSettings?.();
     const box = document.createElement('div');
