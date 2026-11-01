@@ -34,76 +34,106 @@ export class Diagnostics {
     this.g = app.game;
     this.g.diag = this;
     this.toggles = { ...OFF };
-    this.recording = false;
-    this.active = false; // prova automatica in corso: la risoluzione trovata non viene ricordata
+    this.recording = false; // registrazione manuale in corso
+    this.running = false; // prova automatica in corso
     this.report = null;
   }
 
+  // qualcosa di diagnostico e' attivo: la nitidezza trovata dalla risoluzione dinamica non va ricordata
+  get active() {
+    return this.running || this.recording || Object.keys(OFF).some((k) => this.toggles[k] !== OFF[k]);
+  }
+
   // ---------- interruttori ----------
+  // Risoluzione dinamica ferma: bloccata (G), ridotta (F), e col limite fotogrammi (H: il confronto e' sulla
+  // regolarita' a parita' di risoluzione; altrimenti a 30-40 FPS la risoluzione scenderebbe da sola)
   resolutionLocked() {
-    return this.toggles.lockRes || this.toggles.lowRes;
+    return this.toggles.lockRes || this.toggles.lowRes || this.toggles.fpsCap > 0;
   }
 
   set(changes) {
-    const g = this.g, t = this.toggles, was = { ...t };
-    Object.assign(t, changes);
+    Object.assign(this.toggles, changes);
+    this.applyAll();
+  }
+
+  // applica TUTTI gli interruttori allo stato del gioco (anche dopo un cambio di impostazioni, che li scavalcherebbe)
+  applyAll() {
+    const g = this.g, t = this.toggles;
     if (g.mode !== 'play') return;
-    if (t.noMirror !== was.noMirror) g.rearview?.setEnabled(!t.noMirror && g.settings.mirrors !== false);
-    if (t.noShadows !== was.noShadows) g.envFx?.setShadowsAllowed(!t.noShadows && g.shadowsOn);
-    if (t.noSnow !== was.noSnow) this.applyPrecip();
-    if (t.hideBots !== was.hideBots) g.bots.setHidden(t.hideBots);
-    if (t.lowRes !== was.lowRes) g.engine.setHardwareScalingLevel(1 / (g.scale * (t.lowRes ? 0.6 : 1)));
-    if (t.light !== was.light && g.perf) g.perf.light = t.light;
+    g.rearview?.setEnabled(!t.noMirror && g.settings.mirrors !== false);
+    g.envFx?.setShadowsAllowed(!t.noShadows && g.shadowsOn);
+    this.applyPrecip();
+    if (!!g.bots.hidden !== t.hideBots) g.bots.setHidden(t.hideBots);
+    g.engine.setHardwareScalingLevel(1 / (g.scale * (t.lowRes ? 0.6 : 1)));
+    if (g.perf) g.perf.light = t.light;
   }
 
   applyPrecip() {
     const e = this.g.envFx;
     if (!e) return;
     e.snow.mesh.setEnabled(!this.toggles.noSnow && e.weather === 'snow');
-    e.rain.mesh.setEnabled(!this.toggles.noSnow && (e.weather === 'rain'));
+    e.rain.mesh.setEnabled(!this.toggles.noSnow && e.weather === 'rain');
   }
 
-  // tutto come prima (uscita dal contratto o fine prova)
+  // tutto come prima
   reset() {
-    if (this.g.mode === 'play') this.set({ ...OFF });
-    else Object.assign(this.toggles, OFF);
-    if (this.g.perf) this.g.perf.light = false;
+    Object.assign(this.toggles, OFF);
+    this.applyAll();
   }
 
-  // ---------- registratore ----------
-  startRecording(label = 'manuale') {
+  // fine del contratto (qualunque): interruttori annullati, registrazione manuale chiusa.
+  // La prova automatica se ne accorge da sola (controlla di essere ancora nel suo contratto) e si ferma.
+  onMissionEnd() {
+    if (this.g.bots.hidden) this.g.bots.setHidden(false);
+    Object.assign(this.toggles, OFF);
+    if (this.g.perf) this.g.perf.light = false;
+    if (this.recording) this.finishManual();
+  }
+
+  // il gioco sta andando davvero (contratto in corso, non in pausa, app in primo piano)
+  live() {
+    const g = this.g;
+    return g.mode === 'play' && !g.paused && !document.hidden;
+  }
+
+  // ---------- registratore manuale ----------
+  // Registrazione di N secondi di gioco con gli interruttori scelti: prima 3 s di stabilizzazione non registrati.
+  // Pausa o app in sottofondo: la registrazione si sospende (i tempi di gioco vero restano N secondi).
+  recordFor(seconds, onDone) {
+    if (this.running || this.recording) return false;
     const perf = this.g.ensurePerf();
     perf.light = this.toggles.light;
     perf.startRecording();
-    perf.recFull = false;
-    perf.setPhase(label);
+    perf.setPhase(null);
     this.recording = true;
-    this.recStart = Date.now();
+    this.manualDone = onDone;
+    this.manualLabel = this.label();
+    let stab = 3, left = seconds;
+    this.recTimer = setInterval(() => {
+      if (!this.live()) { perf.setPhase(null); stab = Math.max(stab, 2); return; }
+      if (stab > 0) { stab -= 0.25; if (stab <= 0) perf.setPhase(this.manualLabel); return; }
+      left -= 0.25;
+      if (left <= 0) this.finishManual();
+    }, 250);
+    return true;
   }
 
-  stopRecording() {
+  finishManual() {
+    clearInterval(this.recTimer);
     const perf = this.g.perf;
     const frames = perf ? perf.stopRecording() : [];
+    const truncated = !!perf?.recFull;
     this.recording = false;
     if (perf) perf.light = false;
-    if (!this.g.perfEl) this.g.disposePerf(); // il contatore non era acceso: si spegne anche il misuratore
-    return frames;
-  }
-
-  // Registrazione manuale di N secondi di gioco (con gli interruttori scelti); onDone(report)
-  recordFor(seconds, onDone) {
-    this.startRecording(this.label());
-    clearTimeout(this.recTimer);
-    this.recTimer = setTimeout(() => {
-      const frames = this.stopRecording();
-      this.report = buildReport(frames, this.g, { modo: 'manuale', secondi: seconds });
-      onDone?.(this.report);
-    }, seconds * 1000);
+    if (!this.g.perfEl && perf) this.g.disposePerf(); // il contatore non era acceso: si spegne anche il misuratore
+    this.report = buildReport(frames, this.g, { modo: 'manuale', registrazioneTroncata: truncated });
+    this.manualDone?.(this.report);
+    this.manualDone = null;
   }
 
   label() {
     const t = this.toggles, parts = [];
-    for (const k of Object.keys(TOGGLE_INFO)) if (t[k]) parts.push(TOGGLE_INFO[k].split(' · ')[0].replace('Registratore leggero (solo tempi)', 'leggero'));
+    for (const k of Object.keys(TOGGLE_INFO)) if (t[k]) parts.push(k === 'light' ? 'leggero' : TOGGLE_INFO[k].split(' · ')[0]);
     if (t.fpsCap) parts.push(`H${t.fpsCap}`);
     return parts.length ? parts.join('+') : 'A';
   }
@@ -127,64 +157,117 @@ export class Diagnostics {
     ];
   }
 
-  // onStatus(testo) durante la prova, onDone(report) alla fine
+  // Attesa di N secondi di gioco vero. Ritorna false se la prova va fermata (interrotta, uscita dal contratto).
+  // Durante pausa o app in sottofondo il tempo non conta e la fase non registra; alla ripresa si rifa' una
+  // breve stabilizzazione (onPause/onResume).
+  async waitLive(seconds, { onPause, onResume } = {}) {
+    let left = seconds, paused = false;
+    while (left > 0) {
+      if (this.cancelled || !this.ownMission()) return false;
+      await new Promise((res) => { this.wakeUp = res; this.waitTimer = setTimeout(res, 250); });
+      if (this.cancelled || !this.ownMission()) return false;
+      if (!this.live()) { if (!paused) { paused = true; onPause?.(); } continue; }
+      if (paused) { paused = false; if ((await onResume?.()) === false) return false; continue; }
+      left -= 0.25;
+    }
+    return true;
+  }
+
+  ownMission() {
+    return this.g.mode === 'play' && this.g.mission.contract === this.contract;
+  }
+
+  // onStatus(testo) durante la prova, onDone(report) alla fine (anche se interrotta: con le fasi fatte)
   async runAuto(onStatus, onDone) {
+    if (this.running || this.recording) return;
     const app = this.app, g = this.g;
-    if (g.mode === 'play') app.exitMission();
     this.cancelled = false;
-    onStatus?.('Avvio del contratto di prova (notte, neve, 6 operai di prova)…');
-    // guida libera: non finisce mai e non da' ricompense; uscita senza salvataggio
-    await app.startMission({ type: 'free', warehouseId: 0, level: 0, seed: 7, weight: 600, pallets: 0, time: 'night', weather: 'snow', timeLimit: null, diagnostic: true });
-    g.bots.setWorkers(TEST_WORKERS);
-    await g.bots.prewarm(g.forklift);
-    this.installAutopilot();
-    // ogni caso parte dalla stessa nitidezza (la risoluzione dinamica la cambia durante il caso: la si annota)
-    this.active = true;
-    const scale0 = g.scale;
-    const setScale = () => { g.scale = scale0; g.engine.setHardwareScalingLevel(1 / scale0); };
-    this.phaseScale = {};
-    const wait = (s) => new Promise((res) => { this.waitTimer = setTimeout(res, s * 1000); });
+    if (g.mode === 'play') app.exitMission();
+    this.running = true;
     const all = [];
-    const perf = g.ensurePerf();
+    const done = [];
+    const interrupted = {};
+    let perf = null, scale0 = g.scale, truncated = false;
+    const setScale = () => {
+      g.scale = scale0;
+      g.engine.setHardwareScalingLevel(1 / scale0);
+      g.lowCount = 0; g.highCount = 0; g.resTimer = 0;
+      if (g.frameTimes) g.frameTimes.length = 0;
+    };
+    this.phaseScale = {};
     try {
+      onStatus?.('Avvio del contratto di prova (notte, neve, 6 operai di prova)…');
+      // guida libera: non finisce mai e non da' ricompense; l'uscita non salva nulla
+      await app.startMission({ type: 'free', warehouseId: 0, level: 0, seed: 7, weight: 600, pallets: 0, time: 'night', weather: 'snow', timeLimit: null });
+      if (g.mode !== 'play') throw new Error('contratto di prova non avviato');
+      this.contract = g.mission.contract;
+      scale0 = g.scale;
+      g.bots.setWorkers(TEST_WORKERS); // solo in memoria: il salvataggio non cambia
+      await g.bots.prewarm(g.forklift);
+      this.installAutopilot();
+      perf = g.ensurePerf();
       // giro di riscaldamento (non misurato): crea operai, shader e modelli lungo tutto il percorso
       onStatus?.('Giro di riscaldamento (non misurato)…');
       this.place();
-      await wait(MEASURE_S + STAB_S);
+      if (!(await this.waitLive(MEASURE_S + STAB_S))) throw new Error('stop');
       const phases = this.phases();
       for (const [i, [label, toggles, sky]] of phases.entries()) {
-        if (this.cancelled || g.mode !== 'play') break;
         this.reset();
         setScale();
         if (sky && (g.envFx.time !== sky.time || g.envFx.weather !== sky.weather)) {
           g.envFx.apply(sky.time, sky.weather);
-          await wait(2);
+          this.applyAll();
         }
         this.set(toggles);
         this.place();
-        onStatus?.(`Caso ${label} (${i + 1}/${phases.length}): stabilizzazione…`);
+        const tag = `Caso ${label} (${i + 1}/${phases.length})`;
+        onStatus?.(`${tag}: stabilizzazione…`);
         perf.light = !!toggles.light;
         perf.startRecording();
         perf.setPhase(null);
-        this.recording = true;
-        await wait(STAB_S);
-        onStatus?.(`Caso ${label} (${i + 1}/${phases.length}): misura ${MEASURE_S} s…`);
+        if (!(await this.waitLive(STAB_S))) break;
+        onStatus?.(`${tag}: misura ${MEASURE_S} s…`);
         perf.setPhase(label);
-        await wait(MEASURE_S);
+        const ok = await this.waitLive(MEASURE_S, {
+          onPause: () => { perf.setPhase(null); interrupted[label] = (interrupted[label] || 0) + 1; onStatus?.(`${tag}: in pausa`); },
+          onResume: async () => {
+            onStatus?.(`${tag}: ripresa, stabilizzazione…`);
+            if (!(await this.waitLive(3))) return false;
+            perf.setPhase(label);
+            onStatus?.(`${tag}: misura…`);
+            return true;
+          },
+        });
         all.push(...perf.stopRecording());
-        this.phaseScale[label] = Math.round(100 / g.engine.getHardwareScalingLevel()) / 100; // nitidezza a fine caso
-        this.recording = false;
+        truncated ||= !!perf.recFull;
+        this.phaseScale[label] = Math.round(100 / g.engine.getHardwareScalingLevel()) / 100;
+        if (!ok) break;
+        done.push(label);
       }
-      setScale();
+    } catch (err) {
+      if (err.message !== 'stop') onStatus?.(`Errore: ${err.message || err}`);
     } finally {
       this.removeAutopilot();
-      this.recording = false;
-      this.active = false;
-      perf.light = false;
-      const done = !this.cancelled;
-      if (g.mode === 'play') app.exitMission(); // uscita: interruttori annullati, operai veri al loro posto
+      if (perf?.rec) perf.stopRecording();
+      if (perf) perf.light = false;
+      const own = this.ownMission();
+      Object.assign(this.toggles, OFF);
+      if (own) {
+        setScale();
+        app.exitMission(); // uscita dal SOLO contratto di prova: interruttori annullati, operai di prova rimossi
+      } else if (g.mode === 'play') {
+        this.applyAll(); // si e' passati a un contratto vero: nessun interruttore resta attivo
+      }
+      this.running = false;
       if (!g.perfEl) g.disposePerf();
-      this.report = buildReport(all, g, { modo: 'automatico', completa: done, fasi: this.phases().map((p) => p[0]), nitidezzaFineCaso: this.phaseScale, nitidezzaIniziale: Math.round(scale0 * 100) / 100 });
+      const expected = this.phases().map((p) => p[0]);
+      this.report = buildReport(all, g, {
+        modo: 'automatico', completa: done.length === expected.length,
+        fasiPreviste: expected, fasiCompletate: done, interruzioni: interrupted,
+        registrazioneTroncata: truncated,
+        nitidezzaIniziale: Math.round(scale0 * 100) / 100, nitidezzaFineCaso: this.phaseScale,
+        nota: 'Nei casi H il tempo "fuori" comprende l\'attesa del limite fotogrammi. Nei casi H, F, G la risoluzione dinamica e\' ferma.',
+      });
       onDone?.(this.report);
     }
   }
@@ -192,6 +275,7 @@ export class Diagnostics {
   cancel() {
     this.cancelled = true;
     clearTimeout(this.waitTimer);
+    this.wakeUp?.(); // sveglia subito l'attesa in corso: la prova si chiude e salva le fasi fatte
   }
 
   place() {
@@ -248,7 +332,8 @@ export class Diagnostics {
     }
   }
 
-  // File completo (riepilogo + tutti i fotogrammi in CSV): condivisione Android, oppure scaricamento nel browser
+  // File completo (riepilogo + tutti i fotogrammi in CSV): condivisione Android, oppure scaricamento nel browser.
+  // Nella cache dell'app resta solo l'ultimo file (i precedenti si cancellano).
   async share() {
     if (!this.report) return false;
     const name = `forklift-diagnostica-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.json`;
@@ -256,6 +341,13 @@ export class Diagnostics {
     if (IS_NATIVE) {
       const { Filesystem, Directory, Encoding } = await import('@capacitor/filesystem');
       const { Share } = await import('@capacitor/share');
+      try {
+        const { files } = await Filesystem.readdir({ path: '', directory: Directory.Cache });
+        for (const f of files) {
+          const n = typeof f === 'string' ? f : f.name;
+          if (n.startsWith('forklift-diagnostica-')) await Filesystem.deleteFile({ path: n, directory: Directory.Cache });
+        }
+      } catch { /* cache vuota o non leggibile: si prosegue */ }
       const { uri } = await Filesystem.writeFile({ path: name, data, directory: Directory.Cache, encoding: Encoding.UTF8 });
       await Share.share({ title: 'Forklift Tycoon - diagnostica', text: 'Registrazione delle prestazioni', files: [uri] });
       return true;
@@ -273,15 +365,25 @@ export class Diagnostics {
 // ---------- calcolo del rapporto ----------
 const r1 = (x) => Math.round(x * 10) / 10;
 
-// Frequenza dello schermo stimata dai tempi dei fotogrammi: il piu' breve ricorrente (1° percentile; con il gioco
-// sotto la frequenza dello schermo i fotogrammi durano 2-3 giri di schermo, ma i piu' brevi ne durano uno),
-// arrotondato alla frequenza tipica piu' vicina. E' una stima: il rapporto riporta anche il tempo minimo.
+// Frequenza dello schermo stimata dai tempi dei fotogrammi: il periodo (16,7 / 11,1 / 8,3 / 6,9 ms) di cui quasi
+// tutti i fotogrammi sono un multiplo esatto; tra i periodi che spiegano i tempi ugualmente bene si sceglie il piu'
+// lungo (i multipli di 16,7 ms sono anche multipli di 8,3). E' una STIMA: il rapporto riporta anche l'istogramma.
+const PERIODS = [[60, 1000 / 60], [90, 1000 / 90], [120, 1000 / 120], [144, 1000 / 144]];
 function refreshEstimate(dts) {
-  if (dts.length < 30) return null;
-  const s = [...dts].filter((x) => x > 4).sort((a, b) => a - b);
-  const p1 = s[Math.floor(s.length * 0.01)];
-  const hz = 1000 / p1;
-  return [60, 90, 120, 144].reduce((best, x) => (Math.abs(x - hz) < Math.abs(best - hz) ? x : best), 60);
+  const v = dts.filter((x) => x > 4 && x < 80);
+  if (v.length < 30) return null;
+  const score = (p) => v.filter((x) => { const k = Math.max(1, Math.round(x / p)); return Math.abs(x - k * p) < 1.3; }).length / v.length;
+  const scores = PERIODS.map(([hz, p]) => [hz, score(p)]);
+  const best = Math.max(...scores.map((s) => s[1]));
+  // il periodo piu' lungo che spiega i tempi quasi come il migliore
+  return scores.find(([, sc]) => sc >= best - 0.03)[0];
+}
+
+// istogramma grezzo dei tempi dei fotogrammi (ms, a gruppi di 2 ms fino a 60, poi 60+)
+function histogram(dts) {
+  const h = {};
+  for (const x of dts) { const k = x >= 60 ? '60+' : String(Math.floor(x / 2) * 2); h[k] = (h[k] || 0) + 1; }
+  return h;
 }
 
 function phaseStats(fr, vsyncMs) {
@@ -323,7 +425,7 @@ function phaseStats(fr, vsyncMs) {
       ombre: r1(avg('shadow')), specchietto: r1(avg('mirror')),
       fuori: r1(avg('gap')), fuoriP99: r1(p99of('gap')),
     },
-    drawCall: Math.round(avg('draws')),
+    drawCall: fr[0].light ? null : Math.round(avg('draws')), // nella modalita' leggera non si contano
     eventi: { gc: count(/^GC/), oggettiNuovi: count(/^nuovi/), shader: count(/^shader/), risoluzione: count(/^risoluzione/) },
     leggero: !!fr[0].light,
   };
@@ -369,7 +471,7 @@ export function buildReport(frames, g, meta = {}) {
     tipo: 'forklift-diagnostica', versione: APP_VERSION, build: BUILD_DATE, data: new Date().toISOString().slice(0, 16),
     ...meta,
     limiteFotogrammi: REC_MAX_FRAMES, fotogrammiRegistrati: frames.length,
-    schermoHzStimato: hz, fotogrammaMinimoMs: r1(Math.min(...dtsAll.filter((x) => x > 4), 999)),
+    schermoHzStimato: hz, fotogrammaMinimoMs: r1(Math.min(...dtsAll.filter((x) => x > 4), 999)), istogrammaMs: histogram(dtsAll),
     dispositivo: deviceInfo(g),
     grafica: { qualita: g.quality, nitidezza: r1(1 / g.engine.getHardwareScalingLevel()), ombre: !!g.shadowsOn, specchietto: g.settings.mirrors !== false },
     fasi, picchi,

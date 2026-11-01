@@ -212,7 +212,7 @@ export class Game {
     clearInterval(this.perfTimer);
     if (!on) {
       // durante una registrazione diagnostica il misuratore resta acceso (si toglie solo il riquadro)
-      if (!this.diag?.recording) this.disposePerf();
+      if (!this.diag?.recording && !this.diag?.running) this.disposePerf();
       return;
     }
     this.ensurePerf();
@@ -254,6 +254,7 @@ export class Game {
     this.applyQuality(settings.quality);
     this.controls?.setSettings(settings);
     this.rearview?.setEnabled(settings.mirrors !== false);
+    this.diag?.applyAll(); // diagnostica: le impostazioni non scavalcano gli interruttori attivi
   }
 
   setOwnedWarehouses(ids) {
@@ -337,7 +338,7 @@ export class Game {
   }
 
   stopMission() {
-    this.diag?.reset(); // gli interruttori diagnostici valgono solo per il contratto in corso
+    this.diag?.onMissionEnd(); // gli interruttori diagnostici valgono solo per il contratto in corso
     this.envFx?.apply('day', 'clear'); // menu sempre di giorno col sereno
     this.clearFadedWalls();
     this.rearview?.dispose();

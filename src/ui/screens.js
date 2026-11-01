@@ -700,19 +700,20 @@ async function openDiagnostics(app, inGame, closeSettings) {
   const { Diagnostics, TOGGLE_INFO } = await import('../game/diagnostics.js');
   const d = app.game.diag || new Diagnostics(app);
   const tg = d.toggles;
+  const busy = d.running || d.recording; // una sola misura alla volta
   const caps = [0, 60, 40, 30];
   const { el, close } = openModal(`
     <h2 class="modal-title">Diagnostica prestazioni</h2>
     <p class="diag-note">Solo per i test: gli interruttori valgono per il contratto in corso e non vengono salvati.</p>
     ${Object.entries(TOGGLE_INFO).map(([k, label]) => `<label class="setting check"><span>${label}</span>
-      <input type="checkbox" data-tg="${k}" ${tg[k] ? 'checked' : ''} ${inGame || k === 'light' ? '' : 'disabled'}></label>`).join('')}
+      <input type="checkbox" data-tg="${k}" ${tg[k] ? 'checked' : ''} ${inGame && !busy ? '' : 'disabled'}></label>`).join('')}
     <div class="setting"><span>H · Limite fotogrammi</span>
-      <div class="segmented">${caps.map((c) => `<button class="${tg.fpsCap === c ? 'on' : ''}" data-cap="${c}" ${inGame ? '' : 'disabled'}>${c || 'no'}</button>`).join('')}</div></div>
+      <div class="segmented">${caps.map((c) => `<button class="${tg.fpsCap === c ? 'on' : ''}" data-cap="${c}" ${inGame && !busy ? '' : 'disabled'}>${c || 'no'}</button>`).join('')}</div></div>
     <div class="row-btns">
-      <button class="pill-btn blue small" data-rec ${inGame ? '' : 'disabled'}>Registra 60 s</button>
-      <button class="pill-btn green small" data-auto>Prova automatica (~6 min)</button>
+      <button class="pill-btn blue small" data-rec ${inGame && !busy ? '' : 'disabled'}>Registra 60 s</button>
+      <button class="pill-btn green small" data-auto ${busy ? 'disabled' : ''}>Prova automatica (~6 min)</button>
     </div>
-    <p class="diag-status" data-status>${d.report ? reportLine(d.report) : (inGame ? '' : 'Interruttori e registrazione manuale: durante un contratto.')}</p>
+    <p class="diag-status" data-status>${busy ? (d.running ? 'Prova automatica in corso.' : 'Registrazione in corso.') : d.report ? reportLine(d.report) : (inGame ? '' : 'Interruttori e registrazione manuale: durante un contratto.')}</p>
     <div class="row-btns">
       <button class="pill-btn small" data-copy ${d.report ? '' : 'disabled'}>Copia risultati</button>
       <button class="pill-btn small" data-share ${d.report ? '' : 'disabled'}>Condividi file</button>
@@ -729,10 +730,10 @@ async function openDiagnostics(app, inGame, closeSettings) {
     // si chiude tutto e si torna a giocare: la registrazione parte subito e dura 60 s
     close();
     closeSettings?.();
-    toast('Registrazione: 60 s di gioco', 'good');
-    d.recordFor(60, (rep) => toast(`Registrazione finita: ${reportLine(rep)}`, 'good'));
+    if (d.recordFor(60, (rep) => toast(`Registrazione finita: ${reportLine(rep)}`, 'good'))) toast('Registrazione: 3 s di stabilizzazione, poi 60 s di gioco', 'good');
   });
   el.querySelector('[data-auto]').addEventListener('click', async () => {
+    if (d.running || d.recording) return;
     // la prova esce dal contratto in corso: chiede prima (il contratto si perde, senza ricompensa)
     if (inGame && !(await confirmDialog('La prova automatica chiude il contratto in corso (senza ricompensa). Continuare?'))) return;
     close();
@@ -744,8 +745,8 @@ async function openDiagnostics(app, inGame, closeSettings) {
     box.querySelector('button').addEventListener('click', () => d.cancel());
     d.runAuto((txt) => { box.querySelector('[data-s]').textContent = txt; }, (rep) => {
       box.remove();
-      toast(`Prova automatica finita: apri Impostazioni → Diagnostica per copiare i risultati`, 'good');
-      d.report = rep;
+      toast(rep.completa ? 'Prova automatica finita: Impostazioni → Diagnostica per copiare i risultati'
+        : `Prova interrotta (${rep.fasiCompletate.length} casi su ${rep.fasiPreviste.length}): risultati salvati in Diagnostica`, rep.completa ? 'good' : 'warn');
     }).catch((err) => { box.remove(); toast(String(err.message || err), 'bad'); });
   });
   el.querySelector('[data-copy]').addEventListener('click', async () => {

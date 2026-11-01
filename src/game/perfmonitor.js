@@ -39,12 +39,21 @@ export class PerfMonitor {
     this.events = new Set(); // eventi segnalati dal gioco in questo fotogramma (es. 'risoluzione')
     this.lastHeap = performance.memory?.usedJSHeapSize ?? null;
     this.lastEffects = this.effectCount();
-    // Modalita' leggera: solo i tempi dei fotogrammi (niente cronometri su ombre/specchietto, niente controllo
-    // di oggetti, shader e memoria). Serve a misurare quanto pesa la misura dettagliata stessa.
-    this.light = false;
+    // Modalita' leggera (vedi il setter light): solo i tempi dei fotogrammi
+    this.lightOn = false;
     // Registrazione: fotogrammi con l'etichetta della fase in corso (phase = null: non si registra)
     this.rec = null;
     this.phase = null;
+  }
+
+  // Modalita' leggera: solo i tempi dei fotogrammi, logica e disegno (niente cronometri su ombre/specchietto,
+  // niente contatori di Babylon, niente controllo di oggetti, shader e memoria). Serve a misurare quanto pesa
+  // la misura dettagliata stessa.
+  get light() { return this.lightOn; }
+
+  set light(on) {
+    this.lightOn = !!on;
+    this.instr.captureActiveMeshesEvaluationTime = !on;
   }
 
   startRecording() {
@@ -89,7 +98,7 @@ export class PerfMonitor {
       const kind = /rearview/i.test(rtt.name) ? 'mirror' : 'shadow';
       let t0 = 0;
       const a = rtt.onBeforeRenderObservable.add(() => { t0 = performance.now(); });
-      const b = rtt.onAfterRenderObservable.add(() => { if (this.cur) this.cur[kind] += performance.now() - t0; });
+      const b = rtt.onAfterRenderObservable.add(() => { if (this.cur && !this.cur.light) this.cur[kind] += performance.now() - t0; });
       this.hookObs.push([rtt.onBeforeRenderObservable, a], [rtt.onAfterRenderObservable, b]);
     }
   }

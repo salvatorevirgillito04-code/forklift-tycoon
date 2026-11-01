@@ -96,8 +96,6 @@ export class WorkerBots {
       if (this.pickTimer === 0.5) this.lod(bot, player);
       if (bot.truck) this.driveTruck(bot, dt, player);
       this.work(bot, dt, player);
-      // diagnostica (solo build di prova): operai invisibili, il lavoro continua uguale
-      if (this.hidden) for (const n of this.botNodes(bot)) if (n.isEnabled(false)) n.setEnabled(false);
     }
   }
 
@@ -151,7 +149,7 @@ export class WorkerBots {
     for (const bot of this.bots.values()) {
       if (!bot.ready) continue;
       for (const n of this.botNodes(bot)) n.setEnabled(!on);
-      if (!on && bot.truck) this.placeTruck(bot);
+      if (bot.truck) this.placeTruck(bot);
     }
   }
 
@@ -200,7 +198,7 @@ export class WorkerBots {
     const bot = this.parked.get(id);
     this.parked.delete(id);
     this.bots.set(id, bot);
-    for (const n of this.botNodes(bot)) n.setEnabled(true);
+    for (const n of this.botNodes(bot)) n.setEnabled(!this.hidden);
     this.env.colliders.push(...this.botColliders(bot));
     bot.far = undefined; // ricalcola i dettagli in base alla distanza
     if (bot.truck) this.placeTruck(bot); // il camion puo' essere fuori sulla strada (nascosto)
@@ -295,7 +293,7 @@ export class WorkerBots {
       this.place(bot);
       // pronto e al suo posto: ora si vede. Il camion invece segue la sua visibilita' (lontano = spento),
       // come quando un operaio parcheggiato torna in servizio
-      for (const n of this.botNodes(bot)) n.setEnabled(true);
+      for (const n of this.botNodes(bot)) n.setEnabled(!this.hidden);
       if (bot.truck) this.placeTruck(bot);
     };
     return build();
@@ -352,8 +350,9 @@ export class WorkerBots {
     const vis = Math.min(1, Math.max(0, (tr.offset - TRUCK_AREA.away) / 4));
     const meshes = [...tr.root.getChildMeshes(), ...bot.bed.flatMap((s) => s.stack.flatMap((n) => n.getChildMeshes()))];
     for (const m of meshes) m.visibility = vis;
-    tr.root.setEnabled(vis > 0);
-    bot.bed.forEach((s) => s.stack.forEach((node) => node.setEnabled(vis > 0)));
+    const show = vis > 0 && !this.hidden; // hidden: diagnostica, operai invisibili
+    tr.root.setEnabled(show);
+    bot.bed.forEach((s) => s.stack.forEach((node) => node.setEnabled(show)));
   }
 
   // Arriva in retromarcia, aspetta il carico/scarico, riparte verso la strada.
