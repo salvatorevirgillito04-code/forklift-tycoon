@@ -168,6 +168,10 @@ export class Diagnostics {
       if (this.cancelled || !this.ownMission()) return false;
       if (!this.live()) { if (!paused) { paused = true; onPause?.(); } continue; }
       if (paused) { paused = false; if ((await onResume?.()) === false) return false; continue; }
+      // muletto fermo per piu' di 2 s (urto con qualcosa): rimesso sul percorso, contato nel rapporto
+      const f = this.g.forklift;
+      this.still = f && Math.abs(f.v) < 0.3 ? (this.still || 0) + 0.25 : 0;
+      if (this.still >= 2) { this.still = 0; this.replaced = (this.replaced || 0) + 1; this.place(); }
       left -= 0.25;
     }
     return true;
@@ -204,6 +208,11 @@ export class Diagnostics {
       scale0 = g.scale;
       g.bots.setWorkers(TEST_WORKERS); // solo in memoria: il salvataggio non cambia
       await g.bots.prewarm(g.forklift);
+      // Auto e pedoni restano in movimento e disegnati, ma il muletto di prova li attraversa: senza, il pilota
+      // automatico li urtava sulla corsia e restava fermo. Gli ingombri si rimettono a fine prova.
+      this.ghostCols = g.env.colliders.filter((c) => c.tag === 'car' || c.tag === 'person');
+      for (const c of this.ghostCols) g.env.colliders.splice(g.env.colliders.indexOf(c), 1);
+      this.replaced = 0;
       this.installAutopilot();
       perf = g.ensurePerf();
       // giro di riscaldamento (non misurato): crea operai, shader e modelli lungo tutto il percorso
@@ -248,6 +257,8 @@ export class Diagnostics {
       if (err.message !== 'stop') onStatus?.(`Errore: ${err.message || err}`);
     } finally {
       this.removeAutopilot();
+      for (const c of this.ghostCols || []) if (!g.env.colliders.includes(c)) g.env.colliders.push(c);
+      this.ghostCols = null;
       if (perf?.rec) perf.stopRecording();
       if (perf) perf.light = false;
       const own = this.ownMission();
@@ -264,7 +275,7 @@ export class Diagnostics {
       this.report = buildReport(all, g, {
         modo: 'automatico', completa: done.length === expected.length,
         fasiPreviste: expected, fasiCompletate: done, interruzioni: interrupted,
-        registrazioneTroncata: truncated,
+        registrazioneTroncata: truncated, riposizionamenti: this.replaced,
         nitidezzaIniziale: Math.round(scale0 * 100) / 100, nitidezzaFineCaso: this.phaseScale,
         nota: 'Nei casi H il tempo "fuori" comprende l\'attesa del limite fotogrammi. Nei casi H, F, G la risoluzione dinamica e\' ferma.',
       });
