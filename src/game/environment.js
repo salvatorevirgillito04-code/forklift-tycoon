@@ -411,7 +411,7 @@ export class Environment {
   }
 
   apply(time = 'day', weather = 'clear', rainLevel = 'medium') {
-    if (this.snowMat) this.setStaticsFrozen(false); // prima delle modifiche (nel costruttore la neve non esiste ancora)
+    if (this.snowMat) this.setStaticsFrozen(false); // prima delle modifiche
     this.rainLevel = rainLevel;
     this.rain.mat.setFloat('density', { light: 0.35, medium: 0.65, heavy: 1 }[rainLevel] || 0.65);
     const T = TIMES[time] || TIMES.day, W = WEATHER[weather] || WEATHER.clear;
@@ -477,7 +477,7 @@ export class Environment {
     setHeadlights(T.lights ? 1 : time !== 'day' ? 0.6 : weather === 'fog' ? 0.55 : weather === 'clear' ? 0 : 0.4);
     // ombre del sole solo col sereno di giorno (col cielo coperto e di notte non si vedono: si risparmia molto)
     this.shadowsWanted = weather === 'clear' && !T.lights;
-    this.updateShadows();
+    this.updateShadows(true);
   }
 
   setShadowsAllowed(on) {
@@ -485,10 +485,15 @@ export class Environment {
     this.updateShadows();
   }
 
-  updateShadows() {
+  // force: dopo apply() (materiali appena sbloccati e cambiati) si ricongela sempre
+  updateShadows(force = false) {
     this.sun.shadowEnabled = !!this.shadowsAllowed && this.shadowsWanted !== false;
-    // ombre accese/spente o generatore cambiato (qualita' grafica): i materiali si ripreparano una volta e restano congelati
-    if (this.snowMat) this.setStaticsFrozen(true);
+    // ombre accese/spente o generatore cambiato (qualita' grafica): i materiali si ripreparano una volta e restano
+    // congelati. Se non e' cambiato niente (es. cursori del volume nelle impostazioni) non si rifa' nulla.
+    const key = this.sun.shadowEnabled ? this.sun.getShadowGenerator() : null;
+    if (!this.snowMat || (!force && key === this.frozenShadowKey)) return;
+    this.frozenShadowKey = key;
+    this.setStaticsFrozen(true);
   }
 
   // dentro la qualita' Bassa il cielo fotografico e' spento: lo decide la qualita'

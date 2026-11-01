@@ -143,9 +143,17 @@ export class WorkerBots {
     return builds;
   }
 
-  // Aspetta il prossimo fotogramma disegnato (per distribuire la costruzione degli operai)
+  // Aspetta il prossimo fotogramma disegnato (per distribuire la costruzione degli operai). Le attese sono in fila:
+  // con piu' operai in costruzione si fa comunque una sola tappa per fotogramma. Se il disegno fosse fermo
+  // (errore), dopo 100 ms si prosegue lo stesso: la costruzione non resta mai bloccata.
   nextFrame() {
-    return new Promise((res) => this.scene.onAfterRenderObservable.addOnce(() => res()));
+    const wait = () => new Promise((res) => {
+      const done = () => { clearTimeout(timer); obs && this.scene.onAfterRenderObservable.remove(obs); res(); };
+      const obs = this.scene.onAfterRenderObservable.addOnce(done);
+      const timer = setTimeout(done, 100);
+    });
+    this.frameQueue = (this.frameQueue || Promise.resolve()).then(wait);
+    return this.frameQueue;
   }
 
   // Prepara gli operai vicini durante il caricamento della partita (niente blocchi dopo)
@@ -273,8 +281,10 @@ export class WorkerBots {
       bot.ready = true;
       this.idle(bot);
       this.place(bot);
-      // pronto e al suo posto: ora si vede (se nel frattempo e' stato parcheggiato resta nascosto)
-      if (this.bots.get(worker.id) === bot) for (const n of this.botNodes(bot)) n.setEnabled(true);
+      // pronto e al suo posto: ora si vede. Il camion invece segue la sua visibilita' (lontano = spento),
+      // come quando un operaio parcheggiato torna in servizio
+      for (const n of this.botNodes(bot)) n.setEnabled(true);
+      if (bot.truck) this.placeTruck(bot);
     };
     return build();
   }

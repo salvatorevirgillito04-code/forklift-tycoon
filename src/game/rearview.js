@@ -44,7 +44,9 @@ export function createRearview(scene, mainCam) {
   // Lista calcolata a ogni aggiornamento: solo oggetti visibili, vicini e dietro al muletto
   rtt.getCustomRenderList = () => {
     list.length = 0;
-    const vp = cam.getViewMatrix(true).multiply(cam.getProjectionMatrix(true));
+    // matrice con cui Babylon disegna adesso lo specchietto (impostata appena prima di chiedere l'elenco):
+    // stessa inquadratura e stesse proporzioni dell'immagine vera, senza ricalcoli ne' memoria nuova
+    const vp = scene.getTransformMatrix();
     if (!planes) planes = Frustum.GetPlanes(vp);
     else Frustum.GetPlanesToRef(vp, planes);
     for (const m of scene.meshes) {
