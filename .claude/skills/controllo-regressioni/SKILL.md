@@ -23,6 +23,8 @@ Deve finire senza errori. Gli avvisi sulla dimensione dei file sono già noti.
 ## 3. Avvio nel browser
 - Avvia il server di sviluppo `npx vite --port 5173` e aprilo con Playwright e Chromium, già installati:
   `require('playwright')`, `chromium.launch({ args: ['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'] })`.
+- **Blocca sempre Supabase** subito dopo `newPage`: `await page.route(/supabase\.co/, (r) => r.abort())`.
+  Senza, ogni pagina di prova crea un utente anonimo e un salvataggio veri nel database di produzione.
 - Aspetta `window.__app?.game?.world`, avvia un contratto con `window.__app.startMission({...})` ed esci con `exitMission()`.
 - Non devono comparire errori nella pagina (`page.on('pageerror')`).
 

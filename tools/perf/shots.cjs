@@ -6,6 +6,8 @@ require('fs').mkdirSync(outDir, { recursive: true });
 (async () => {
   const b = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
   const p = await b.newPage({ viewport: { width: 800, height: 450 } });
+  // niente Supabase dalle prove: altrimenti ogni pagina creerebbe un utente anonimo e un salvataggio veri in produzione
+  await p.route(/supabase\.co/, (r) => r.abort());
   await p.goto(`http://localhost:${port}/`, { waitUntil: 'load' });
   await p.waitForFunction(() => window.__app?.game?.world, null, { timeout: 120000 });
   await p.waitForTimeout(2000);

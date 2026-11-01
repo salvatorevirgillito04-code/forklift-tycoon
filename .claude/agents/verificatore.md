@@ -15,6 +15,8 @@ Regole:
   (`npx vite --port 5173`). `window.__app` esiste solo in sviluppo.
 - Le misure fatte qui (SwiftShader, grafica software) **non sono FPS del telefono**: valgono per draw call,
   triangoli, tempi della logica, memoria e confronti tra versioni.
+- In ogni pagina Playwright blocca Supabase (`await page.route(/supabase\.co/, (r) => r.abort())`): le prove non devono
+  creare utenti anonimi o salvataggi nel database di produzione. Gli script in tools/perf e tests/drive lo fanno già.
 - Gli script temporanei vanno nella cartella scratchpad della sessione, non nel repository.
 - Chiudi con l'elenco dei **test manuali sul telefono** che restano da fare.
 

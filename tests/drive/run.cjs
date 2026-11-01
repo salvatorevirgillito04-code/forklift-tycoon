@@ -229,6 +229,8 @@ const CHECKS = [
   const port = server.httpServer.address().port;
   const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
   const page = await browser.newPage({ viewport: { width: 400, height: 240 } });
+  // niente Supabase dalle prove: altrimenti ogni pagina creerebbe un utente anonimo e un salvataggio veri in produzione
+  await page.route(/supabase\.co/, (r) => r.abort());
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   let failed = 0;

@@ -9,6 +9,8 @@ const port = process.argv[4] || 5173;
 (async () => {
   const b = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
   const p = await b.newPage({ viewport: { width: 320, height: 180 } });
+  // niente Supabase dalle prove: altrimenti ogni pagina creerebbe un utente anonimo e un salvataggio veri in produzione
+  await p.route(/supabase\.co/, (r) => r.abort());
   await p.goto(`http://localhost:${port}/`, { waitUntil: 'load' });
   await p.waitForFunction(() => window.__app?.game?.world, null, { timeout: 120000 });
   await p.waitForTimeout(2000);

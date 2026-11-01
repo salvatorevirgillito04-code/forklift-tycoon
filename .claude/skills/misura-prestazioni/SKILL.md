@@ -12,6 +12,9 @@ description: Misura e confronta le prestazioni di Forklift Tycoon tra versioni (
   - picchi con la causa: logica, disegno, ombre, specchietto, "fuori" (GPU, caricamenti asincroni, browser),
     nuovi oggetti, shader, GC, risoluzione.
 
+Tutti gli script di `tools/perf` bloccano Supabase. Se ne scrivi uno nuovo, fai lo stesso:
+`await p.route(/supabase\.co/, (r) => r.abort())`, altrimenti le prove scrivono nel database di produzione.
+
 ## 1. Preparare le versioni
 ```bash
 tools/perf/confronto.sh main 5181          # A: versione pubblica

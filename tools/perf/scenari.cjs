@@ -21,6 +21,8 @@ const SCEN = [
   for (const [ver, port] of Object.entries(VERS)) {
     const b = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--enable-precise-memory-info', '--js-flags=--expose-gc'] });
     const p = await b.newPage({ viewport: { width: 960, height: 540 } });
+    // niente Supabase dalle prove: altrimenti ogni pagina creerebbe un utente anonimo e un salvataggio veri in produzione
+    await p.route(/supabase\.co/, (r) => r.abort());
     p.on('pageerror', (e) => console.log(`[${ver} err]`, e.message));
     await p.goto(`http://localhost:${port}/`, { waitUntil: 'load' });
     await p.waitForFunction(() => window.__app?.game?.world, null, { timeout: 120000 });
