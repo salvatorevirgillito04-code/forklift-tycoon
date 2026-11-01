@@ -710,7 +710,7 @@ async function openDiagnostics(app, inGame, closeSettings) {
     ${Object.entries(TOGGLE_INFO).map(([k, label]) => `<label class="setting check"><span>${label}</span>
       <input type="checkbox" data-tg="${k}" ${tg[k] ? 'checked' : ''} ${inGame && !busy ? '' : 'disabled'}></label>`).join('')}
     <div class="setting"><span>H · Limite fotogrammi</span>
-      <div class="segmented">${caps.map((c) => `<button class="${tg.fpsCap === c ? 'on' : ''}" data-cap="${c}" ${inGame && !busy ? '' : 'disabled'}>${c || 'no'}</button>`).join('')}</div></div>
+      <div class="segmented">${caps.map((c) => `<button class="${tg.fpsCap === c ? 'on' : ''}" data-cap="${c}" ${inGame && !busy ? '' : 'disabled'}>${c || 'profilo'}</button>`).join('')}</div></div>
     <div class="row-btns">
       <button class="pill-btn blue small" data-rec ${inGame && !busy ? '' : 'disabled'}>Registra 60 s</button>
       <button class="pill-btn green small" data-auto ${busy ? 'disabled' : ''}>Prova automatica (~6 min)</button>
@@ -720,7 +720,7 @@ async function openDiagnostics(app, inGame, closeSettings) {
     <div class="row-btns">
       <button class="pill-btn small" data-copy ${d.report ? '' : 'disabled'}>Copia risultati</button>
       <button class="pill-btn small" data-share ${d.report ? '' : 'disabled'}>Condividi file</button>
-      <button class="pill-btn small" data-clearman ${d.manualFrames.length ? '' : 'disabled'}>Azzera manuali</button>
+      <button class="pill-btn small" data-clearman ${d.manualFrames.length && !busy ? '' : 'disabled'}>Azzera manuali</button>
     </div>
   `, { className: 'small diag' });
   const status = el.querySelector('[data-status]');
@@ -773,7 +773,7 @@ function reportLine(rep) {
   // confronto profili: 1% low e P99 di ogni profilo (somma delle ripetizioni); altrimenti il primo caso
   if (rep.perProfilo) return Object.entries(rep.perProfilo).map(([k, v]) => `${k}: 1% ${v?.fps1Low} · P99 ${v?.msP99} ms`).join(' | ');
   const f = rep.fasi || {};
-  const k = f.A ? 'A' : Object.keys(f)[0];
+  const k = rep.ultimoCaso && f[rep.ultimoCaso] ? rep.ultimoCaso : f.A ? 'A' : Object.keys(f).find((x) => x !== 'null');
   const a = f[k];
   return a ? `${Object.keys(f).length} casi · ${k}: ${a.fpsMedio} FPS, 1% low ${a.fps1Low}, P99 ${a.msP99} ms, picchi >50 ms ${a.oltre50ms}` : 'nessun dato';
 }

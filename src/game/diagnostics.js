@@ -111,6 +111,7 @@ export class Diagnostics {
   // La prova automatica se ne accorge da sola (controlla di essere ancora nel suo contratto) e si ferma.
   onMissionEnd() {
     if (this.g.bots.hidden) this.g.bots.setHidden(false);
+    this.g.engine.setHardwareScalingLevel(1 / this.g.scale); // menu alla nitidezza normale (il profilo torna in gioco)
     Object.assign(this.toggles, OFF);
     if (this.g.perf) this.g.perf.light = false;
     if (this.recording) this.finishManual();
@@ -153,11 +154,12 @@ export class Diagnostics {
     if (perf) perf.light = false;
     if (!this.g.perfEl && perf) this.g.disposePerf(); // il contatore non era acceso: si spegne anche il misuratore
     // le registrazioni manuali della sessione si sommano (una per profilo, guidando davvero), fino al limite
+    const keep = frames.filter((f) => f.phase); // solo i fotogrammi misurati (non stabilizzazione e pause)
     const room = REC_MAX_FRAMES - this.manualFrames.length;
-    this.manualFrames.push(...frames.slice(0, Math.max(0, room)));
+    this.manualFrames.push(...keep.slice(0, Math.max(0, room)));
     this.manualInfo ||= {};
-    this.manualInfo[this.manualLabel] = this.renderInfo();
-    this.report = buildReport(this.manualFrames, this.g, { modo: 'manuale', registrazioneTroncata: truncated || room < frames.length, casi: this.manualInfo });
+    if (room > 0 && keep.length) this.manualInfo[this.manualLabel] = this.renderInfo();
+    this.report = buildReport(this.manualFrames, this.g, { modo: 'manuale', registrazioneTroncata: truncated || room < keep.length, casi: this.manualInfo, ultimoCaso: this.manualLabel });
     this.manualDone?.(this.report);
     this.manualDone = null;
   }
@@ -304,7 +306,8 @@ export class Diagnostics {
             return true;
           },
         });
-        all.push(...perf.stopRecording());
+        const rec = perf.stopRecording();
+        if (ok) all.push(...rec); // caso interrotto a meta': escluso dal rapporto (non confrontabile)
         truncated ||= !!perf.recFull;
         this.phaseScale[label] = Math.round(100 / g.engine.getHardwareScalingLevel()) / 100;
         this.phaseInfo[label] = this.renderInfo();
@@ -541,6 +544,14 @@ export function buildReport(frames, g, meta = {}) {
   }
   const perProfilo = {};
   for (const [k, fr] of groups) perProfilo[k] = phaseStats(fr, vsyncMs);
+  // avvisi: limite non raggiunto (es. WebView a 60 Hz: "Fluidita' 40" diventa 30 FPS)
+  const avvisi = [];
+  for (const [label, info] of Object.entries(meta.casi || {})) {
+    const st = fasi[label];
+    if (info?.limiteFps && st && Math.abs(st.fpsMedio - info.limiteFps) > info.limiteFps * 0.1) {
+      avvisi.push(`${label}: limite ${info.limiteFps} FPS ma ${st.fpsMedio} FPS medi (schermo stimato ${hz} Hz)`);
+    }
+  }
   // picchi peggiori (oltre 33 ms) con la loro causa
   const picchi = frames.filter((f) => f.dt > 33.3).sort((a, b) => b.dt - a.dt).slice(0, 40).map((f) => ({
     fase: f.phase, ms: r1(f.dt), logica: r1(f.step), disegno: r1(f.render), ombre: r1(f.shadow || 0), specchietto: r1(f.mirror || 0), fuori: r1(f.gap || 0), cause: f.causes?.join(', ') || '',
@@ -555,6 +566,7 @@ export function buildReport(frames, g, meta = {}) {
     schermoHzStimato: hz, fotogrammaMinimoMs: r1(Math.min(...dtsAll.filter((x) => x > 4), 999)), istogrammaMs: histogram(dtsAll),
     dispositivo: deviceInfo(g),
     grafica: { qualita: g.quality, nitidezza: r1(1 / g.engine.getHardwareScalingLevel()), ombre: !!g.shadowsOn, specchietto: g.settings.mirrors !== false },
+    avvisi: avvisi.length ? avvisi : undefined,
     fasi, perProfilo: Object.keys(perProfilo).length ? perProfilo : undefined, picchi,
     fotogrammiCsv: csv,
   };
