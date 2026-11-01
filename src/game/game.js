@@ -191,17 +191,31 @@ export class Game {
   // Riga 1: FPS medio, minimo e 1% low della stessa finestra (ultimi 10 s di gioco, senza menu/pausa/caricamento)
   // Riga 2: tempo per fotogramma (medio, 99°, massimo) e da cosa e' fatto (logica, disegno con ombre e specchietto)
   // Grafico: tempi dei fotogrammi (barre rosse = picchi), linee a 16,7 / 33 / 50 ms. Sotto: ultimi picchi e causa.
+  // Misuratore (contatore e registratore diagnostico lo condividono)
+  ensurePerf() {
+    if (this.perf) return this.perf;
+    this.perf = new PerfMonitor(this.scene, this.engine);
+    this.onPerfVisibility = () => this.perf?.reset();
+    document.addEventListener('visibilitychange', this.onPerfVisibility);
+    return this.perf;
+  }
+
+  disposePerf() {
+    this.perf?.dispose();
+    this.perf = null;
+    document.removeEventListener('visibilitychange', this.onPerfVisibility || (() => {}));
+  }
+
   setPerfOverlay(on) {
     this.perfEl?.remove();
     this.perfEl = null;
     clearInterval(this.perfTimer);
-    this.perf?.dispose();
-    this.perf = null;
-    document.removeEventListener('visibilitychange', this.onPerfVisibility || (() => {}));
-    if (!on) return;
-    this.perf = new PerfMonitor(this.scene, this.engine);
-    this.onPerfVisibility = () => this.perf?.reset();
-    document.addEventListener('visibilitychange', this.onPerfVisibility);
+    if (!on) {
+      // durante una registrazione diagnostica il misuratore resta acceso (si toglie solo il riquadro)
+      if (!this.diag?.recording) this.disposePerf();
+      return;
+    }
+    this.ensurePerf();
     const el = document.createElement('div');
     el.className = 'perf-overlay';
     el.innerHTML = '<div data-l1></div><div data-l2></div><canvas width="300" height="56"></canvas><div data-sp></div>';
@@ -323,6 +337,7 @@ export class Game {
   }
 
   stopMission() {
+    this.diag?.reset(); // gli interruttori diagnostici valgono solo per il contratto in corso
     this.envFx?.apply('day', 'clear'); // menu sempre di giorno col sereno
     this.clearFadedWalls();
     this.rearview?.dispose();
@@ -344,6 +359,7 @@ export class Game {
 
   // Risoluzione dinamica (mai sopra il massimo del livello grafico, mai sotto i punti CSS dello schermo)
   adaptResolution(realDt) {
+    if (this.diag?.resolutionLocked()) return; // diagnostica: risoluzione bloccata o ridotta a mano
     // Controllo ogni secondo sulla mediana: sotto 45 FPS scende subito, sotto 52 per 2 secondi scende un po',
     // sopra 58 per 4 secondi sale un po'. La nitidezza raggiunta viene ricordata per la prossima volta.
     this.frameTimes ||= [];
@@ -377,7 +393,16 @@ export class Game {
   }
 
   frame() {
-    const realDt = Math.min(0.25, this.engine.getDeltaTime() / 1000);
+    // Diagnostica (solo build di prova): limite fotogrammi costante. I giri di schermo in piu' si saltano interi
+    // e il tempo vero si misura dall'ultimo fotogramma disegnato.
+    let realDt = Math.min(0.25, this.engine.getDeltaTime() / 1000);
+    const cap = this.diag?.toggles.fpsCap;
+    if (cap) {
+      const now = performance.now();
+      if (this.capLast && now - this.capLast < 1000 / cap - 3) return;
+      if (this.capLast) realDt = Math.min(0.25, (now - this.capLast) / 1000);
+      this.capLast = now;
+    } else this.capLast = null;
     const perf = this.perf;
     perf?.frameStart(this.mode === 'play' && !this.paused);
     this.adaptResolution(realDt);

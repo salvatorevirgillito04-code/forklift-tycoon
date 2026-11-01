@@ -16,6 +16,8 @@ import { SceneInstrumentation } from '@babylonjs/core/Instrumentation/sceneInstr
 const WINDOW_MS = 10000;
 const SPIKE_MS = 50;
 const MAX_SPIKES = 40;
+// Registrazione (diagnostica): al massimo questi fotogrammi (circa 2 minuti a 120 FPS), poi si ferma da sola
+export const REC_MAX_FRAMES = 15000;
 
 export class PerfMonitor {
   constructor(scene, engine) {
@@ -37,6 +39,29 @@ export class PerfMonitor {
     this.events = new Set(); // eventi segnalati dal gioco in questo fotogramma (es. 'risoluzione')
     this.lastHeap = performance.memory?.usedJSHeapSize ?? null;
     this.lastEffects = this.effectCount();
+    // Modalita' leggera: solo i tempi dei fotogrammi (niente cronometri su ombre/specchietto, niente controllo
+    // di oggetti, shader e memoria). Serve a misurare quanto pesa la misura dettagliata stessa.
+    this.light = false;
+    // Registrazione: fotogrammi con l'etichetta della fase in corso (phase = null: non si registra)
+    this.rec = null;
+    this.phase = null;
+  }
+
+  startRecording() {
+    this.rec = [];
+    this.phase = null;
+  }
+
+  stopRecording() {
+    const r = this.rec;
+    this.rec = null;
+    this.phase = null;
+    return r || [];
+  }
+
+  // fase della registrazione (etichetta) o null per non registrare (es. stabilizzazione dopo un cambio)
+  setPhase(label) {
+    this.phase = label;
   }
 
   dispose() {
@@ -105,6 +130,15 @@ export class PerfMonitor {
       this.cur = null;
       return;
     }
+    if (this.light) {
+      // solo il tempo tra un fotogramma e l'altro, piu' logica e disegno (due letture dell'orologio)
+      const prev = this.prevDetail;
+      if (prev && this.prevStart !== null) { prev.gap = now - this.lastEnd; this.push(now, now - this.prevStart, prev); }
+      this.prevDetail = null;
+      this.cur = { step: 0, render: 0, shadow: 0, mirror: 0, causes: [], light: true };
+      this.prevStart = now;
+      return;
+    }
     const prev = this.prevDetail;
     if (prev && this.prevStart !== null) {
       prev.gap = now - this.lastEnd;
@@ -126,6 +160,7 @@ export class PerfMonitor {
     const c = this.cur;
     this.lastEnd = performance.now();
     if (!c) return;
+    if (c.light) { this.prevDetail = c; this.cur = null; return; }
     this.collectCauses(c.causes);
     c.eval = this.instr.activeMeshesEvaluationTimeCounter.current;
     c.draws = this.instr.drawCallsCounter.current;
@@ -136,6 +171,9 @@ export class PerfMonitor {
   push(t, dt, d) {
     const f = { t, dt, ...d };
     this.frames.push(f);
+    if (this.rec && this.phase !== null) {
+      if (this.rec.length < REC_MAX_FRAMES) { f.phase = this.phase; this.rec.push(f); } else this.recFull = true;
+    }
     while (this.frames.length && this.frames[0].t < t - WINDOW_MS) this.frames.shift();
     const med = this.median();
     if (dt > SPIKE_MS || (med && dt > med * 2.5 && dt > 25)) {

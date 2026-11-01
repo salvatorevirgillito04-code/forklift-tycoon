@@ -96,6 +96,8 @@ export class WorkerBots {
       if (this.pickTimer === 0.5) this.lod(bot, player);
       if (bot.truck) this.driveTruck(bot, dt, player);
       this.work(bot, dt, player);
+      // diagnostica (solo build di prova): operai invisibili, il lavoro continua uguale
+      if (this.hidden) for (const n of this.botNodes(bot)) if (n.isEnabled(false)) n.setEnabled(false);
     }
   }
 
@@ -141,6 +143,16 @@ export class WorkerBots {
     // Al massimo 6 nascosti: oltre si libera la memoria dei piu' vecchi
     while (this.parked.size > 6) this.remove(this.parked.keys().next().value);
     return builds;
+  }
+
+  // Diagnostica (solo build di prova): nasconde o rimostra la grafica degli operai; logica e collisioni invariate
+  setHidden(on) {
+    this.hidden = on;
+    for (const bot of this.bots.values()) {
+      if (!bot.ready) continue;
+      for (const n of this.botNodes(bot)) n.setEnabled(!on);
+      if (!on && bot.truck) this.placeTruck(bot);
+    }
   }
 
   // Aspetta il prossimo fotogramma disegnato (per distribuire la costruzione degli operai). Le attese sono in fila:

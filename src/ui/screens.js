@@ -627,7 +627,8 @@ export function openSettings(app, { inGame = false, onClose } = {}) {
     <label class="setting check" data-mirrors><span>${t('mirrors')}</span>
       <input type="checkbox" ${s.mirrors !== false ? 'checked' : ''}></label>
     ${TEST_BUILD ? `<label class="setting check" data-perf-test><span>${t('perfOverlay')}</span>
-      <input type="checkbox" ${app.game.perfEl ? 'checked' : ''}></label>` : ''}
+      <input type="checkbox" ${app.game.perfEl ? 'checked' : ''}></label>
+      <button class="pill-btn purple small" data-diag>Diagnostica prestazioni</button>` : ''}
     ${dev.on ? `<button class="pill-btn purple" data-dev>${ICONS.gear}${t('devMenu')}</button>` : ''}
     ${inGame
     ? `<div class="row-btns"><button class="pill-btn red" data-exit>${t('exitMission')}</button><button class="pill-btn green" data-resume>${t('resume')}</button></div>`
@@ -653,6 +654,7 @@ export function openSettings(app, { inGame = false, onClose } = {}) {
     s.mirrors = e.target.checked;
     apply();
   });
+  el.querySelector('[data-diag]')?.addEventListener('click', () => openDiagnostics(app, inGame, close));
   // APK di prova: contatore prestazioni (ricordato su questo telefono, fuori dal salvataggio)
   el.querySelector('[data-perf-test] input')?.addEventListener('change', (e) => {
     app.game.setPerfOverlay(e.target.checked);
@@ -687,6 +689,76 @@ export function openSettings(app, { inGame = false, onClose } = {}) {
       app.go('home');
     }
   });
+}
+
+// ---------- DIAGNOSTICA (solo build di prova) ----------
+// Interruttori di isolamento, registrazione manuale, prova automatica ed esportazione dei risultati.
+// Il modulo si carica solo qui: la versione pubblica non mostra mai questo pannello.
+async function openDiagnostics(app, inGame, closeSettings) {
+  if (!TEST_BUILD) return;
+  const { Diagnostics, TOGGLE_INFO } = await import('../game/diagnostics.js');
+  const d = app.game.diag || new Diagnostics(app);
+  const tg = d.toggles;
+  const caps = [0, 60, 40, 30];
+  const { el, close } = openModal(`
+    <h2 class="modal-title">Diagnostica prestazioni</h2>
+    <p class="diag-note">Solo per i test: gli interruttori valgono per il contratto in corso e non vengono salvati.</p>
+    ${Object.entries(TOGGLE_INFO).map(([k, label]) => `<label class="setting check"><span>${label}</span>
+      <input type="checkbox" data-tg="${k}" ${tg[k] ? 'checked' : ''} ${inGame || k === 'light' ? '' : 'disabled'}></label>`).join('')}
+    <div class="setting"><span>H · Limite fotogrammi</span>
+      <div class="segmented">${caps.map((c) => `<button class="${tg.fpsCap === c ? 'on' : ''}" data-cap="${c}" ${inGame ? '' : 'disabled'}>${c || 'no'}</button>`).join('')}</div></div>
+    <div class="row-btns">
+      <button class="pill-btn blue small" data-rec ${inGame ? '' : 'disabled'}>Registra 60 s</button>
+      <button class="pill-btn green small" data-auto>Prova automatica (~6 min)</button>
+    </div>
+    <p class="diag-status" data-status>${d.report ? reportLine(d.report) : (inGame ? '' : 'Interruttori e registrazione manuale: durante un contratto.')}</p>
+    <div class="row-btns">
+      <button class="pill-btn small" data-copy ${d.report ? '' : 'disabled'}>Copia risultati</button>
+      <button class="pill-btn small" data-share ${d.report ? '' : 'disabled'}>Condividi file</button>
+    </div>
+  `, { className: 'small diag' });
+  const status = el.querySelector('[data-status]');
+  const enableExport = () => el.querySelectorAll('[data-copy], [data-share]').forEach((b) => { b.disabled = !d.report; });
+  el.querySelectorAll('[data-tg]').forEach((c) => c.addEventListener('change', () => d.set({ [c.dataset.tg]: c.checked })));
+  el.querySelectorAll('[data-cap]').forEach((b) => b.addEventListener('click', () => {
+    d.set({ fpsCap: +b.dataset.cap });
+    el.querySelectorAll('[data-cap]').forEach((x) => x.classList.toggle('on', x === b));
+  }));
+  el.querySelector('[data-rec]').addEventListener('click', () => {
+    // si chiude tutto e si torna a giocare: la registrazione parte subito e dura 60 s
+    close();
+    closeSettings?.();
+    toast('Registrazione: 60 s di gioco', 'good');
+    d.recordFor(60, (rep) => toast(`Registrazione finita: ${reportLine(rep)}`, 'good'));
+  });
+  el.querySelector('[data-auto]').addEventListener('click', () => {
+    close();
+    closeSettings?.();
+    const box = document.createElement('div');
+    box.className = 'diag-run';
+    box.innerHTML = '<span data-s>Prova automatica…</span><button class="pill-btn red small">Interrompi</button>';
+    document.querySelector('#app').appendChild(box);
+    box.querySelector('button').addEventListener('click', () => d.cancel());
+    d.runAuto((txt) => { box.querySelector('[data-s]').textContent = txt; }, (rep) => {
+      box.remove();
+      toast(`Prova automatica finita: apri Impostazioni → Diagnostica per copiare i risultati`, 'good');
+      d.report = rep;
+    }).catch((err) => { box.remove(); toast(String(err.message || err), 'bad'); });
+  });
+  el.querySelector('[data-copy]').addEventListener('click', async () => {
+    status.textContent = (await d.copy()) ? 'Riepilogo copiato negli appunti: incollalo nella chat.' : 'Copia non riuscita: usa "Condividi file".';
+  });
+  el.querySelector('[data-share]').addEventListener('click', async () => {
+    try { await d.share(); status.textContent = 'File pronto.'; } catch (err) { status.textContent = `Condivisione non riuscita: ${err.message || err}`; }
+  });
+  enableExport();
+}
+
+function reportLine(rep) {
+  const f = rep.fasi || {};
+  const k = Object.keys(f)[0];
+  const a = f.A || f[k];
+  return a ? `${Object.keys(f).length} casi · ${k === 'A' || f.A ? 'A' : k}: ${a.fpsMedio} FPS, 1% low ${a.fps1Low}, P99 ${a.msP99} ms, picchi >50 ms ${a.oltre50ms}` : 'nessun dato';
 }
 
 // ---------- MENU SVILUPPATORE ----------
