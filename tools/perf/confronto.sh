@@ -25,7 +25,8 @@ import base from './vite.config.js';
 const cfg = typeof base === 'function' ? base({ command: 'serve', mode: 'development' }) : base;
 export default { ...cfg, cacheDir: '.vite-confronto-cache' };
 CFG
-(cd "$DIR" && nohup npx vite --config vite.confronto.config.js --port "$PORT" --strictPort > "$DIR/vite.log" 2>&1 &)
+# staccato dal terminale (setsid, ingresso e uscite su file): altrimenti chi legge l'uscita di questo script resta in attesa
+(cd "$DIR" && setsid nohup npx vite --config vite.confronto.config.js --port "$PORT" --strictPort < /dev/null > "$DIR/vite.log" 2>&1 &)
 for i in $(seq 1 30); do curl -s -o /dev/null "http://localhost:$PORT/" && break; sleep 1; done
 curl -s -o /dev/null "http://localhost:$PORT/" || { echo "il server non risponde: vedi $DIR/vite.log" >&2; exit 1; }
 echo "$REF ($(git -C "$DIR" rev-parse --short HEAD)) su http://localhost:$PORT/  (log: $DIR/vite.log)"

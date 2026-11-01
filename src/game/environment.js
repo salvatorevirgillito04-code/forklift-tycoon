@@ -387,7 +387,31 @@ export class Environment {
     return this.ground;
   }
 
+  // Materiali del quartiere (fissi uniti, terreno, neve): CONGELATI. Babylon, per ogni materiale non congelato,
+  // ricontrolla e ricostruisce a ogni fotogramma l'elenco delle opzioni dello shader (stringhe, oggetti):
+  // era quasi meta' della memoria allocata per fotogramma (= GC frequenti = scatti). Congelati, quel lavoro
+  // si fa solo quando qualcosa cambia davvero: orario/meteo (apply) e ombre accese o spente (updateShadows).
+  // Le luci (anche i lampi) e la nebbia continuano ad aggiornarsi: Babylon le ricollega a ogni cambio di materiale.
+  staticMaterials() {
+    if (!this.frozenMats) {
+      const set = new Set();
+      for (const m of this.world?.statics || []) if (m.material && !m.isDisposed()) set.add(m.material);
+      for (const g of this.groundMeshes()) set.add(g.mat);
+      set.add(this.snowMat);
+      this.frozenMats = [...set].filter((m) => typeof m.freeze === 'function');
+    }
+    return this.frozenMats;
+  }
+
+  // on = true: congela (e ripreparazione forzata al prossimo fotogramma, con i valori nuovi); false: sblocca
+  setStaticsFrozen(on) {
+    for (const m of this.staticMaterials()) {
+      if (on) { m.freeze(); m.markDirty(true); } else m.unfreeze();
+    }
+  }
+
   apply(time = 'day', weather = 'clear', rainLevel = 'medium') {
+    if (this.snowMat) this.setStaticsFrozen(false); // prima delle modifiche (nel costruttore la neve non esiste ancora)
     this.rainLevel = rainLevel;
     this.rain.mat.setFloat('density', { light: 0.35, medium: 0.65, heavy: 1 }[rainLevel] || 0.65);
     const T = TIMES[time] || TIMES.day, W = WEATHER[weather] || WEATHER.clear;
@@ -463,6 +487,8 @@ export class Environment {
 
   updateShadows() {
     this.sun.shadowEnabled = !!this.shadowsAllowed && this.shadowsWanted !== false;
+    // ombre accese/spente o generatore cambiato (qualita' grafica): i materiali si ripreparano una volta e restano congelati
+    if (this.snowMat) this.setStaticsFrozen(true);
   }
 
   // dentro la qualita' Bassa il cielo fotografico e' spento: lo decide la qualita'

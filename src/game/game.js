@@ -317,7 +317,7 @@ export class Game {
   }
 
   clearFadedWalls() {
-    for (const m of this.fadedWalls || []) m.visibility = 1;
+    for (const m of this.fadedWalls || []) { m.visibility = 1; if (m.material?.isFrozen) m.material.markDirty(); }
     this.fadedWalls = null;
   }
 
@@ -521,8 +521,10 @@ export class Game {
       if (this.wallCheck === 0 || !this.fadedWalls) {
         const hits = this.scene.multiPickWithRay(new Ray(origin, dir.scale(1 / len), len + 0.5), (m) => m.metadata === 'wall') || [];
         const faded = new Set(hits.map((h) => h.pickedMesh));
-        for (const m of this.fadedWalls || []) if (!faded.has(m)) m.visibility = 1;
-        for (const m of faded) m.visibility = 0.25;
+        // materiale congelato: va avvisato quando il muro diventa (o smette di essere) trasparente
+        const vis = (m, v) => { if (m.visibility !== v) { m.visibility = v; if (m.material?.isFrozen) m.material.markDirty(); } };
+        for (const m of this.fadedWalls || []) if (!faded.has(m)) vis(m, 1);
+        for (const m of faded) vis(m, 0.25);
         this.fadedWalls = faded;
       }
       const goal = desired;
