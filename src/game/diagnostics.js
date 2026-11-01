@@ -22,6 +22,18 @@ export const TOGGLE_INFO = {
   lockRes: 'G · Risoluzione dinamica bloccata',
   light: 'Registratore leggero (solo tempi)',
 };
+// Profili di prova (solo in memoria: valgono per la sessione, anche nei contratti veri, e tornano "Originale"
+// alla chiusura dell'app; le impostazioni dell'utente non cambiano). res = nitidezza fissa (1 = pixel dello schermo
+// in punti CSS, 1.3 = 30% in piu'); null = risoluzione dinamica come oggi. Grafica, specchietto, neve, luci e
+// operai restano quelli delle impostazioni.
+export const PROFILES = {
+  originale: { nome: 'Originale', cap: 0, res: null },
+  f40: { nome: 'Fluidità 40', cap: 40, res: 1 },
+  f60: { nome: 'Fluidità 60', cap: 60, res: 1 },
+  f60hd: { nome: 'Fluidità 60 HD', cap: 60, res: 1.3 },
+};
+// confronto automatico: due giri in ordine opposto (il secondo compensa il riscaldamento del telefono)
+const PROFILE_ORDER = ['originale', 'f40', 'f60', 'f60hd', 'f60hd', 'f60', 'f40', 'originale'];
 const STAB_S = 5; // secondi di stabilizzazione prima di ogni misura (non registrati)
 const MEASURE_S = 20; // secondi registrati per ogni caso
 // operai di prova: solo in memoria per la durata della prova, mai nel salvataggio
@@ -34,6 +46,8 @@ export class Diagnostics {
     this.g = app.game;
     this.g.diag = this;
     this.toggles = { ...OFF };
+    this.profile = 'originale'; // profilo di prova della sessione (mai salvato)
+    this.manualFrames = []; // registrazioni manuali della sessione, sommate in un unico rapporto
     this.recording = false; // registrazione manuale in corso
     this.running = false; // prova automatica in corso
     this.report = null;
@@ -41,14 +55,24 @@ export class Diagnostics {
 
   // qualcosa di diagnostico e' attivo: la nitidezza trovata dalla risoluzione dinamica non va ricordata
   get active() {
-    return this.running || this.recording || Object.keys(OFF).some((k) => this.toggles[k] !== OFF[k]);
+    return this.running || this.recording || this.profile !== 'originale' || Object.keys(OFF).some((k) => this.toggles[k] !== OFF[k]);
+  }
+
+  // limite fotogrammi in vigore: interruttore H, altrimenti quello del profilo
+  fpsCap() {
+    return this.toggles.fpsCap || PROFILES[this.profile].cap;
+  }
+
+  setProfile(id) {
+    this.profile = PROFILES[id] ? id : 'originale';
+    this.applyAll();
   }
 
   // ---------- interruttori ----------
   // Risoluzione dinamica ferma: bloccata (G), ridotta (F), e col limite fotogrammi (H: il confronto e' sulla
   // regolarita' a parita' di risoluzione; altrimenti a 30-40 FPS la risoluzione scenderebbe da sola)
   resolutionLocked() {
-    return this.toggles.lockRes || this.toggles.lowRes || this.toggles.fpsCap > 0;
+    return this.toggles.lockRes || this.toggles.lowRes || this.fpsCap() > 0 || PROFILES[this.profile].res !== null;
   }
 
   set(changes) {
@@ -64,7 +88,9 @@ export class Diagnostics {
     g.envFx?.setShadowsAllowed(!t.noShadows && g.shadowsOn);
     this.applyPrecip();
     if (!!g.bots.hidden !== t.hideBots) g.bots.setHidden(t.hideBots);
-    g.engine.setHardwareScalingLevel(1 / (g.scale * (t.lowRes ? 0.6 : 1)));
+    // nitidezza: fissa del profilo, ridotta (F), oppure quella della risoluzione dinamica
+    const res = PROFILES[this.profile].res;
+    g.engine.setHardwareScalingLevel(1 / ((res ?? g.scale) * (t.lowRes ? 0.6 : 1)));
     if (g.perf) g.perf.light = t.light;
   }
 
@@ -107,7 +133,7 @@ export class Diagnostics {
     perf.setPhase(null);
     this.recording = true;
     this.manualDone = onDone;
-    this.manualLabel = this.label();
+    this.manualLabel = `manuale·${PROFILES[this.profile].nome}${this.label() === 'A' ? '' : '·' + this.label()}`;
     let stab = 3, left = seconds;
     this.recTimer = setInterval(() => {
       if (!this.live()) { perf.setPhase(null); stab = Math.max(stab, 2); return; }
@@ -126,9 +152,29 @@ export class Diagnostics {
     this.recording = false;
     if (perf) perf.light = false;
     if (!this.g.perfEl && perf) this.g.disposePerf(); // il contatore non era acceso: si spegne anche il misuratore
-    this.report = buildReport(frames, this.g, { modo: 'manuale', registrazioneTroncata: truncated });
+    // le registrazioni manuali della sessione si sommano (una per profilo, guidando davvero), fino al limite
+    const room = REC_MAX_FRAMES - this.manualFrames.length;
+    this.manualFrames.push(...frames.slice(0, Math.max(0, room)));
+    this.manualInfo ||= {};
+    this.manualInfo[this.manualLabel] = this.renderInfo();
+    this.report = buildReport(this.manualFrames, this.g, { modo: 'manuale', registrazioneTroncata: truncated || room < frames.length, casi: this.manualInfo });
     this.manualDone?.(this.report);
     this.manualDone = null;
+  }
+
+  clearManual() {
+    this.manualFrames = [];
+    this.manualInfo = {};
+  }
+
+  // risoluzione effettiva di disegno e impostazioni grafiche in questo momento (per il rapporto)
+  renderInfo() {
+    const g = this.g, e = g.engine;
+    return {
+      profilo: PROFILES[this.profile].nome, limiteFps: this.fpsCap() || null,
+      disegno: `${e.getRenderWidth()}x${e.getRenderHeight()}`, nitidezza: Math.round(100 / e.getHardwareScalingLevel()) / 100,
+      grafica: g.quality, ombre: !!g.sun?.shadowEnabled, specchietto: g.scene.customRenderTargets.some((x) => /rearview/i.test(x.name)),
+    };
   }
 
   label() {
@@ -182,8 +228,16 @@ export class Diagnostics {
   }
 
   // onStatus(testo) durante la prova, onDone(report) alla fine (anche se interrotta: con le fasi fatte)
-  async runAuto(onStatus, onDone) {
+  // Confronto dei 4 profili: due giri in ordine opposto, stessi tempi della prova automatica
+  profilePhases() {
+    const seen = {};
+    return PROFILE_ORDER.map((id) => { seen[id] = (seen[id] || 0) + 1; return [`${PROFILES[id].nome}#${seen[id]}`, {}, null, id]; });
+  }
+
+  async runAuto(onStatus, onDone, phaseList = null) {
     if (this.running || this.recording) return;
+    const phasesToRun = phaseList || this.phases();
+    const userProfile = this.profile;
     const app = this.app, g = this.g;
     this.cancelled = false;
     if (g.mode === 'play') app.exitMission();
@@ -199,6 +253,7 @@ export class Diagnostics {
       if (g.frameTimes) g.frameTimes.length = 0;
     };
     this.phaseScale = {};
+    this.phaseInfo = {};
     try {
       onStatus?.('Avvio del contratto di prova (notte, neve, 6 operai di prova)…');
       // guida libera: non finisce mai e non da' ricompense; l'uscita non salva nulla
@@ -219,10 +274,12 @@ export class Diagnostics {
       onStatus?.('Giro di riscaldamento (non misurato)…');
       this.place();
       if (!(await this.waitLive(MEASURE_S + STAB_S))) throw new Error('stop');
-      const phases = this.phases();
-      for (const [i, [label, toggles, sky]] of phases.entries()) {
+      const phases = phasesToRun;
+      for (const [i, [label, toggles, sky, profile]] of phases.entries()) {
+        this.profile = profile || 'originale';
         this.reset();
         setScale();
+        this.applyAll();
         if (sky && (g.envFx.time !== sky.time || g.envFx.weather !== sky.weather)) {
           g.envFx.apply(sky.time, sky.weather);
           this.applyAll();
@@ -250,6 +307,7 @@ export class Diagnostics {
         all.push(...perf.stopRecording());
         truncated ||= !!perf.recFull;
         this.phaseScale[label] = Math.round(100 / g.engine.getHardwareScalingLevel()) / 100;
+        this.phaseInfo[label] = this.renderInfo();
         if (!ok) break;
         done.push(label);
       }
@@ -263,6 +321,7 @@ export class Diagnostics {
       if (perf) perf.light = false;
       const own = this.ownMission();
       Object.assign(this.toggles, OFF);
+      this.profile = userProfile; // il profilo scelto dall'utente torna quello di prima
       if (own) {
         setScale();
         app.exitMission(); // uscita dal SOLO contratto di prova: interruttori annullati, operai di prova rimossi
@@ -271,13 +330,14 @@ export class Diagnostics {
       }
       this.running = false;
       if (!g.perfEl) g.disposePerf();
-      const expected = this.phases().map((p) => p[0]);
+      const expected = phasesToRun.map((p) => p[0]);
       this.report = buildReport(all, g, {
         modo: 'automatico', completa: done.length === expected.length,
         fasiPreviste: expected, fasiCompletate: done, interruzioni: interrupted,
         registrazioneTroncata: truncated, riposizionamenti: this.replaced,
-        nitidezzaIniziale: Math.round(scale0 * 100) / 100, nitidezzaFineCaso: this.phaseScale,
-        nota: 'Nei casi H il tempo "fuori" comprende l\'attesa del limite fotogrammi. Nei casi H, F, G la risoluzione dinamica e\' ferma.',
+        nitidezzaIniziale: Math.round(scale0 * 100) / 100, nitidezzaFineCaso: this.phaseScale, casi: this.phaseInfo,
+        tipoProva: phaseList ? 'confronto profili' : 'isolamento',
+        nota: 'Nei casi H e nei profili con limite il tempo "fuori" comprende l\'attesa del limite fotogrammi. Con limite, F, G o profilo Fluidita\' la risoluzione dinamica e\' ferma.',
       });
       onDone?.(this.report);
     }
@@ -471,6 +531,16 @@ export function buildReport(frames, g, meta = {}) {
   }
   const fasi = {};
   for (const [label, fr] of byPhase) fasi[label] = phaseStats(fr, vsyncMs);
+  // casi ripetuti (es. "Fluidità 60#1" e "#2"): anche il totale delle ripetizioni
+  const groups = new Map();
+  for (const f of frames) {
+    if (!String(f.phase).includes('#')) continue;
+    const k = String(f.phase).split('#')[0];
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(f);
+  }
+  const perProfilo = {};
+  for (const [k, fr] of groups) perProfilo[k] = phaseStats(fr, vsyncMs);
   // picchi peggiori (oltre 33 ms) con la loro causa
   const picchi = frames.filter((f) => f.dt > 33.3).sort((a, b) => b.dt - a.dt).slice(0, 40).map((f) => ({
     fase: f.phase, ms: r1(f.dt), logica: r1(f.step), disegno: r1(f.render), ombre: r1(f.shadow || 0), specchietto: r1(f.mirror || 0), fuori: r1(f.gap || 0), cause: f.causes?.join(', ') || '',
@@ -485,7 +555,7 @@ export function buildReport(frames, g, meta = {}) {
     schermoHzStimato: hz, fotogrammaMinimoMs: r1(Math.min(...dtsAll.filter((x) => x > 4), 999)), istogrammaMs: histogram(dtsAll),
     dispositivo: deviceInfo(g),
     grafica: { qualita: g.quality, nitidezza: r1(1 / g.engine.getHardwareScalingLevel()), ombre: !!g.shadowsOn, specchietto: g.settings.mirrors !== false },
-    fasi, picchi,
+    fasi, perProfilo: Object.keys(perProfilo).length ? perProfilo : undefined, picchi,
     fotogrammiCsv: csv,
   };
 }

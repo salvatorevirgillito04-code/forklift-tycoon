@@ -697,14 +697,16 @@ export function openSettings(app, { inGame = false, onClose } = {}) {
 async function openDiagnostics(app, inGame, closeSettings) {
   // condizione scritta qui (sostituita alla compilazione): nella build pubblica il modulo non viene neanche incluso
   if (import.meta.env.VITE_TEST_BUILD !== '1') return;
-  const { Diagnostics, TOGGLE_INFO } = await import('../game/diagnostics.js');
+  const { Diagnostics, TOGGLE_INFO, PROFILES } = await import('../game/diagnostics.js');
   const d = app.game.diag || new Diagnostics(app);
   const tg = d.toggles;
   const busy = d.running || d.recording; // una sola misura alla volta
   const caps = [0, 60, 40, 30];
   const { el, close } = openModal(`
     <h2 class="modal-title">Diagnostica prestazioni</h2>
-    <p class="diag-note">Solo per i test: gli interruttori valgono per il contratto in corso e non vengono salvati.</p>
+    <p class="diag-note">Solo per i test: gli interruttori valgono per il contratto in corso, il profilo per questa sessione. Niente viene salvato.</p>
+    <div class="setting"><span>Profilo di prova</span>
+      <div class="segmented wrap">${Object.entries(PROFILES).map(([id, p]) => `<button class="${d.profile === id ? 'on' : ''}" data-prof="${id}" ${busy ? 'disabled' : ''}>${p.nome}</button>`).join('')}</div></div>
     ${Object.entries(TOGGLE_INFO).map(([k, label]) => `<label class="setting check"><span>${label}</span>
       <input type="checkbox" data-tg="${k}" ${tg[k] ? 'checked' : ''} ${inGame && !busy ? '' : 'disabled'}></label>`).join('')}
     <div class="setting"><span>H · Limite fotogrammi</span>
@@ -712,16 +714,23 @@ async function openDiagnostics(app, inGame, closeSettings) {
     <div class="row-btns">
       <button class="pill-btn blue small" data-rec ${inGame && !busy ? '' : 'disabled'}>Registra 60 s</button>
       <button class="pill-btn green small" data-auto ${busy ? 'disabled' : ''}>Prova automatica (~6 min)</button>
+      <button class="pill-btn green small" data-autoprof ${busy ? 'disabled' : ''}>Confronto profili (~5 min)</button>
     </div>
     <p class="diag-status" data-status>${busy ? (d.running ? 'Prova automatica in corso.' : 'Registrazione in corso.') : d.report ? reportLine(d.report) : (inGame ? '' : 'Interruttori e registrazione manuale: durante un contratto.')}</p>
     <div class="row-btns">
       <button class="pill-btn small" data-copy ${d.report ? '' : 'disabled'}>Copia risultati</button>
       <button class="pill-btn small" data-share ${d.report ? '' : 'disabled'}>Condividi file</button>
+      <button class="pill-btn small" data-clearman ${d.manualFrames.length ? '' : 'disabled'}>Azzera manuali</button>
     </div>
   `, { className: 'small diag' });
   const status = el.querySelector('[data-status]');
   const enableExport = () => el.querySelectorAll('[data-copy], [data-share]').forEach((b) => { b.disabled = !d.report; });
   el.querySelectorAll('[data-tg]').forEach((c) => c.addEventListener('change', () => d.set({ [c.dataset.tg]: c.checked })));
+  el.querySelectorAll('[data-prof]').forEach((b) => b.addEventListener('click', () => {
+    d.setProfile(b.dataset.prof);
+    el.querySelectorAll('[data-prof]').forEach((x) => x.classList.toggle('on', x === b));
+  }));
+  el.querySelector('[data-clearman]').addEventListener('click', (e) => { d.clearManual(); e.target.disabled = true; status.textContent = 'Registrazioni manuali azzerate.'; });
   el.querySelectorAll('[data-cap]').forEach((b) => b.addEventListener('click', () => {
     d.set({ fpsCap: +b.dataset.cap });
     el.querySelectorAll('[data-cap]').forEach((x) => x.classList.toggle('on', x === b));
@@ -732,7 +741,7 @@ async function openDiagnostics(app, inGame, closeSettings) {
     closeSettings?.();
     if (d.recordFor(60, (rep) => toast(`Registrazione finita: ${reportLine(rep)}`, 'good'))) toast('Registrazione: 3 s di stabilizzazione, poi 60 s di gioco', 'good');
   });
-  el.querySelector('[data-auto]').addEventListener('click', async () => {
+  const startAuto = async (profiles) => {
     if (d.running || d.recording) return;
     // la prova esce dal contratto in corso: chiede prima (il contratto si perde, senza ricompensa)
     if (inGame && !(await confirmDialog('La prova automatica chiude il contratto in corso (senza ricompensa). Continuare?'))) return;
@@ -747,8 +756,10 @@ async function openDiagnostics(app, inGame, closeSettings) {
       box.remove();
       toast(rep.completa ? 'Prova automatica finita: Impostazioni → Diagnostica per copiare i risultati'
         : `Prova interrotta (${rep.fasiCompletate.length} casi su ${rep.fasiPreviste.length}): risultati salvati in Diagnostica`, rep.completa ? 'good' : 'warn');
-    }).catch((err) => { box.remove(); toast(String(err.message || err), 'bad'); });
-  });
+    }, profiles ? d.profilePhases() : null).catch((err) => { box.remove(); toast(String(err.message || err), 'bad'); });
+  };
+  el.querySelector('[data-auto]').addEventListener('click', () => startAuto(false));
+  el.querySelector('[data-autoprof]').addEventListener('click', () => startAuto(true));
   el.querySelector('[data-copy]').addEventListener('click', async () => {
     status.textContent = (await d.copy()) ? 'Riepilogo copiato negli appunti: incollalo nella chat.' : 'Copia non riuscita: usa "Condividi file".';
   });
@@ -759,10 +770,12 @@ async function openDiagnostics(app, inGame, closeSettings) {
 }
 
 function reportLine(rep) {
+  // confronto profili: 1% low e P99 di ogni profilo (somma delle ripetizioni); altrimenti il primo caso
+  if (rep.perProfilo) return Object.entries(rep.perProfilo).map(([k, v]) => `${k}: 1% ${v?.fps1Low} · P99 ${v?.msP99} ms`).join(' | ');
   const f = rep.fasi || {};
-  const k = Object.keys(f)[0];
-  const a = f.A || f[k];
-  return a ? `${Object.keys(f).length} casi · ${k === 'A' || f.A ? 'A' : k}: ${a.fpsMedio} FPS, 1% low ${a.fps1Low}, P99 ${a.msP99} ms, picchi >50 ms ${a.oltre50ms}` : 'nessun dato';
+  const k = f.A ? 'A' : Object.keys(f)[0];
+  const a = f[k];
+  return a ? `${Object.keys(f).length} casi · ${k}: ${a.fpsMedio} FPS, 1% low ${a.fps1Low}, P99 ${a.msP99} ms, picchi >50 ms ${a.oltre50ms}` : 'nessun dato';
 }
 
 // ---------- MENU SVILUPPATORE ----------

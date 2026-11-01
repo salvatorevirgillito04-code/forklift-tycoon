@@ -315,6 +315,7 @@ export class Game {
     // Materiali e shader compilati prima di iniziare (la prima comparsa di un materiale costa un attimo)
     await Promise.race([this.scene.whenReadyAsync(), new Promise((r) => setTimeout(r, 4000))]);
     this.mode = 'play';
+    this.diag?.applyAll(); // profilo di prova della sessione (solo build diagnostica)
     if (this.mission.drive) this.hud.toast(t('truckArriving'));
     Sentry.addBreadcrumb({ category: 'mission', message: `start ${contract.type} lv${contract.level}` });
   }
@@ -398,7 +399,7 @@ export class Game {
     // Diagnostica (solo build di prova): limite fotogrammi costante. I giri di schermo in piu' si saltano interi
     // e il tempo vero si misura dall'ultimo fotogramma disegnato.
     let realDt = Math.min(0.25, this.engine.getDeltaTime() / 1000);
-    const cap = this.diag?.toggles.fpsCap;
+    const cap = this.diag?.fpsCap(); // interruttore H o profilo di prova
     if (cap) {
       const now = performance.now();
       if (this.capLast && now - this.capLast < 1000 / cap - 3) return;
