@@ -64,12 +64,18 @@ const opts = {
   // Misura deterministica: il ciclo di gioco viene fermato e ogni fotogramma (passo da 1/60 s) e' eseguito dallo
   // script; tra un fotogramma e l'altro si aspetta che la GPU finisca, e si cronometra solo il lavoro JavaScript.
   // Stesso percorso e stessi tempi a ogni esecuzione: i confronti tra versioni sono affidabili.
+  await cdp.send('Profiler.enable');
+  await cdp.send('Profiler.setSamplingInterval', { interval: 200 });
+  await cdp.send('Profiler.start');
   const r = await p.evaluate(async (o) => {
     const g = window.__app.game, eng = g.engine;
     eng.stopRenderLoop();
     const gl = eng._gl;
-    const times = [], steps = [], renders = [], mirrors = [], events = [];
+    const times = [], steps = [], renders = [], mirrors = [], events = [], win = [];
     let lastHeap = performance.memory.usedJSHeapSize, gcs = 0;
+    const fx = () => Object.keys(eng._compiledEffects || {}).length;
+    let lastFx = fx(), compiles = 0, stalls = 0;
+    const nm = { n: 0 }; const ob = g.scene.onNewMeshAddedObservable.add(() => { nm.n++; });
     const wrapStep = g.step.bind(g), wrapRender = g.scene.render.bind(g.scene);
     let st = 0, rt = 0;
     g.step = (dt) => { const t = performance.now(); wrapStep(dt); st += performance.now() - t; };
@@ -79,22 +85,27 @@ const opts = {
     rtt?.onBeforeRenderObservable.add(() => { mt = performance.now(); });
     rtt?.onAfterRenderObservable.add(() => { mir += performance.now() - mt; });
     const N = o.frames;
+    // fotogrammi senza blocchi lunghi (> 500 ms): sul computer sono la GPU software che compila gli shader
+
     for (let i = 0; i < N; i++) {
-      st = 0; rt = 0; mir = 0;
+      st = 0; rt = 0; mir = 0; nm.n = 0;
       const t0 = performance.now();
       eng.beginFrame();
       eng._deltaTime = 1000 / 60; // passo fisso
       g.frame();
       eng.endFrame();
       const ms = performance.now() - t0;
-      times.push(ms); steps.push(st); renders.push(rt); mirrors.push(mir);
+      times.push(ms); steps.push(st); renders.push(rt); mirrors.push(mir); win.push([t0, t0 + ms]);
       gl.finish(); // la GPU finisce qui, fuori dal tempo misurato
       const h = performance.memory.usedJSHeapSize;
       if (h < lastHeap - 1048576) { gcs++; events.push(`f${i} GC -${((lastHeap - h) / 1048576).toFixed(0)}MB`); }
       lastHeap = h;
-      if (ms > 50) events.push(`f${i} ${ms.toFixed(0)}ms (logica ${st.toFixed(0)}, disegno ${rt.toFixed(0)}, specchio ${mir.toFixed(0)})`);
+      const nf = fx(), newFx = nf - lastFx; lastFx = nf; compiles += Math.max(0, newFx);
+      if (ms > 500) stalls++;
+      if (ms > 50) events.push(`f${i} ${ms.toFixed(0)}ms (logica ${st.toFixed(0)}, disegno ${rt.toFixed(0)}, specchio ${mir.toFixed(0)}${newFx > 0 ? `, shader nuovi ${newFx}` : ''}${nm.n ? `, oggetti nuovi ${nm.n}` : ''})`);
       if (i % 30 === 29) await new Promise((res) => setTimeout(res, 0)); // lascia lavorare il resto (caricamenti asincroni)
     }
+    g.scene.onNewMeshAddedObservable.remove(ob);
     const sorted = [...times].sort((a, b) => a - b);
     const pct = (q) => sorted[Math.min(N - 1, Math.floor(N * q))];
     const avg = (a) => a.reduce((s, x) => s + x, 0) / a.length;
@@ -104,11 +115,41 @@ const opts = {
       jsOltre16: times.filter((x) => x > 16.7).length, jsOltre33: times.filter((x) => x > 33.3).length, jsOltre50: times.filter((x) => x > 50).length,
       fps1lowSoloJs: 1000 / avg(sorted.slice(-Math.max(1, Math.round(N / 100)))),
       logicaMedia: avg(steps), disegnoMedio: avg(renders), specchietto: avg(mirrors),
-      gc: gcs, eventi: events.slice(0, 25),
+      gc: gcs, shaderCompilati: compiles, blocchiOltre500: stalls,
+      eventi: events.filter((e) => /shader|oggetti|GC/.test(e) || +e.split(' ')[1].replace('ms', '') > 300).slice(0, 40),
+      win, nowAtEnd: performance.now(),
       operai: g.bots.bots.size, parcheggiati: g.bots.parked.size, x: g.forklift.x,
     };
   }, { frames: +arg('fotogrammi', 900) });
 
+  // Tempo CPU per fotogramma dal profilatore: codice JavaScript + GC, SENZA le attese dentro le chiamate WebGL
+  // (funzioni native senza file) che con la GPU software del computer sono enormi e casuali.
+  const cpu = (await cdp.send('Profiler.stop')).profile;
+  {
+    const byId = new Map(cpu.nodes.map((n) => [n.id, n]));
+    const endUs = cpu.endTime; // ultimo istante del profilo, allineato con nowAtEnd della pagina
+    let t = cpu.startTime;
+    const samples = cpu.samples.map((id, i) => { t += cpu.timeDeltas[i]; return [t, id]; });
+    const offset = endUs / 1000 - r.nowAtEnd; // ms: tempo del profilatore - performance.now
+    const cpuMs = r.win.map(() => 0);
+    let k = 0, last = samples.length ? samples[0][0] : 0;
+    for (const [ts, id] of samples) {
+      const dt = (ts - last) / 1000; last = ts;
+      const f = byId.get(id).callFrame;
+      const isJs = f.url !== '' || f.functionName === '(garbage collector)';
+      if (!isJs) continue;
+      const tp = ts / 1000 - offset;
+      while (k < r.win.length && r.win[k][1] < tp) k++;
+      if (k < r.win.length && tp >= r.win[k][0]) cpuMs[k] += dt;
+    }
+    const s2 = [...cpuMs].sort((a, b) => a - b), N = s2.length;
+    const pc = (q) => s2[Math.min(N - 1, Math.floor(N * q))];
+    r.cpuMedio = cpuMs.reduce((a, b) => a + b, 0) / N;
+    r.cpuMediana = pc(0.5); r.cpu99 = pc(0.99); r.cpuMax = s2[N - 1];
+    r.cpuOltre16 = cpuMs.filter((x) => x > 16.7).length; r.cpuOltre33 = cpuMs.filter((x) => x > 33.3).length; r.cpuOltre50 = cpuMs.filter((x) => x > 50).length;
+    r.fps1lowCpu = 1000 / (s2.slice(-Math.max(1, Math.round(N / 100))).reduce((a, b) => a + b, 0) / Math.max(1, Math.round(N / 100)));
+  }
+  delete r.win; delete r.nowAtEnd;
   const { profile } = await cdp.send('HeapProfiler.stopSampling');
   let total = 0;
   const walk = (n) => { total += n.selfSize; n.children.forEach(walk); };
