@@ -5,20 +5,25 @@ import { FreeCamera } from '@babylonjs/core/Cameras/freeCamera.js';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 import { Color3 } from '@babylonjs/core/Maths/math.color.js';
 import { Texture } from '@babylonjs/core/Materials/Textures/texture.js';
+import { Frustum } from '@babylonjs/core/Maths/math.frustum.js';
 
 // Specchietto retrovisore mostrato in alto al centro dello schermo (prima e terza persona).
-// Leggero: una sola immagine 256x96 aggiornata a fotogrammi alterni, che disegna solo
-// gli oggetti vicini dietro al muletto (escluso il muletto stesso).
+// Leggero: una piccola immagine aggiornata ogni REFRESH fotogrammi, che disegna solo gli oggetti vicini
+// dentro l'inquadratura dello specchietto (escluso il muletto stesso).
+// Babylon NON scarta da solo gli oggetti fuori dall'inquadratura di un'immagine come questa: li disegna tutti
+// (e per ognuno ricontrolla i materiali), percio' la scelta degli oggetti si fa qui, con l'inquadratura vera.
 const TEX_W = 96; // verticale: piu' alto che largo
 const TEX_H = 144;
 const RANGE = 30; // metri disegnati nello specchietto
+const REFRESH = 3; // aggiornato 1 fotogramma su 3 (20 volte al secondo a 60 FPS): costa un terzo
+const MIN_R = 0.5; // oggetti piu' piccoli (raggio in metri) non si notano in un'immagine cosi' piccola
 const GAP_PX = 10; // distanza dalla minimappa
 const TOP_PX = 8;
 const DIST = 0.5; // distanza del pannello davanti alla camera principale
 
 export function createRearview(scene, mainCam) {
   const rtt = new RenderTargetTexture('rearviewRTT', { width: TEX_W, height: TEX_H }, scene, false);
-  rtt.refreshRate = 2; // a fotogrammi alterni: lo specchietto resta fluido e costa la meta'
+  rtt.refreshRate = REFRESH;
   rtt.renderParticles = false;
   rtt.renderSprites = false;
   rtt.wrapU = Texture.WRAP_ADDRESSMODE;
@@ -34,20 +39,25 @@ export function createRearview(scene, mainCam) {
   const list = [];
   const camPos = new Vector3();
   const back = new Vector3();
+  let planes = null; // piani dell'inquadratura dello specchietto
   rtt.renderList = [];
   // Lista calcolata a ogni aggiornamento: solo oggetti visibili, vicini e dietro al muletto
   rtt.getCustomRenderList = () => {
     list.length = 0;
+    const vp = cam.getViewMatrix(true).multiply(cam.getProjectionMatrix(true));
+    if (!planes) planes = Frustum.GetPlanes(vp);
+    else Frustum.GetPlanesToRef(vp, planes);
     for (const m of scene.meshes) {
       if (m.metadata?.rearview || !m.isEnabled() || !m.isVisible || m.visibility < 1) continue;
       if (root && m.isDescendantOf(root)) continue;
       const bs = m.getBoundingInfo().boundingSphere;
-      if (bs.radiusWorld < 0.3) continue; // pezzi piccoli: invisibili nello specchietto
+      if (bs.radiusWorld < MIN_R) continue; // pezzi piccoli: invisibili nello specchietto
       const dx = bs.centerWorld.x - camPos.x, dz = bs.centerWorld.z - camPos.z;
       const dist = Math.hypot(dx, dz) - bs.radiusWorld;
       if (dist > RANGE) continue;
       // dietro al muletto (con un po' di margine laterale)
       if (dx * back.x + dz * back.z < -bs.radiusWorld - 2) continue;
+      if (!m.isInFrustum(planes)) continue; // fuori dall'inquadratura dello specchietto
       list.push(m);
     }
     return list;
