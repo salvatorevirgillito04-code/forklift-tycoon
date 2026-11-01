@@ -143,6 +143,11 @@ export class WorkerBots {
     return builds;
   }
 
+  // Aspetta il prossimo fotogramma disegnato (per distribuire la costruzione degli operai)
+  nextFrame() {
+    return new Promise((res) => this.scene.onAfterRenderObservable.addOnce(() => res()));
+  }
+
   // Prepara gli operai vicini durante il caricamento della partita (niente blocchi dopo)
   async prewarm(player) {
     this.pickTimer = 0.5;
@@ -226,11 +231,22 @@ export class WorkerBots {
     this.bots.set(worker.id, bot);
     this.env.colliders.push(bot.collider, ...bot.slots.map((s) => s.collider));
 
+    // Un pezzo per fotogramma (muletto, ogni pallet, camion, autista): creati tutti insieme bloccavano il gioco
+    // per un attimo quando ci si avvicinava a un lotto con operai. L'operaio entra in servizio a fine costruzione.
     const build = async () => {
-      await f.build(this.shadowGen);
+      // tutto nascosto finche' l'operaio non e' completo e al suo posto (altrimenti i pezzi pronti si vedrebbero
+      // per qualche fotogramma nel punto in cui nascono)
+      await f.build(this.shadowGen, () => this.nextFrame());
       const pallets = [];
-      for (let i = 0; i < palletCount; i++) pallets.push(await createPalletModel(this.scene, this.mats, { loadHeight: LOAD_H }));
-      const truck = area.type === 'truck' ? await createTruckModel(this.scene, this.mats, '#2f6fb0') : null;
+      for (let i = 0; i < palletCount; i++) {
+        await this.nextFrame();
+        const p = await createPalletModel(this.scene, this.mats, { loadHeight: LOAD_H });
+        p.setEnabled(false);
+        pallets.push(p);
+      }
+      await this.nextFrame();
+      const truck = area.type === 'truck' ? await createTruckModel(this.scene, this.mats, '#2f6fb0', () => this.nextFrame()) : null;
+      await this.nextFrame();
       if (this.bots.get(worker.id) !== bot) {
         f.dispose();
         pallets.forEach((p) => p.dispose());
@@ -257,6 +273,8 @@ export class WorkerBots {
       bot.ready = true;
       this.idle(bot);
       this.place(bot);
+      // pronto e al suo posto: ora si vede (se nel frattempo e' stato parcheggiato resta nascosto)
+      if (this.bots.get(worker.id) === bot) for (const n of this.botNodes(bot)) n.setEnabled(true);
     };
     return build();
   }

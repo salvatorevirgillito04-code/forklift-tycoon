@@ -27,6 +27,6 @@ export default { ...cfg, cacheDir: '.vite-confronto-cache' };
 CFG
 # staccato dal terminale (setsid, ingresso e uscite su file): altrimenti chi legge l'uscita di questo script resta in attesa
 (cd "$DIR" && setsid nohup npx vite --config vite.confronto.config.js --port "$PORT" --strictPort < /dev/null > "$DIR/vite.log" 2>&1 &)
-for i in $(seq 1 30); do curl -s -o /dev/null "http://localhost:$PORT/" && break; sleep 1; done
-curl -s -o /dev/null "http://localhost:$PORT/" || { echo "il server non risponde: vedi $DIR/vite.log" >&2; exit 1; }
+for i in $(seq 1 30); do curl -s -m 5 -o /dev/null "http://localhost:$PORT/" && break; sleep 1; done
+curl -s -m 10 -o /dev/null "http://localhost:$PORT/" || { echo "il server non risponde: vedi $DIR/vite.log" >&2; exit 1; }
 echo "$REF ($(git -C "$DIR" rev-parse --short HEAD)) su http://localhost:$PORT/  (log: $DIR/vite.log)"

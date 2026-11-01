@@ -47,8 +47,9 @@ export class Forklift {
     this.rates = { lift: 0, spread: 0, tilt: 0 }; // velocita' idrauliche (con inerzia)
   }
 
-  async build(shadowGen) {
-    this.model = await createForkliftModel(this.scene, this.mats, this.vehicle);
+  // pause: vedi createForkliftModel (operai IA: costruzione in piu' fotogrammi, modello nascosto finche' e' pronto)
+  async build(shadowGen, pause = null) {
+    this.model = await createForkliftModel(this.scene, this.mats, this.vehicle, pause);
     this.model.root.getChildMeshes().forEach((m) => {
       shadowGen?.addShadowCaster(m);
       m.receiveShadows = true;

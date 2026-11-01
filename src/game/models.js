@@ -63,13 +63,23 @@ export function mergeByMaterial(pieces, parent, name) {
   return out;
 }
 
-function wheel(scene, name, radius, width, pos, mats, parent, rimMat = mats.steel) {
-  const node = new TransformNode(name, scene);
-  node.parent = parent;
-  node.position.copyFrom(pos);
-  const spin = new TransformNode(name + 'Spin', scene);
-  spin.parent = node;
-  node.spin = spin;
+// Modelli delle ruote del camion preparati al caricamento del contratto (il primo operaio non li paga in gioco)
+export function prewarmModels(scene, mats) {
+  wheelTemplate(scene, 0.5, 0.35, mats, mats.steel);
+}
+
+// Ruote gia' costruite, per misura e materiali: la prima volta si costruisce il modello (circa 45 pezzi uniti),
+// poi ogni ruota uguale e' una copia che condivide la stessa geometria. Prima ogni ruota di ogni muletto e camion
+// veniva ricostruita da zero: era il 70% del tempo per creare un operaio (scatto quando compariva).
+const wheelTemplates = new Map();
+
+function wheelTemplate(scene, radius, width, mats, rimMat) {
+  const key = `${radius}|${width}|${mats.rubber.uniqueId}|${rimMat.uniqueId}`;
+  const cached = wheelTemplates.get(key);
+  if (cached && !cached.some((m) => m.isDisposed() || m.material?.isDisposed?.())) return cached;
+  const spin = new TransformNode('wheelTemplate', scene);
+  spin.setEnabled(false); // modello nascosto: si disegnano solo le copie
+  const name = 'wheelTpl';
   const pieces = [];
   const tyre = cyl(scene, name + 'Tyre', radius * 1.88, width, Vector3.Zero(), mats.rubber, spin, 24);
   tyre.rotation.z = Math.PI / 2;
@@ -102,7 +112,23 @@ function wheel(scene, name, radius, width, pos, mats, parent, rimMat = mats.stee
       pieces.push(bolt);
     }
   }
-  mergeByMaterial(pieces, spin, name + 'Wheel');
+  const meshes = mergeByMaterial(pieces, spin, name + 'Wheel');
+  meshes.forEach((m) => { m.isPickable = false; });
+  wheelTemplates.set(key, meshes);
+  return meshes;
+}
+
+function wheel(scene, name, radius, width, pos, mats, parent, rimMat = mats.steel) {
+  const node = new TransformNode(name, scene);
+  node.parent = parent;
+  node.position.copyFrom(pos);
+  const spin = new TransformNode(name + 'Spin', scene);
+  spin.parent = node;
+  node.spin = spin;
+  for (const t of wheelTemplate(scene, radius, width, mats, rimMat)) {
+    const c = t.clone(`${name}Wheel_${t.material.name}`, spin);
+    c.isPickable = false;
+  }
   return node;
 }
 
@@ -173,8 +199,11 @@ export function placeGLB(container, name, x, y, z, rotY = 0, scale = 1) {
   return meshes;
 }
 
-export async function createForkliftModel(scene, mats, vehicle) {
+// pause (facoltativo): funzione che aspetta il prossimo fotogramma, per costruire in piu' tappe (operai IA).
+// In quel caso il modello resta nascosto: lo mostra chi lo ha chiesto, quando e' al suo posto.
+export async function createForkliftModel(scene, mats, vehicle, pause = null) {
   const root = new TransformNode('forklift', scene);
+  if (pause) root.setEnabled(false);
   const st = vehicle.style || {};
   const geo = vehicleGeometry(vehicle);
   const rimMat = st.rim ? mats.paint(st.rim) : mats.steel;
@@ -222,6 +251,7 @@ export async function createForkliftModel(scene, mats, vehicle) {
     box(scene, 'mastMount', 0.72, 0.3, 0.42, new Vector3(0, 0.4, 0.2), mats.darkSteel, body);
   }
 
+  if (pause) await pause();
   // Ruote: anteriori motrici fisse, posteriori sterzanti
   const frontWheels = [
     wheel(scene, 'wFL', 0.33, 0.24, new Vector3(-0.5, 0.33, 0), mats, body, rimMat),
@@ -237,6 +267,7 @@ export async function createForkliftModel(scene, mats, vehicle) {
     wheel(scene, 'wRR', 0.25, 0.18, new Vector3(0.45, 0.25, -1.55), mats, body, rimMat),
   ];
 
+  if (pause) await pause();
   // Montante (inclinabile) con sfilo interno e carrello porta-forche
   const mastPivot = new TransformNode('mastPivot', scene);
   mastPivot.parent = root;
@@ -326,6 +357,7 @@ export async function createForkliftModel(scene, mats, vehicle) {
     }
   }
 
+  if (pause) await pause();
   // Fari da lavoro sugli angoli davanti del tettuccio (come sui muletti veri), luci rosse sul contrappeso.
   // Posizioni prese dal modello: bordo del tetto e superficie posteriore della carrozzeria.
   const s = geo.s;
@@ -368,8 +400,10 @@ function tractorTint(color) {
   return b > r ? 'blue' : 'red';
 }
 
-export async function createTruckModel(scene, mats, color = '#d63a2f') {
+// pause (facoltativo): come per il muletto, costruzione in piu' fotogrammi con il modello nascosto (lo mostra chi lo chiede)
+export async function createTruckModel(scene, mats, color = '#d63a2f', pause = null) {
   const root = new TransformNode('truck', scene);
+  if (pause) root.setEnabled(false);
   const { bedLength: L, bedWidth: W, bedHeight: H } = TRUCK;
   // Motrice realistica (Tripo 3D) del colore piu' vicino; il rimorchio piatto resta nostro (preciso per i carichi)
   const tractor = await tryLoadGLB(scene, `truck-${tractorTint(color)}.glb`);
@@ -380,6 +414,7 @@ export async function createTruckModel(scene, mats, color = '#d63a2f') {
   box(scene, 'frameL', L, 0.3, 0.15, new Vector3(0, H - 0.37, 0.7), mats.darkSteel, root);
   box(scene, 'frameR', L, 0.3, 0.15, new Vector3(0, H - 0.37, -0.7), mats.darkSteel, root);
   box(scene, 'headboard', 0.12, 1.4, W, new Vector3(L / 2 - 0.06, H + 0.7, 0), mats.darkSteel, root);
+  if (pause) await pause();
   for (const x of [-L / 2 + 1.0, -L / 2 + 2.3, -L / 2 + 3.6]) {
     for (const z of [-0.95, 0.95]) {
       const w = wheel(scene, 'tw', 0.5, 0.35, new Vector3(x, 0.5, z), mats, root);
@@ -391,13 +426,16 @@ export async function createTruckModel(scene, mats, color = '#d63a2f') {
   box(scene, 'legR', 0.15, 0.7, 0.15, new Vector3(1.5, 0.35, -0.8), mats.steel, root);
   // traversa paracolpi in fondo al rimorchio: porta le luci rosse
   box(scene, 'rearBar', 0.1, 0.22, W - 0.1, new Vector3(-L / 2 - 0.01, 0.82, 0), mats.darkSteel, root);
+  if (pause) await pause();
   // Il modello ha il paraurti in z = 0 e guarda verso +z: ruotato verso +x, davanti al pianale
   const cab = new TransformNode('tractor', scene);
   cab.parent = root;
   cab.rotation.y = Math.PI / 2;
   cab.position.x = L / 2 + 3.95;
   instantiateGLB(tractor, cab, 'tractor');
+  if (pause) await pause();
   mergeByMaterial(root.getChildMeshes().filter((m) => !m.name.startsWith('tractor')), root, 'truck');
+  if (pause) await pause();
   // fanali sul paraurti della motrice (posizione cercata sul modello) e luci rosse sulla traversa in fondo al
   // rimorchio; i fanali guardano +z: nodo girato verso il muso (+x)
   const lights = new TransformNode('truckLights', scene);

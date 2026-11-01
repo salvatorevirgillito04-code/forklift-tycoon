@@ -24,7 +24,7 @@ import { Forklift } from './forklift.js';
 import { Mission } from './mission.js';
 import { Controls } from './controls.js';
 import { Hud } from './hud.js';
-import { TRUCK, FORK, loadDecor } from './models.js';
+import { TRUCK, FORK, loadDecor, prewarmModels } from './models.js';
 import { createRearview } from './rearview.js';
 import { WorkerBots } from './workerbots.js';
 import { GameAudio } from './audio.js';
@@ -281,6 +281,7 @@ export class Game {
     const start = await this.mission.start(contract);
     this.forklift.place(start.x, start.z, start.yaw);
     this.bots.setWorkers(workers);
+    prewarmModels(this.scene, this.mats); // modelli delle ruote del camion degli operai: pronti prima di giocare
     // Operai vicini creati ora, durante il caricamento: crearli mentre si gioca bloccava il gioco un attimo
     await this.bots.prewarm(this.forklift);
     this.shadowGen.cull(this.forklift.x, this.forklift.z, 20);
