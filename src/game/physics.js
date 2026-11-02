@@ -39,6 +39,61 @@ export function rectsOverlap(a, b, margin = 0) {
     || separated(cb, -sb, margin) || separated(sb, cb, margin));
 }
 
+// Profondita' di compenetrazione (SAT): la sovrapposizione minima tra le proiezioni sui 4 assi, cioe' di quanto
+// bisognerebbe spostare un rettangolo per staccarlo dall'altro. 0 se non si toccano.
+function axisOverlap(ux, uz) {
+  let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;
+  for (let i = 0; i < 8; i += 2) {
+    const da = CA[i] * ux + CA[i + 1] * uz;
+    if (da < a0) a0 = da;
+    if (da > a1) a1 = da;
+    const db = CB[i] * ux + CB[i + 1] * uz;
+    if (db < b0) b0 = db;
+    if (db > b1) b1 = db;
+  }
+  return Math.min(a1, b1) - Math.max(a0, b0);
+}
+
+export function rectPenetration(a, b) {
+  cornersInto(a, CA);
+  cornersInto(b, CB);
+  const ca = Math.cos(a.yaw), sa = Math.sin(a.yaw), cb = Math.cos(b.yaw), sb = Math.sin(b.yaw);
+  const d = Math.min(axisOverlap(ca, -sa), axisOverlap(sa, ca), axisOverlap(cb, -sb), axisOverlap(sb, cb));
+  return d > 0 ? d : 0;
+}
+
+// Area di sovrapposizione tra un rettangolo orientato e un rettangolo allineato agli assi (AABB in forma
+// { x, z, hw, hd }): il rettangolo viene tagliato sui 4 lati dell'AABB (Sutherland-Hodgman), senza memoria nuova.
+const PA = new Float64Array(32), PB = new Float64Array(32);
+function clip(src, n, dst, axis, sign, lim) {
+  // tiene la parte con sign * coord <= sign * lim
+  let m = 0;
+  for (let i = 0; i < n; i++) {
+    const ax = src[2 * i], az = src[2 * i + 1];
+    const j = (i + 1) % n, bx = src[2 * j], bz = src[2 * j + 1];
+    const va = (axis ? az : ax) * sign, vb = (axis ? bz : bx) * sign, L = lim * sign;
+    const ina = va <= L, inb = vb <= L;
+    if (ina) { dst[2 * m] = ax; dst[2 * m + 1] = az; m++; }
+    if (ina !== inb) {
+      const t = (L - va) / (vb - va);
+      dst[2 * m] = ax + (bx - ax) * t; dst[2 * m + 1] = az + (bz - az) * t; m++;
+    }
+  }
+  return m;
+}
+export function rectAabbOverlapArea(a, box) {
+  cornersInto(a, CA);
+  for (let i = 0; i < 8; i++) PA[i] = CA[i];
+  let n = 4;
+  n = clip(PA, n, PB, 0, 1, box.x + box.hw);
+  n = clip(PB, n, PA, 0, -1, box.x - box.hw);
+  n = clip(PA, n, PB, 1, 1, box.z + box.hd);
+  n = clip(PB, n, PA, 1, -1, box.z - box.hd);
+  let s = 0;
+  for (let i = 0; i < n; i++) { const j = (i + 1) % n; s += PA[2 * i] * PA[2 * j + 1] - PA[2 * j] * PA[2 * i + 1]; }
+  return Math.abs(s) / 2;
+}
+
 export const aabbToRect = (b) => ({
   x: (b.minX + b.maxX) / 2, z: (b.minZ + b.maxZ) / 2,
   hw: (b.maxX - b.minX) / 2, hd: (b.maxZ - b.minZ) / 2, yaw: 0,

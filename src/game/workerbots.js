@@ -6,6 +6,7 @@ import { createPalletModel, createTruckModel, mergeByMaterial, PALLET, TRUCK } f
 import { plotToWorld } from './world.js';
 import { rectsOverlap, toWorld, wrapAngle, bezierPath, pointAt } from './physics.js';
 import { WAREHOUSES, vehicleById } from '../data.js';
+import { spawnClear, unionBox, SPAWN } from './spawnsafety.js';
 
 // Muletti degli operai al lavoro. Solo i 3 piu' vicini al giocatore, per non pesare sul telefono.
 // Nel piazzale ogni operaio ha il suo camion: lo carica o lo scarica, il camion riparte e ne arriva un altro.
@@ -332,6 +333,17 @@ export class WorkerBots {
     return { cx, cz, bed: along(-L / 2, L / 2), cab: along(L / 2, L / 2 + 4) };
   }
 
+  // Area della comparsa e del primo tratto (8 m) del camion: libera?
+  truckSpawnClear(bot, player) {
+    const a = TRUCK_AREA.away;
+    const b0 = this.truckBoxes(bot, a), b1 = this.truckBoxes(bot, a + 8);
+    const tr = bot.truck;
+    const own = [tr.bedCol, tr.cabCol, bot.collider, ...bot.slots.map((s) => s.collider)];
+    const res = spawnClear([unionBox([b0.bed, b0.cab, b1.bed, b1.cab])], { player, env: this.env, ignore: own });
+    tr.spawnBlockedBy = res.ok ? null : res.why;
+    return res.ok;
+  }
+
   placeTruck(bot) {
     const tr = bot.truck;
     const b = this.truckBoxes(bot, tr.offset);
@@ -360,14 +372,21 @@ export class WorkerBots {
     const tr = bot.truck;
     if (tr.state === 'arriving' || tr.state === 'leaving') {
       if (tr.wait > 0) { tr.wait -= dt; return; }
+      // Comparsa dalla strada: solo se l'area e il primo tratto sono liberi (giocatore, carico, altri mezzi);
+      // altrimenti resta nascosto e senza ingombro e riprova fra 0,5 s
+      if (tr.state === 'arriving' && tr.offset <= TRUCK_AREA.away + 1e-3 && !this.truckSpawnClear(bot, player)) {
+        tr.wait = SPAWN.retryS;
+        tr.spawnDelays = (tr.spawnDelays || 0) + 1;
+        return;
+      }
       const goal = tr.state === 'arriving' ? 0 : TRUCK_AREA.away;
       const dist = Math.abs(goal - tr.offset);
       const want = Math.max(0.15, Math.min(3.5, Math.sqrt(2 * TRUCK_ACC * dist)));
       tr.v = easeStep(tr.v || 0, want, TRUCK_ACC * dt);
       const next = easeStep(tr.offset, goal, tr.v * dt);
       const b = this.truckBoxes(bot, next);
-      // Non investe il giocatore
-      if (player && tr.offset > TRUCK_AREA.away + 1) {
+      // Non investe il giocatore (anche nel primo metro dopo la comparsa)
+      if (player) {
         const mine = [aabbRect(b.bed), aabbRect(b.cab)];
         const his = [player.bodyRect(), ...player.forkRects()];
         if (mine.some((m) => his.some((o) => rectsOverlap(m, o, 0.4)))) {

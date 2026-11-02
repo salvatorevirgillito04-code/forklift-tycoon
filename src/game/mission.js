@@ -2,6 +2,7 @@ import { createTruckModel, TRUCK, PALLET } from './models.js';
 import { WAREHOUSES, CONTRACT_TYPES, bumpPct, BUMP_MAX } from '../data.js';
 import { PLOT, plotToWorld, zoneRect, rackSlots, rackRect } from './world.js';
 import { bezierPath, pointAt, toLocal } from './physics.js';
+import { spawnClear, unionBox, SPAWN } from './spawnsafety.js';
 
 const TRUCK_COLORS = ['#d63a2f', '#1f5fa8', '#f0f0f0', '#2c8c4a', '#e3a01b'];
 // Ingombro del camion lungo il suo asse (cabina verso +x): dal fondo del pianale al muso della motrice
@@ -89,6 +90,12 @@ export class Mission {
       this.moveCol = { minX: 0, maxX: 0, minZ: 0, maxZ: 0, y0: 0, y1: 4, tag: 'truck' };
       this.env.colliders.push(this.moveCol);
       this.placeTruck();
+      // non ancora comparso: nascosto e senza ingombro finche' l'area di comparsa non e' libera (driveTruck)
+      this.drive.spawned = false;
+      this.drive.retry = 0;
+      this.drive.spawnDelays = 0;
+      this.truck.setEnabled(false);
+      this.moveCol.y1 = -1;
     }
 
     // Sulla scaffalatura il carico deve passare tra un piano e l'altro (1,4 m)
@@ -174,7 +181,9 @@ export class Mission {
           if (p.node.parent === this.truck) p.node.position.set(p.x - this.truck.position.x, p.bottom, p.z - this.truck.position.z);
         }
       }
-      this.env.colliders = this.env.colliders.filter((c) => c.tag !== 'truck');
+      // solo gli ingombri del camion del contratto (prima sparivano anche quelli dei camion degli operai)
+      const mine = new Set(this.truckColliders || []);
+      this.env.colliders = this.env.colliders.filter((c) => !mine.has(c));
       if (this.truck) {
         // riparte in avanti verso la strada e se ne va
         this.drive = { mode: 'leave', i: 0, s: 0, v: 0, legs: this.leaveLegsFor() };
@@ -200,6 +209,21 @@ export class Mission {
   driveTruck(dt, forklift, cars = [], walkers = []) {
     const d = this.drive;
     if (!d || !this.truck) return;
+    if (d.spawned === false) {
+      // Comparsa sicura: area di partenza e primi 12 m liberi (giocatore anche dove sara' fra 1-2 s, carico,
+      // auto, persone, altri camion); altrimenti si riprova fra 0,5 s. Il tempo del contratto non corre ancora.
+      d.retry -= dt;
+      if (d.retry > 0) return;
+      d.retry = SPAWN.retryS;
+      const boxes = [this.moveBoxAt(0), this.moveBoxAt(Math.min(12, d.legs[0].path.len))];
+      const res = spawnClear([unionBox(boxes)], { player: forklift, env: this.env, ignore: [this.moveCol, ...(this.truckColliders || [])] });
+      this.spawnBlockedBy = res.ok ? null : res.why;
+      if (!res.ok) { d.spawnDelays += 1; return; }
+      d.spawned = true;
+      this.truck.setEnabled(true);
+      this.moveCol.y1 = 4;
+      this.placeTruck();
+    }
     const leg = d.legs[d.i];
     const left = leg.path.len - d.s;
     // rallenta in fondo alla tratta (non su quelle di solo viaggio, che proseguono nella successiva)
@@ -226,6 +250,18 @@ export class Mission {
       if (d.mode === 'arrive') this.park();
       else this.truck.setEnabled(false);
     }
+  }
+
+  // Scatola occupata dal camion a una distanza s dall'inizio della prima tratta (stessa forma di moveCol)
+  moveBoxAt(s, leg = this.drive.legs[0]) {
+    const pt = pointAt(leg.path, s);
+    const hx = leg.reverse ? -pt.dx : pt.dx, hz = leg.reverse ? -pt.dz : pt.dz;
+    const yaw = Math.atan2(-hz, hx);
+    const c = Math.abs(Math.cos(yaw)), sn = Math.abs(Math.sin(yaw));
+    const cx = pt.x + Math.cos(yaw) * (TRUCK_FRONT + TRUCK_REAR) / 2, cz = pt.z - Math.sin(yaw) * (TRUCK_FRONT + TRUCK_REAR) / 2;
+    const hl = (TRUCK_FRONT - TRUCK_REAR) / 2;
+    const ex = c * hl + sn * TRUCK_HALF_W, ez = sn * hl + c * TRUCK_HALF_W;
+    return { minX: cx - ex, maxX: cx + ex, minZ: cz - ez, maxZ: cz + ez };
   }
 
   placeTruck() {
@@ -315,7 +351,10 @@ export class Mission {
   cleanup() {
     this.env.pallets.clear();
     this.env.pallets.truckBed = null;
-    this.env.colliders = this.env.colliders.filter((c) => c.tag !== 'truck');
+    const mine = new Set([...(this.truckColliders || []), this.moveCol]);
+    this.env.colliders = this.env.colliders.filter((c) => !mine.has(c));
+    this.truckColliders = null;
+    this.moveCol = null;
     this.drive = null;
     this.truckPose = null;
     this.truck?.dispose();

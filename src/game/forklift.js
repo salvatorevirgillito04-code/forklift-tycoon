@@ -1,5 +1,5 @@
 import { createForkliftModel, vehicleGeometry, FORK, PALLET } from './models.js';
-import { rectsOverlap, aabbToRect, aabbIntoRect, verticalOverlap, toLocal, toWorld, wrapAngle } from './physics.js';
+import { rectsOverlap, rectAabbOverlapArea, aabbToRect, aabbIntoRect, verticalOverlap, toLocal, toWorld, wrapAngle } from './physics.js';
 
 const TMP_RECT = { x: 0, z: 0, hw: 0, hd: 0, yaw: 0 };
 
@@ -126,8 +126,8 @@ export class Forklift {
     return c === null || c.length > 0;
   }
 
-  // null se la posa urta un ostacolo fisso, altrimenti l'elenco dei pallet urtati.
-  contacts(env, x, z, yaw, forkY = this.forkY, spread = this.spread) {
+  // Parti del muletto che possono urtare, in una posa (corpo, forche, carrello, montante, carico)
+  partsAt(x, z, yaw, forkY = this.forkY, spread = this.spread) {
     const body = this.bodyRect(x, z, yaw);
     const forks = this.forkRects(x, z, yaw, spread);
     // Le punte si alzano/abbassano con l'inclinazione: l'ingombro verticale delle forche lo include
@@ -142,18 +142,58 @@ export class Forklift {
     const carried = this.carried ? this.carriedPose(x, z, yaw) : null;
     const cRect = carried && { x: carried.x, z: carried.z, hw: PALLET.size / 2, hd: PALLET.size / 2, yaw: carried.yaw };
     const cTop = carried && carried.bottom + PALLET.height + this.carried.p.loadH;
+    return { body, forks, fy0, fy1, carriage, mast, mastTop, carried, cRect, cTop, forkY };
+  }
+
+  // true se una parte del muletto (in quella posa) tocca l'ostacolo c (rettangolo r)
+  touchesCollider(P, c, r) {
+    if (verticalOverlap(0.05, this.geo.body.height, c.y0, c.y1) && rectsOverlap(P.body, r)) return true;
+    if (verticalOverlap(P.fy0, P.fy1, c.y0, c.y1) && (rectsOverlap(P.forks[0], r) || rectsOverlap(P.forks[1], r))) return true;
+    if (!c.noCarriage && verticalOverlap(P.forkY - 0.05, P.forkY + 1.32, c.y0, c.y1) && rectsOverlap(P.carriage, r)) return true;
+    if (P.mastTop > this.geo.body.height && verticalOverlap(this.geo.body.height, P.mastTop, c.y0, c.y1) && rectsOverlap(P.mast, r)) return true;
+    if (P.cRect && verticalOverlap(P.carried.bottom + 0.01, P.cTop, c.y0, c.y1) && rectsOverlap(P.cRect, r, 0.0)) return true;
+    return false;
+  }
+
+  // Quanto il muletto (in quella posa) e' dentro l'ostacolo: area sovrapposta (m²), sommata su tutte le parti.
+  // L'area (non la profondita') distingue davvero uscire da restare dentro: con le forche tutte dentro il
+  // pianale la profondita' resta uguale mentre si esce, l'area invece diminuisce.
+  colliderDepth(P, c, r) {
+    let d = 0;
+    if (verticalOverlap(0.05, this.geo.body.height, c.y0, c.y1)) d += rectAabbOverlapArea(P.body, r);
+    if (verticalOverlap(P.fy0, P.fy1, c.y0, c.y1)) d += rectAabbOverlapArea(P.forks[0], r) + rectAabbOverlapArea(P.forks[1], r);
+    if (!c.noCarriage && verticalOverlap(P.forkY - 0.05, P.forkY + 1.32, c.y0, c.y1)) d += rectAabbOverlapArea(P.carriage, r);
+    if (P.mastTop > this.geo.body.height && verticalOverlap(this.geo.body.height, P.mastTop, c.y0, c.y1)) d += rectAabbOverlapArea(P.mast, r);
+    if (P.cRect && verticalOverlap(P.carried.bottom + 0.01, P.cTop, c.y0, c.y1)) d += rectAabbOverlapArea(P.cRect, r);
+    return d;
+  }
+
+  // null se la posa urta un ostacolo fisso, altrimenti l'elenco dei pallet urtati.
+  contacts(env, x, z, yaw, forkY = this.forkY, spread = this.spread) {
+    const P = this.partsAt(x, z, yaw, forkY, spread);
+    const { body, forks, cRect, carried, cTop } = P;
+    let now = null; // parti nella posa attuale: calcolate solo se serve (cioe' solo quando c'e' un contatto)
 
     for (const c of env.colliders) {
       if (c.y1 <= 0) continue;
       // Scarta subito gli ostacoli lontani (il muletto con forche e carico sta in ~5 m)
       if (c.maxX < x - 5 || c.minX > x + 5 || c.maxZ < z - 5 || c.minZ > z + 5) continue;
       const r = aabbIntoRect(c, TMP_RECT);
+      if (!this.touchesCollider(P, c, r)) continue;
+      // Gia' dentro questo ostacolo nella posa attuale (es. un camion comparso addosso): permesso solo uscirne,
+      // cioe' una posa in cui l'area sovrapposta e' minore (metodo SAT per il contatto, area per la profondita'). Mai piu' a fondo, mai attraverso; gli altri
+      // ostacoli contano come sempre (ognuno e' controllato a parte).
+      now ||= this.partsAt(this.x, this.z, this.yaw, this.forkY, this.spread);
+      const d0 = this.colliderDepth(now, c, r);
+      if (d0 > 0) {
+        const d1 = this.colliderDepth(P, c, r);
+        // area minore: sta uscendo. Area uguale (es. forche infilate in un muro sottile): solo se si allontana
+        // dal centro dell'ostacolo (andare avanti resta vietato)
+        if (d1 < d0 - 1e-4) continue;
+        if (d1 <= d0 + 1e-5 && Math.hypot(x - r.x, z - r.z) > Math.hypot(this.x - r.x, this.z - r.z) + 1e-5) continue;
+      }
       this.blockedBy = c; // l'ostacolo urtato (persone e macchine danno la penalita')
-      if (verticalOverlap(0.05, this.geo.body.height, c.y0, c.y1) && rectsOverlap(body, r)) return null;
-      if (verticalOverlap(fy0, fy1, c.y0, c.y1) && (rectsOverlap(forks[0], r) || rectsOverlap(forks[1], r))) return null;
-      if (!c.noCarriage && verticalOverlap(forkY - 0.05, forkY + 1.32, c.y0, c.y1) && rectsOverlap(carriage, r)) return null;
-      if (mastTop > this.geo.body.height && verticalOverlap(this.geo.body.height, mastTop, c.y0, c.y1) && rectsOverlap(mast, r)) return null;
-      if (cRect && verticalOverlap(carried.bottom + 0.01, cTop, c.y0, c.y1) && rectsOverlap(cRect, r, 0.0)) return null;
+      return null;
     }
     this.blockedBy = null;
     const hits = [];
