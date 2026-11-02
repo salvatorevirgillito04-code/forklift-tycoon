@@ -62,6 +62,35 @@ async function runTests() {
   check('2b. rinvio prolungato: il tempo del contratto non corre', m.timeLeft === time0, `tempo ${time0} -> ${m.timeLeft}`);
   check('2c. rinvio: nessun camion duplicato', truckCount() === trucks0, `camion ${truckCount()}`);
 
+  // 17. camion non ancora comparso: il traffico non lo vede (un'auto ferma davanti al camion invisibile
+  // bloccherebbe per sempre la comparsa). Area occupata da un ostacolo che il traffico non considera.
+  {
+    f.place(m.bedPose.x + 40, 40, 0); // lontano
+    resetTruck();
+    const bx = m.moveBoxAt(0, leg0);
+    const blk = { minX: bx.minX, maxX: bx.minX + 0.5, minZ: bx.minZ, maxZ: bx.minZ + 0.5, y0: 0, y1: 1.7, tag: 'person' };
+    env.colliders.push(blk);
+    const car = g.traffic.cars[0], keep = { x: car.x, z: car.z, dir: car.dir, v: car.v };
+    const horiz = bx.maxX - bx.minX > bx.maxZ - bx.minZ;
+    Object.assign(car, { dir: 1, x: bx.minX - 10, z: (bx.minZ + bx.maxZ) / 2, v: car.vmax });
+    const realUpdate = Object.getPrototypeOf(g.traffic).update;
+    let vMin = Infinity, passed = false;
+    for (let i = 0; i < 120; i++) {
+      stepAll(1);
+      realUpdate.call(g.traffic, DT, f, m.trafficObstacles());
+      vMin = Math.min(vMin, car.v);
+      if (car.x > bx.minX) passed = true;
+    }
+    const hiddenOk = m.drive.spawned === false && m.trafficObstacles().length === 0;
+    env.colliders.splice(env.colliders.indexOf(blk), 1);
+    Object.assign(car, keep);
+    car.x = 5000; Object.assign(car.col, { minX: 5000, maxX: 5001, minZ: 5000, maxZ: 5001 });
+    let t17 = 0;
+    while (!m.drive.spawned && t17 < 60) { stepAll(1); t17++; }
+    const seenAfter = m.drive.spawned && m.trafficObstacles().length === 1;
+    check('17. camion non comparso: il traffico non lo vede e non si ferma; comparso: lo vede', horiz && hiddenOk && passed && vMin > 1 && seenAfter, `strada lungo x ${horiz}, v minima auto ${vMin.toFixed(1)} m/s, passata ${passed}, poi visto ${seenAfter}`);
+  }
+
   // 7 + 12. area occupata da un'auto: rinviato; area libera: compare entro 0,5 s e poi arriva al suo posto
   f.place(m.bedPose.x + 40, 40, 0); // lontano
   resetTruck();
@@ -196,7 +225,7 @@ async function runTests() {
   for (let i = 0; i < 20; i++) { g.scene.onAfterRenderObservable.notifyObservers(g.scene); await new Promise((r) => setTimeout(r, 5)); }
   await new Promise((r) => setTimeout(r, 300));
   const bots = [...g.bots.bots.values()].filter((b) => b.truck);
-  const send = (b) => { const tr = b.truck; tr.state = 'arriving'; tr.offset = -16; tr.wait = 0; tr.v = 0; tr.spawnDelays = 0; g.bots.placeTruck(b); };
+  const send = (b) => { const tr = b.truck; tr.state = 'arriving'; tr.offset = -16; tr.wait = 0; tr.v = 0; tr.spawnDelays = 0; tr.spawned = false; g.bots.placeTruck(b); };
   bots.forEach(send);
   // 8. operaio: muletto fermo sul punto di comparsa del suo camion: rinviato, ingombro spento
   const b0 = bots[0];

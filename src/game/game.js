@@ -424,7 +424,7 @@ export class Game {
       // traffico: sempre in movimento (anche nel menu); col gioco in pausa resta fermo
       if (!(this.mode === 'play' && this.paused)) {
         const playing = this.mode === 'play' ? this.forklift : null;
-        this.traffic.update(dt, playing, this.mission.drive ? [this.mission.moveCol] : []);
+        this.traffic.update(dt, playing, this.mission.trafficObstacles());
       }
       this.updateCamera(dt);
       this.fogCull = (this.fogCull || 0) - realDt;

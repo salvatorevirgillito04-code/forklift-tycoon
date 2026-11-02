@@ -253,6 +253,12 @@ export class Mission {
   }
 
   // Scatola occupata dal camion a una distanza s dall'inizio della prima tratta (stessa forma di moveCol)
+  // Ostacoli per il traffico: il camion del contratto solo quando e' comparso (prima e' invisibile e senza
+  // ingombro: un'auto ferma davanti a lui impedirebbe per sempre la comparsa)
+  trafficObstacles() {
+    return this.drive && this.moveCol && this.moveCol.y1 > 0 ? [this.moveCol] : [];
+  }
+
   moveBoxAt(s, leg = this.drive.legs[0]) {
     const pt = pointAt(leg.path, s);
     const hx = leg.reverse ? -pt.dx : pt.dx, hz = leg.reverse ? -pt.dz : pt.dz;

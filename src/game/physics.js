@@ -39,7 +39,7 @@ export function rectsOverlap(a, b, margin = 0) {
     || separated(cb, -sb, margin) || separated(sb, cb, margin));
 }
 
-// Profondita' di compenetrazione (SAT): la sovrapposizione minima tra le proiezioni sui 4 assi, cioe' di quanto
+// Solo per i test (tests/drive/camion.cjs). Profondita' di compenetrazione (SAT): la sovrapposizione minima tra le proiezioni sui 4 assi, cioe' di quanto
 // bisognerebbe spostare un rettangolo per staccarlo dall'altro. 0 se non si toccano.
 function axisOverlap(ux, uz) {
   let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;

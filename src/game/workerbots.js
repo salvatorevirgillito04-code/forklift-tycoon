@@ -338,7 +338,7 @@ export class WorkerBots {
     const a = TRUCK_AREA.away;
     const b0 = this.truckBoxes(bot, a), b1 = this.truckBoxes(bot, a + 8);
     const tr = bot.truck;
-    const own = [tr.bedCol, tr.cabCol, bot.collider, ...bot.slots.map((s) => s.collider)];
+    const own = [tr.bedCol, tr.cabCol, ...bot.slots.map((s) => s.collider)]; // il muletto dell'operaio conta come gli altri
     const res = spawnClear([unionBox([b0.bed, b0.cab, b1.bed, b1.cab])], { player, env: this.env, ignore: own });
     tr.spawnBlockedBy = res.ok ? null : res.why;
     return res.ok;
@@ -374,10 +374,13 @@ export class WorkerBots {
       if (tr.wait > 0) { tr.wait -= dt; return; }
       // Comparsa dalla strada: solo se l'area e il primo tratto sono liberi (giocatore, carico, altri mezzi);
       // altrimenti resta nascosto e senza ingombro e riprova fra 0,5 s
-      if (tr.state === 'arriving' && tr.offset <= TRUCK_AREA.away + 1e-3 && !this.truckSpawnClear(bot, player)) {
-        tr.wait = SPAWN.retryS;
-        tr.spawnDelays = (tr.spawnDelays || 0) + 1;
-        return;
+      if (tr.state === 'arriving' && !tr.spawned) {
+        if (!this.truckSpawnClear(bot, player)) {
+          tr.wait = SPAWN.retryS;
+          tr.spawnDelays = (tr.spawnDelays || 0) + 1;
+          return;
+        }
+        tr.spawned = true; // un solo via libera per arrivo
       }
       const goal = tr.state === 'arriving' ? 0 : TRUCK_AREA.away;
       const dist = Math.abs(goal - tr.offset);
@@ -385,8 +388,8 @@ export class WorkerBots {
       tr.v = easeStep(tr.v || 0, want, TRUCK_ACC * dt);
       const next = easeStep(tr.offset, goal, tr.v * dt);
       const b = this.truckBoxes(bot, next);
-      // Non investe il giocatore (anche nel primo metro dopo la comparsa)
-      if (player) {
+      // Non investe il giocatore (all'arrivo anche nel primo metro dopo la comparsa)
+      if (player && (tr.state === 'arriving' || tr.offset > TRUCK_AREA.away + 1)) {
         const mine = [aabbRect(b.bed), aabbRect(b.cab)];
         const his = [player.bodyRect(), ...player.forkRects()];
         if (mine.some((m) => his.some((o) => rectsOverlap(m, o, 0.4)))) {
@@ -403,6 +406,7 @@ export class WorkerBots {
           // Fuori: il prossimo camion fa il contratto opposto (quello caricato torna pieno da scaricare)
           bot.mode = bot.mode === 'load' ? 'unload' : 'load';
           tr.state = 'arriving';
+          tr.spawned = false;
           tr.wait = 3;
         }
       }

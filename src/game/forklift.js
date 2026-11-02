@@ -181,8 +181,8 @@ export class Forklift {
       const r = aabbIntoRect(c, TMP_RECT);
       if (!this.touchesCollider(P, c, r)) continue;
       // Gia' dentro questo ostacolo nella posa attuale (es. un camion comparso addosso): permesso solo uscirne,
-      // cioe' una posa in cui l'area sovrapposta e' minore (metodo SAT per il contatto, area per la profondita'). Mai piu' a fondo, mai attraverso; gli altri
-      // ostacoli contano come sempre (ognuno e' controllato a parte).
+      // cioe' una posa in cui l'area sovrapposta e' minore. Il contatto si riconosce col metodo SAT, la profondita'
+      // con l'area. Mai piu' a fondo, mai attraverso; gli altri ostacoli contano come sempre (uno per uno).
       now ||= this.partsAt(this.x, this.z, this.yaw, this.forkY, this.spread);
       const d0 = this.colliderDepth(now, c, r);
       if (d0 > 0) {
