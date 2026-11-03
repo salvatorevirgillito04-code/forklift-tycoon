@@ -5,8 +5,8 @@ import { Forklift } from './forklift.js';
 import { createPalletModel, createTruckModel, mergeByMaterial, PALLET, TRUCK } from './models.js';
 import { plotToWorld } from './world.js';
 import { rectsOverlap, toWorld, wrapAngle, bezierPath, pointAt } from './physics.js';
-import { WAREHOUSES, vehicleById } from '../data.js';
-import { spawnClear, unionBox, SPAWN } from './spawnsafety.js';
+import { WAREHOUSES, WORLD, vehicleById } from '../data.js';
+import { zoneClear, unionBox, SPAWN, ZONE } from './spawnsafety.js';
 
 // Muletti degli operai al lavoro. Solo i 3 piu' vicini al giocatore, per non pesare sul telefono.
 // Nel piazzale ogni operaio ha il suo camion: lo carica o lo scarica, il camion riparte e ne arriva un altro.
@@ -86,7 +86,12 @@ export class WorkerBots {
     return { wh, area: AREAS[idx % AREAS.length] };
   }
 
-  update(dt, player) {
+  // cars: auto del traffico (per la comparsa sicura dei camion)
+  update(dt, player, cars = []) {
+    this.cars = cars;
+    // velocita' di rotazione del muletto del giocatore (previsione della traiettoria per i camion)
+    if (dt > 0 && this.lastYaw !== undefined) this.playerYawRate = wrapAngle(player.yaw - this.lastYaw) / dt;
+    this.lastYaw = player.yaw;
     this.pickTimer -= dt;
     if (this.pickTimer <= 0) {
       this.pickTimer = 0.5;
@@ -192,6 +197,13 @@ export class WorkerBots {
     for (const c of this.botColliders(bot)) {
       const i = this.env.colliders.indexOf(c);
       if (i >= 0) this.env.colliders.splice(i, 1);
+    }
+    // Camion in viaggio: al ritorno dell'operaio non deve riapparire di colpo (magari sulla strada) ma rifare la
+    // comparsa sicura. In uscita: e' come se fosse uscito (il prossimo fa il contratto opposto).
+    const tr = bot.truck;
+    if (tr && tr.state !== 'parked') {
+      if (tr.state === 'leaving') bot.mode = bot.mode === 'load' ? 'unload' : 'load';
+      this.truckToRoad(tr, 1.5);
     }
   }
 
@@ -309,6 +321,9 @@ export class WorkerBots {
     const dir = { x: 0, z: -wh.side }; // verso la strada
     bot.truck = {
       root, home: { x, z }, dir, offset: T.away, state: 'arriving', wait: 1.5,
+      // phase (in arrivo e in uscita): 'hidden' fuori e nascosto, 'fadeIn' compare da fermo, 'abort' comparsa
+      // annullata, 'drive' in viaggio (visibile e solido), 'fadeOut' scompare da fermo. fade: visibilita' 0..1.
+      phase: 'hidden', fade: 0, solid: false, checkT: 0, spawnDelays: 0, leaveDelays: 0,
       bedCol: { minX: 0, maxX: 0, minZ: 0, maxZ: 0, y0: 0, y1: TRUCK.bedHeight, tag: 'truck' },
       cabCol: { minX: 0, maxX: 0, minZ: 0, maxZ: 0, y0: 0, y1: 4, tag: 'truck' },
     };
@@ -333,22 +348,54 @@ export class WorkerBots {
     return { cx, cz, bed: along(-L / 2, L / 2), cab: along(L / 2, L / 2 + 4) };
   }
 
-  // Area della comparsa e del primo tratto (8 m) del camion: libera?
-  truckSpawnClear(bot, player) {
+  // Area della comparsa e del primo tratto (8 m) del camion: libera? fadeLeftS: dissolvenza che manca.
+  // Giocatore (traiettoria fino a reazione + frenata), auto previste, altri mezzi, persone, pallet.
+  truckSpawnClear(bot, player, fadeLeftS = ZONE.fadeS) {
     const a = TRUCK_AREA.away;
     const b0 = this.truckBoxes(bot, a), b1 = this.truckBoxes(bot, a + 8);
     const tr = bot.truck;
     const own = [tr.bedCol, tr.cabCol, ...bot.slots.map((s) => s.collider)]; // il muletto dell'operaio conta come gli altri
-    const res = spawnClear([unionBox([b0.bed, b0.cab, b1.bed, b1.cab])], { player, env: this.env, ignore: own });
+    const res = zoneClear([unionBox([b0.bed, b0.cab, b1.bed, b1.cab])], {
+      player, yawRate: this.playerYawRate || 0, fadeLeftS, cars: this.cars || [], env: this.env, ignore: own,
+    });
     tr.spawnBlockedBy = res.ok ? null : res.why;
     return res.ok;
+  }
+
+  // Uscita: il camion fermo fuori puo' scomparire? Solo se il giocatore non puo' arrivarci prima che sparisca
+  // (le auto si fermano davanti al camion finche' e' solido).
+  truckLeaveClear(bot, player, fadeLeftS) {
+    if (!player) return true;
+    const b = this.truckBoxes(bot, bot.truck.offset);
+    const res = zoneClear([b.bed, b.cab], { player, yawRate: this.playerYawRate || 0, fadeLeftS, env: this.env, onlyPlayer: true });
+    bot.truck.leaveBlockedBy = res.ok ? null : res.why;
+    return res.ok;
+  }
+
+  // Camion fuori, nascosto e senza ingombro, pronto a una nuova comparsa sicura
+  truckToRoad(tr, wait) {
+    Object.assign(tr, { state: 'arriving', phase: 'hidden', offset: TRUCK_AREA.away, fade: 0, solid: false, v: 0, wait, checkT: 0 });
+  }
+
+  // Camion degli operai solidi sulla strada: ostacoli per le auto. out: lista da riempire (riusata)
+  trafficObstacles(base = []) {
+    const out = (this.trafficOut ||= []);
+    out.length = 0;
+    for (const o of base) out.push(o);
+    for (const bot of this.bots.values()) {
+      const tr = bot.truck;
+      if (!tr || !tr.solid) continue;
+      for (const c of [tr.bedCol, tr.cabCol]) if (c.minZ < WORLD.roadHalf && c.maxZ > -WORLD.roadHalf) out.push(c);
+    }
+    return out;
   }
 
   placeTruck(bot) {
     const tr = bot.truck;
     const b = this.truckBoxes(bot, tr.offset);
     tr.root.position.set(b.cx, 0, b.cz);
-    const hidden = tr.offset <= TRUCK_AREA.away + 0.01;
+    // Ingombro solo quando e' solido (diventa solido a visibilita' piena, dopo l'ultimo controllo)
+    const hidden = !tr.solid;
     Object.assign(tr.bedCol, b.bed, { y1: hidden ? -1 : TRUCK.bedHeight });
     Object.assign(tr.cabCol, b.cab, { y1: hidden ? -1 : 4 });
     // Pallet sul pianale: seguono il camion
@@ -358,8 +405,8 @@ export class WorkerBots {
       Object.assign(s.collider, { minX: s.x + dx - 0.62, maxX: s.x + dx + 0.62, minZ: s.z + dz - 0.62, maxZ: s.z + dz + 0.62 });
       s.collider.y1 = s.stack.length && !hidden ? s.base + PALLET_H : -1;
     }
-    // Entra e esce dalla strada sfumando
-    const vis = Math.min(1, Math.max(0, (tr.offset - TRUCK_AREA.away) / 4));
+    // Compare e scompare sfumando, da fermo (fuori, sulla strada)
+    const vis = tr.fade;
     const meshes = [...tr.root.getChildMeshes(), ...bot.bed.flatMap((s) => s.stack.flatMap((n) => n.getChildMeshes()))];
     for (const m of meshes) m.visibility = vis;
     const show = vis > 0 && !this.hidden; // hidden: diagnostica, operai invisibili
@@ -368,49 +415,83 @@ export class WorkerBots {
   }
 
   // Arriva in retromarcia, aspetta il carico/scarico, riparte verso la strada.
+  // Comparsa: fuori, da fermo e senza ingombro, solo con la zona libera (controllata ogni ZONE.checkS anche durante
+  // la dissolvenza: se il giocatore o un mezzo si avvicina la comparsa si annulla). Solido solo a visibilita' piena,
+  // dopo l'ultimo controllo. Uscita: arriva fuori visibile e solido, scompare solo quando il giocatore non puo'
+  // raggiungerlo prima che sparisca; altrimenti resta visibile e solido.
   driveTruck(bot, dt, player) {
     const tr = bot.truck;
-    if (tr.state === 'arriving' || tr.state === 'leaving') {
-      if (tr.wait > 0) { tr.wait -= dt; return; }
-      // Comparsa dalla strada: solo se l'area e il primo tratto sono liberi (giocatore, carico, altri mezzi);
-      // altrimenti resta nascosto e senza ingombro e riprova fra 0,5 s
-      if (tr.state === 'arriving' && !tr.spawned) {
-        if (!this.truckSpawnClear(bot, player)) {
-          tr.wait = SPAWN.retryS;
-          tr.spawnDelays = (tr.spawnDelays || 0) + 1;
-          return;
-        }
-        tr.spawned = true; // un solo via libera per arrivo
-      }
-      const goal = tr.state === 'arriving' ? 0 : TRUCK_AREA.away;
-      const dist = Math.abs(goal - tr.offset);
-      const want = Math.max(0.15, Math.min(3.5, Math.sqrt(2 * TRUCK_ACC * dist)));
-      tr.v = easeStep(tr.v || 0, want, TRUCK_ACC * dt);
-      const next = easeStep(tr.offset, goal, tr.v * dt);
-      const b = this.truckBoxes(bot, next);
-      // Non investe il giocatore (all'arrivo anche nel primo metro dopo la comparsa)
-      if (player && (tr.state === 'arriving' || tr.offset > TRUCK_AREA.away + 1)) {
-        const mine = [aabbRect(b.bed), aabbRect(b.cab)];
-        const his = [player.bodyRect(), ...player.forkRects()];
-        if (mine.some((m) => his.some((o) => rectsOverlap(m, o, 0.4)))) {
-          tr.v = 0;
-          return;
-        }
-      }
-      tr.offset = next;
-      this.placeTruck(bot);
-      if (Math.abs(tr.offset - goal) < 1e-3) {
-        tr.v = 0;
-        if (tr.state === 'arriving') tr.state = 'parked';
-        else {
-          // Fuori: il prossimo camion fa il contratto opposto (quello caricato torna pieno da scaricare)
-          bot.mode = bot.mode === 'load' ? 'unload' : 'load';
-          tr.state = 'arriving';
-          tr.spawned = false;
-          tr.wait = 3;
-        }
-      }
+    if (tr.state !== 'arriving' && tr.state !== 'leaving') return;
+    if (tr.wait > 0) { tr.wait -= dt; return; }
+    if (tr.state === 'arriving' && tr.phase !== 'drive') { this.truckFadeIn(bot, dt, player); return; }
+    if (tr.state === 'leaving' && tr.phase === 'fadeOut') { this.truckFadeOut(bot, dt, player); return; }
+    if (tr.state === 'leaving' && tr.phase !== 'drive') Object.assign(tr, { phase: 'drive', fade: 1, solid: true });
+    const goal = tr.state === 'arriving' ? 0 : TRUCK_AREA.away;
+    const dist = Math.abs(goal - tr.offset);
+    const want = Math.max(0.15, Math.min(3.5, Math.sqrt(2 * TRUCK_ACC * dist)));
+    tr.v = easeStep(tr.v || 0, want, TRUCK_ACC * dt);
+    const next = easeStep(tr.offset, goal, tr.v * dt);
+    const b = this.truckBoxes(bot, next);
+    // Non investe il giocatore ne' le auto (che si fermano davanti a lui)
+    const mine = [aabbRect(b.bed), aabbRect(b.cab)];
+    const blocked = (player && [player.bodyRect(), ...player.forkRects()].some((o) => mine.some((m) => rectsOverlap(m, o, 0.4))))
+      || (this.cars || []).some((c) => mine.some((m) => rectsOverlap(m, aabbRect(c.col), 0.4)));
+    if (blocked) { tr.v = 0; return; }
+    tr.offset = next;
+    this.placeTruck(bot);
+    if (Math.abs(tr.offset - goal) < 1e-3) {
+      tr.v = 0;
+      if (tr.state === 'arriving') tr.state = 'parked';
+      else Object.assign(tr, { phase: 'fadeOut', checkT: 0, outSafe: false }); // fuori: scompare quando e' sicuro
     }
+  }
+
+  truckFadeIn(bot, dt, player) {
+    const tr = bot.truck;
+    if (tr.phase === 'abort') {
+      // comparsa annullata: torna invisibile (senza ingombro, non lo e' mai stato) e riprova
+      tr.fade = Math.max(0, tr.fade - dt / ZONE.abortS);
+      if (tr.fade === 0) Object.assign(tr, { phase: 'hidden', wait: SPAWN.retryS, checkT: 0 });
+      this.placeTruck(bot);
+      return;
+    }
+    tr.checkT -= dt;
+    if (tr.checkT <= 0) {
+      tr.checkT = ZONE.checkS;
+      if (!this.truckSpawnClear(bot, player, (1 - tr.fade) * ZONE.fadeS)) {
+        tr.spawnDelays++;
+        if (tr.phase === 'fadeIn') tr.phase = 'abort';
+        else { tr.wait = SPAWN.retryS; tr.checkT = 0; }
+        return;
+      }
+      tr.phase = 'fadeIn';
+    }
+    if (tr.phase !== 'fadeIn') return;
+    tr.fade = Math.min(1, tr.fade + dt / ZONE.fadeS);
+    if (tr.fade >= 1) {
+      // ultimo controllo prima di diventare un ostacolo
+      if (this.truckSpawnClear(bot, player, 0)) Object.assign(tr, { solid: true, phase: 'drive', v: 0 });
+      else { tr.spawnDelays++; tr.phase = 'abort'; }
+    }
+    this.placeTruck(bot);
+  }
+
+  truckFadeOut(bot, dt, player) {
+    const tr = bot.truck;
+    tr.checkT -= dt;
+    if (tr.checkT <= 0) {
+      tr.checkT = ZONE.checkS;
+      tr.outSafe = this.truckLeaveClear(bot, player, tr.fade * ZONE.fadeS);
+      if (!tr.outSafe) tr.leaveDelays++;
+    }
+    // non sicuro: resta (o torna subito) visibile, sempre solido
+    tr.fade = tr.outSafe ? Math.max(0, tr.fade - dt / ZONE.fadeS) : Math.min(1, tr.fade + dt / ZONE.abortS);
+    if (tr.fade === 0) {
+      // sparito: solo ora senza ingombro. Il prossimo camion fa il contratto opposto
+      bot.mode = bot.mode === 'load' ? 'unload' : 'load';
+      this.truckToRoad(tr, 3);
+    }
+    this.placeTruck(bot);
   }
 
   // ---------- Operaio ----------

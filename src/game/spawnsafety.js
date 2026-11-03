@@ -61,3 +61,66 @@ export function spawnClear(boxes, { player = null, env, ignore = [] }) {
   }
   return { ok: true };
 }
+
+// ---------- Camion degli operai: zona sicura con traiettoria intera ----------
+// Valori iniziali approvati, configurabili. Verificati dai test (npm run test:camion), non dati per sufficienti.
+export const ZONE = {
+  fadeS: 1.0, // dissolvenza (entrata e uscita), da fermo
+  abortS: 0.3, // dissolvenza rapida quando la comparsa si annulla (o ritorno visibile in uscita)
+  checkS: 0.1, // controllo della zona durante l'attesa e la dissolvenza
+  reactS: 1.5, // tempo di reazione del giocatore
+  brakeDec: 2.5, // frenata del muletto considerata (m/s^2, prudente: sull'asciutto e' circa 4, sulla neve circa 3)
+  speedMarginS: 1.0, // margine sulla posizione attuale: SPAWN.margin + velocita' x questo tempo
+  stepS: 0.25, // passo dei campioni della traiettoria
+  carS: 1.5, // previsione delle auto lungo la corsia, oltre la dissolvenza che manca
+};
+
+// Durata della previsione: dissolvenza che resta + reazione + frenata
+export const zoneHorizon = (v, fadeLeftS) => fadeLeftS + ZONE.reactS + Math.abs(v) / ZONE.brakeDec;
+
+// Il muletto puo' arrivare nella zona? Posizione attuale (margine 6 m + velocita' x 1 s) e traiettoria prevista
+// fino a zoneHorizon (margine SPAWN.aheadMargin), in linea retta e lungo l'arco della sterzata attuale.
+// yawRate: velocita' di rotazione del muletto (rad/s), misurata da chi chiama.
+export function playerThreat(rects, player, yawRate, fadeLeftS) {
+  const v = player.v;
+  const T = zoneHorizon(v, fadeLeftS);
+  const m0 = SPAWN.margin + Math.abs(v) * ZONE.speedMarginS;
+  // lontano da tutto: nessun calcolo
+  let near = false;
+  for (const r of rects) {
+    const reach = Math.abs(v) * T + m0 + Math.hypot(r.hw, r.hd) + 6;
+    if (Math.hypot(player.x - r.x, player.z - r.z) < reach) { near = true; break; }
+  }
+  if (!near) return false;
+  const hit = (x, z, yaw, m) => playerParts(player, x, z, yaw).some((p) => rects.some((r) => rectsOverlap(p, r, m)));
+  if (hit(player.x, player.z, player.yaw, m0)) return true;
+  for (const w of yawRate && Math.abs(yawRate) > 1e-3 ? [0, yawRate] : [0]) {
+    let x = player.x, z = player.z, yaw = player.yaw;
+    for (let t = ZONE.stepS; t <= T + 1e-6; t += ZONE.stepS) {
+      // passi piccoli dentro ogni campione: l'arco non taglia gli angoli
+      for (let k = 0; k < 2; k++) {
+        const h = ZONE.stepS / 2;
+        yaw += w * h;
+        x += Math.sin(yaw) * v * h;
+        z += Math.cos(yaw) * v * h;
+      }
+      if (hit(x, z, yaw, SPAWN.aheadMargin)) return true;
+    }
+  }
+  return false;
+}
+
+// Zona dei camion degli operai libera? boxes: AABB occupate; player e yawRate: muletto; cars: auto del traffico
+// (previste lungo la corsia per la dissolvenza che manca + ZONE.carS); env/ignore: altri ostacoli mobili e pallet come spawnClear.
+// opts.onlyPlayer: solo il giocatore (uscita: le auto si fermano davanti al camion solido).
+export function zoneClear(boxes, { player = null, yawRate = 0, fadeLeftS = 0, cars = [], env, ignore = [], onlyPlayer = false }) {
+  const rects = boxes.map(aabbToRect);
+  if (player && playerThreat(rects, player, yawRate, fadeLeftS)) return { ok: false, why: 'giocatore' };
+  if (onlyPlayer) return { ok: true };
+  for (const car of cars) {
+    const c = car.col, dx = car.dir * Math.max(0, car.v) * (ZONE.carS + fadeLeftS); // fino a camion solido + margine
+    const swept = { minX: Math.min(c.minX, c.minX + dx), maxX: Math.max(c.maxX, c.maxX + dx), minZ: c.minZ, maxZ: c.maxZ };
+    if (rects.some((q) => rectsOverlap(q, aabbToRect(swept), SPAWN.vehicleMargin))) return { ok: false, why: 'car' };
+  }
+  return spawnClear(boxes, { player: null, env, ignore });
+}

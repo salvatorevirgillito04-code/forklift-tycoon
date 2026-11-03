@@ -424,7 +424,7 @@ export class Game {
       // traffico: sempre in movimento (anche nel menu); col gioco in pausa resta fermo
       if (!(this.mode === 'play' && this.paused)) {
         const playing = this.mode === 'play' ? this.forklift : null;
-        this.traffic.update(dt, playing, this.mission.trafficObstacles());
+        this.traffic.update(dt, playing, this.bots.trafficObstacles(this.mission.trafficObstacles())); // anche i camion degli operai solidi
       }
       this.updateCamera(dt);
       this.fogCull = (this.fogCull || 0) - realDt;
@@ -466,7 +466,7 @@ export class Game {
       this.shadowCull = 0.5;
       this.shadowGen.cull(f.x, f.z, 20);
     }
-    this.bots.update(dt, f);
+    this.bots.update(dt, f, this.traffic.cars);
     this.people.update(dt, f, [f, ...[...this.bots.bots.values()].map((b) => b.f)]);
     this.pallets.update(dt);
     for (const ev of f.events) {
