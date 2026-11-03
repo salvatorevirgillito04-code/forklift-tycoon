@@ -14,6 +14,7 @@ e la stessa firma (SHA-256 `f534a8c61ee1bf953c396af05b53d0d38e51afd7257c17bb75db
 | 33 | 2.9.0-diagnostica2-test | prova | guida-fase1-fix 1e7b7d0 | 2026-11-01 |
 | 34 | 2.9.0-profili-test | prova | guida-fase1-fix 0b16830 | 2026-11-01 |
 | 35 | 2.9.0-camion-test | prova | guida-fase1-fix 1fba1a6 | 2026-11-02 |
+| 36 | 2.9.0-camion2-test | prova | guida-fase1-fix d4335a4 | 2026-11-03 |
 
-**Prossimo libero: 36.** Il prossimo APK ufficiale deve avere un numero maggiore di tutti quelli già usati,
+**Prossimo libero: 37.** Il prossimo APK ufficiale deve avere un numero maggiore di tutti quelli già usati,
 comprese le prove installate sul telefono del proprietario.
