@@ -509,7 +509,7 @@ async function workerTruckTests({ app, g, S, P, DT, inp, check, start }) {
 
   // T. traffico: le auto vedono i camion solidi, non li attraversano, non restano bloccate, non impediscono la comparsa
   {
-    const car = allCars[0];
+    const car = allCars[0], vmax0 = car.vmax;
     g.traffic.cars = [car];
     const putCar = (x, dir) => {
       Object.assign(car, { x, dir, z: dir > 0 ? -3.5 : 3.5, vmax: 9, v: 9, blockT: 0, hornT: 0 }); // velocita' fissa: prova ripetibile
@@ -535,6 +535,7 @@ async function workerTruckTests({ app, g, S, P, DT, inp, check, start }) {
     sim(DT, 12, () => { if (car.v < 1) carStopped = true; if (wt.spawnBlockedBy === 'car') delayedByCar = true; return wt.solid ? null : inp(); }, { traffic: true, cars: [car] });
     check('T2. auto in arrivo: la comparsa aspetta l\'auto, l\'auto non si ferma per un camion invisibile', delayedByCar && !carStopped && wt.solid, `rinviata per l'auto ${delayedByCar}, auto ferma ${carStopped}, comparso ${wt.solid}`);
     g.traffic.cars = allCars;
+    car.vmax = vmax0;
   }
 
   // W12. ciclo con il vero lavoro dell'operaio: niente da spostare -> chooseMove fa ripartire il camion, che scompare
@@ -553,7 +554,7 @@ async function workerTruckTests({ app, g, S, P, DT, inp, check, start }) {
     dst.forEach((q, i) => { q.cap = caps[i]; });
     B.work = () => {};
     const ok = seq.includes('leaving:fadeOut') && seq.includes('arriving:hidden') && arrived() && bad(st) === 0;
-    check('W12. ciclo con il lavoro vero dell\'operaio: riparte, scompare al suo posto, ne arriva un altro', ok, `${seq.join(' > ')}; ${say(st)}`);
+    check('W12. ripartenza decisa dall\'operaio (chooseMove, nulla da spostare): scompare al suo posto, ne arriva un altro', ok, `${seq.join(' > ')}; ${say(st)}`);
   }
 
   // M1. camion del contratto in viaggio: i camion degli operai aspettano che arrivi o se ne vada
@@ -579,10 +580,12 @@ async function workerTruckTests({ app, g, S, P, DT, inp, check, start }) {
   await B.prewarm(g.forklift);
   for (let i = 0; i < 20; i++) { g.scene.onAfterRenderObservable.notifyObservers(g.scene); await new Promise((r) => setTimeout(r, 5)); }
   const tb = [...B.bots.values()].filter((b) => b.truck);
+  // stato reale dopo la ricreazione (senza forzarlo): ingombro presente e coerente con solid
+  const coherent = tb.every((b) => [b.truck.bedCol, b.truck.cabCol].every((c) => g.env.colliders.includes(c) && (c.y1 > 0) === b.truck.solid));
   tb.forEach(atHome);
   const f2 = g.forklift, bed = tb[0]?.truck.bedCol;
   const blocks = bed && g.env.colliders.includes(bed) && f2.collides(g.env, (bed.minX + bed.maxX) / 2, (bed.minZ + bed.maxZ) / 2, 0);
-  check('W11. dopo un contratto: operai ricreati, camion parcheggiati solidi', tb.length === 2 && blocks, `camion ${tb.length}, blocca il muletto ${!!blocks}`);
+  check('W11. dopo un contratto: operai ricreati, camion parcheggiati solidi', tb.length === 2 && coherent && blocks, `camion ${tb.length}, ingombri coerenti ${coherent}, al suo posto blocca il muletto ${!!blocks}`);
   app.exitMission();
 }
 }

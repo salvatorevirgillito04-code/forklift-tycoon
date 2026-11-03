@@ -74,7 +74,8 @@ export const ZONE = {
   speedMarginS: 1.0, // margine sulla posizione attuale: SPAWN.margin + velocita' x questo tempo
   stepS: 0.25, // passo dei campioni della traiettoria
   carS: 1.5, // previsione delle auto lungo la corsia, oltre la dissolvenza che manca
-  carDec: 5.5, // frenata delle auto (come in traffic.js)
+  carDec: 3.3, // frenata delle auto: in traffic.js frenano a 0,6 x 5,5 m/s^2
+  carGap: 3.5, // e si fermano a questa distanza dall'ostacolo
 };
 
 // Durata della previsione: dissolvenza che resta + reazione + frenata
@@ -117,7 +118,7 @@ export function playerThreat(rects, player, yawRate, fadeLeftS) {
 
 // Zona dei camion degli operai libera? boxes: AABB occupate; player e yawRate: muletto; cars: auto del traffico
 // (previste lungo la corsia per la dissolvenza che manca + ZONE.carS); env/ignore: altri ostacoli mobili e pallet come spawnClear.
-// opts.onlyPlayer: solo il giocatore (uscita: le auto si fermano davanti al camion solido).
+// opts.onlyPlayer: solo il giocatore (uscita: il camion e' al suo posto, fuori dalla carreggiata).
 export function zoneClear(boxes, { player = null, yawRate = 0, fadeLeftS = 0, cars = [], env, ignore = [], onlyPlayer = false }) {
   const rects = boxes.map(aabbToRect);
   if (player && playerThreat(rects, player, yawRate, fadeLeftS)) return { ok: false, why: 'giocatore' };
@@ -125,7 +126,7 @@ export function zoneClear(boxes, { player = null, yawRate = 0, fadeLeftS = 0, ca
   for (const car of cars) {
     const c = car.col, v = Math.max(0, car.v);
     // fino a camion solido + margine, piu' lo spazio di frenata dell'auto: non deve frenare per un camion appena comparso
-    const dx = car.dir * (v * (ZONE.carS + fadeLeftS) + (v * v) / (2 * ZONE.carDec));
+    const dx = car.dir * (v * (ZONE.carS + fadeLeftS) + (v * v) / (2 * ZONE.carDec) + ZONE.carGap);
     const swept = { minX: Math.min(c.minX, c.minX + dx), maxX: Math.max(c.maxX, c.maxX + dx), minZ: c.minZ, maxZ: c.maxZ };
     if (rects.some((q) => rectsOverlap(q, aabbToRect(swept), SPAWN.vehicleMargin))) return { ok: false, why: 'car' };
   }

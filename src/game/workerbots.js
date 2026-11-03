@@ -61,6 +61,7 @@ function aabbOf(rects) {
   return r;
 }
 
+const onRoad = (c) => c.minZ < WORLD.roadHalf && c.maxZ > -WORLD.roadHalf; // ingombro sulla carreggiata
 const aabbRect = (b) => ({ x: (b.minX + b.maxX) / 2, z: (b.minZ + b.maxZ) / 2, hw: (b.maxX - b.minX) / 2, hd: (b.maxZ - b.minZ) / 2, yaw: 0 });
 
 export class WorkerBots {
@@ -91,10 +92,9 @@ export class WorkerBots {
   update(dt, player, cars = [], movers = []) {
     this.cars = cars;
     this.movers = movers;
-    // velocita' di rotazione del muletto del giocatore (previsione della traiettoria per i camion)
-    // (limitata: dopo un riposizionamento del muletto il primo valore non ha senso)
-    if (dt > 0 && this.lastYaw !== undefined) this.playerYawRate = Math.max(-1.5, Math.min(1.5, wrapAngle(player.yaw - this.lastYaw) / dt));
-    this.lastYaw = player.yaw;
+    // velocita' di rotazione del muletto del giocatore (previsione della traiettoria per i camion): quella reale
+    // della guida, non la differenza tra due fotogrammi (che un riposizionamento falserebbe)
+    this.playerYawRate = player.yawRateNow || 0;
     this.pickTimer -= dt;
     if (this.pickTimer <= 0) {
       this.pickTimer = 0.5;
@@ -367,8 +367,8 @@ export class WorkerBots {
     return res.ok;
   }
 
-  // Uscita: il camion fermo al suo posto puo' scomparire? Solo se il giocatore non puo' arrivarci prima che sparisca
-  // (le auto si fermano davanti al camion finche' e' solido).
+  // Uscita: il camion fermo al suo posto (fuori dalla carreggiata) puo' scomparire? Solo se il giocatore non puo'
+  // arrivarci prima che sparisca.
   truckLeaveClear(bot, player, fadeLeftS) {
     if (!player) return true;
     const b = this.truckBoxes(bot, bot.truck.offset);
@@ -390,7 +390,6 @@ export class WorkerBots {
     for (const bot of this.bots.values()) {
       const tr = bot.truck;
       if (!tr || !tr.solid) continue;
-      const onRoad = (c) => c.minZ < WORLD.roadHalf && c.maxZ > -WORLD.roadHalf;
       if (onRoad(tr.bedCol)) out.push(tr.bedCol);
       if (onRoad(tr.cabCol)) out.push(tr.cabCol);
     }
@@ -421,7 +420,7 @@ export class WorkerBots {
     bot.bed.forEach((s) => s.stack.forEach((node) => node.setEnabled(show)));
   }
 
-  // Arriva in retromarcia, aspetta il carico/scarico, riparte verso la strada.
+  // Arriva in retromarcia, aspetta il carico/scarico, poi scompare al suo posto e ne arriva un altro.
   // Comparsa: fuori, da fermo e senza ingombro, solo con la zona libera (controllata ogni ZONE.checkS anche durante
   // la dissolvenza: se il giocatore o un mezzo si avvicina la comparsa si annulla). Solido solo a visibilita' piena,
   // dopo l'ultimo controllo. Uscita: scompare al suo posto nel piazzale (fuori dalla carreggiata: non blocca auto
