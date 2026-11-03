@@ -69,17 +69,20 @@ export const ZONE = {
   abortS: 0.3, // dissolvenza rapida quando la comparsa si annulla (o ritorno visibile in uscita)
   checkS: 0.1, // controllo della zona durante l'attesa e la dissolvenza
   reactS: 1.5, // tempo di reazione del giocatore
-  brakeDec: 2.5, // frenata del muletto considerata (m/s^2, prudente: sull'asciutto e' circa 4, sulla neve circa 3)
+  brakeDec: 2.5, // frenata del muletto considerata (m/s^2, prudente: dal banco di prova della guida il Colossus da 7,2 m/s
+  // si ferma in 6,2 m sull'asciutto, circa 4,2 m/s^2, e in 8,8 m sulla neve, circa 3)
   speedMarginS: 1.0, // margine sulla posizione attuale: SPAWN.margin + velocita' x questo tempo
   stepS: 0.25, // passo dei campioni della traiettoria
   carS: 1.5, // previsione delle auto lungo la corsia, oltre la dissolvenza che manca
+  carDec: 5.5, // frenata delle auto (come in traffic.js)
 };
 
 // Durata della previsione: dissolvenza che resta + reazione + frenata
 export const zoneHorizon = (v, fadeLeftS) => fadeLeftS + ZONE.reactS + Math.abs(v) / ZONE.brakeDec;
 
 // Il muletto puo' arrivare nella zona? Posizione attuale (margine 6 m + velocita' x 1 s) e traiettoria prevista
-// fino a zoneHorizon (margine SPAWN.aheadMargin), in linea retta e lungo l'arco della sterzata attuale.
+// fino a zoneHorizon (margine SPAWN.aheadMargin), in linea retta e lungo l'arco della sterzata attuale: a velocita'
+// costante per la dissolvenza che manca + il tempo di reazione, poi in frenata (ZONE.brakeDec) fino a fermarsi.
 // yawRate: velocita' di rotazione del muletto (rad/s), misurata da chi chiama.
 export function playerThreat(rects, player, yawRate, fadeLeftS) {
   const v = player.v;
@@ -96,13 +99,15 @@ export function playerThreat(rects, player, yawRate, fadeLeftS) {
   if (hit(player.x, player.z, player.yaw, m0)) return true;
   for (const w of yawRate && Math.abs(yawRate) > 1e-3 ? [0, yawRate] : [0]) {
     let x = player.x, z = player.z, yaw = player.yaw;
+    const tBrake = fadeLeftS + ZONE.reactS;
     for (let t = ZONE.stepS; t <= T + 1e-6; t += ZONE.stepS) {
       // passi piccoli dentro ogni campione: l'arco non taglia gli angoli
       for (let k = 0; k < 2; k++) {
-        const h = ZONE.stepS / 2;
-        yaw += w * h;
-        x += Math.sin(yaw) * v * h;
-        z += Math.cos(yaw) * v * h;
+        const h = ZONE.stepS / 2, tm = t - ZONE.stepS + (k + 0.5) * h;
+        const vt = tm <= tBrake ? v : Math.sign(v) * Math.max(0, Math.abs(v) - ZONE.brakeDec * (tm - tBrake));
+        yaw += w * h * (v ? vt / v : 0); // si gira meno mentre rallenta
+        x += Math.sin(yaw) * vt * h;
+        z += Math.cos(yaw) * vt * h;
       }
       if (hit(x, z, yaw, SPAWN.aheadMargin)) return true;
     }
@@ -118,7 +123,9 @@ export function zoneClear(boxes, { player = null, yawRate = 0, fadeLeftS = 0, ca
   if (player && playerThreat(rects, player, yawRate, fadeLeftS)) return { ok: false, why: 'giocatore' };
   if (onlyPlayer) return { ok: true };
   for (const car of cars) {
-    const c = car.col, dx = car.dir * Math.max(0, car.v) * (ZONE.carS + fadeLeftS); // fino a camion solido + margine
+    const c = car.col, v = Math.max(0, car.v);
+    // fino a camion solido + margine, piu' lo spazio di frenata dell'auto: non deve frenare per un camion appena comparso
+    const dx = car.dir * (v * (ZONE.carS + fadeLeftS) + (v * v) / (2 * ZONE.carDec));
     const swept = { minX: Math.min(c.minX, c.minX + dx), maxX: Math.max(c.maxX, c.maxX + dx), minZ: c.minZ, maxZ: c.maxZ };
     if (rects.some((q) => rectsOverlap(q, aabbToRect(swept), SPAWN.vehicleMargin))) return { ok: false, why: 'car' };
   }

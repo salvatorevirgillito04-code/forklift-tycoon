@@ -466,7 +466,7 @@ export class Game {
       this.shadowCull = 0.5;
       this.shadowGen.cull(f.x, f.z, 20);
     }
-    this.bots.update(dt, f, this.traffic.cars);
+    this.bots.update(dt, f, this.traffic.cars, this.mission.trafficObstacles());
     this.people.update(dt, f, [f, ...[...this.bots.bots.values()].map((b) => b.f)]);
     this.pallets.update(dt);
     for (const ev of f.events) {

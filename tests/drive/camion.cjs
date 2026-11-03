@@ -303,15 +303,16 @@ async function workerTruckTests({ app, g, S, P, DT, inp, check, start }) {
   };
   // Simulazione: driver(t) -> comandi. Ritorna i problemi trovati.
   const sim = (dt, secs, driver, o = {}) => {
-    const st = { viol: 0, violInfo: '', ghost: 0, pen: 0, invisSolid: 0, activations: 0, maxFade: 0, contact: false, maxCheckMs: 0, maxFrameMs: 0 };
+    const st = { viol: 0, violInfo: '', ghost: 0, pen: 0, invisSolid: 0, leaveRoad: 0, activations: 0, maxFade: 0, contact: false, maxCheckMs: 0, maxFrameMs: 0, sumFrameMs: 0, frames: 0 };
     const was = new Map(bots.map((b) => [b, b.truck.solid]));
     for (let t = 0; t < secs; t += dt) {
       const input = driver(t, st);
       if (input === null) break;
       f.step(dt, input, env);
       const t0 = performance.now();
-      B.update(dt, f, o.cars || []);
-      st.maxFrameMs = Math.max(st.maxFrameMs, performance.now() - t0);
+      B.update(dt, f, o.cars || [], o.movers || []);
+      const ms = performance.now() - t0;
+      st.maxFrameMs = Math.max(st.maxFrameMs, ms); st.sumFrameMs += ms; st.frames++;
       if (o.traffic) realTraffic.call(g.traffic, dt, f, B.trafficObstacles([]));
       for (const b of bots) {
         const tr = b.truck, cols = [tr.bedCol, tr.cabCol];
@@ -323,6 +324,8 @@ async function workerTruckTests({ app, g, S, P, DT, inp, check, start }) {
         was.set(b, tr.solid);
         if (tr.solid && tr.state === 'arriving' && tr.fade < 1) st.invisSolid++;
         if (!tr.solid && cols.some((c) => c.y1 > 0)) st.invisSolid++;
+        // in uscita non entra mai nella carreggiata
+        if (tr.state === 'leaving' && cols.some((c) => c.y1 > 0 && c.minZ < 7 && c.maxZ > -7)) st.leaveRoad++;
         const touching = cols.includes(f.blockedBy) || cols.some((c) => depthIn(c) > 0);
         if (touching) { st.contact = true; if (tr.fade < 0.99) st.ghost++; }
         if (cols.some((c) => depthIn(c) > 0.02)) st.pen++;
@@ -330,8 +333,8 @@ async function workerTruckTests({ app, g, S, P, DT, inp, check, start }) {
     }
     return st;
   };
-  const bad = (st) => st.viol + st.ghost + st.pen + st.invisSolid;
-  const say = (st) => `violazioni ${st.viol}${st.violInfo ? ` (${st.violInfo})` : ''}, urti con camion non del tutto visibile ${st.ghost}, compenetrazioni ${st.pen}, solido da invisibile ${st.invisSolid}`;
+  const bad = (st) => st.viol + st.ghost + st.pen + st.invisSolid + st.leaveRoad;
+  const say = (st) => `violazioni ${st.viol}${st.violInfo ? ` (${st.violInfo})` : ''}, urti con camion non del tutto visibile ${st.ghost}, compenetrazioni ${st.pen}, solido da invisibile ${st.invisSolid}, uscita sulla strada ${st.leaveRoad}`;
   const hold = (speed, gear = 1) => () => inp({ throttle: Math.min(1, Math.abs(speed) / vmax + 0.02), gear });
   const lanes = [-3.5, 3.5];
   const FPS = [20, 30, 60];
@@ -473,33 +476,32 @@ async function workerTruckTests({ app, g, S, P, DT, inp, check, start }) {
       return inp({ throttle: 0.7 });
     });
     B.truckSpawnClear = spawnClear0;
-    check(`W9. attraversamenti ripetuti per 60 s, ${fps} FPS: nessun camion inevitabile, nessun attraversamento`, bad(st) === 0 && truckNodes() === nodes0 && truckCols() === cols0, `${say(st)}, comparse ${st.activations}, cicli ${cycles}, controllo piu' lento ${maxCheck.toFixed(3)} ms, aggiornamento operai piu' lento ${st.maxFrameMs.toFixed(3)} ms`);
+    check(`W9. attraversamenti ripetuti per 60 s, ${fps} FPS: nessun camion inevitabile, nessun attraversamento`, bad(st) === 0 && truckNodes() === nodes0 && truckCols() === cols0, `${say(st)}, comparse ${st.activations}, cicli ${cycles}, controllo piu' lento ${maxCheck.toFixed(3)} ms, aggiornamento operai medio ${(st.sumFrameMs / st.frames).toFixed(4)} ms, piu' lento ${st.maxFrameMs.toFixed(3)} ms`);
   }
 
   // D. scomparsa: mai invisibile e solido dove il giocatore puo' arrivare
   {
     // D1. muletto fermo accanto al camion fuori: resta visibile e solido
-    atHome(wb); away();
-    Object.assign(wt, { state: 'leaving', wait: 0 });
-    sim(DT, 20, () => (wt.phase === 'fadeOut' ? null : inp()));
+    const leave = () => { atHome(wb); Object.assign(wt, { state: 'leaving', wait: 0 }); };
+    atHome(wb);
     const cab = wt.cabCol;
-    f.place(cab.maxX + 3, (cab.minZ + cab.maxZ) / 2, -Math.PI / 2); f.v = 0;
+    f.place(cab.maxX + 3, (cab.minZ + cab.maxZ) / 2, -Math.PI / 2); f.v = 0; // accanto al camion, prima che riparta
+    Object.assign(wt, { state: 'leaving', wait: 0 });
     let minFade = 1;
     const st1 = sim(DT, 10, () => { minFade = Math.min(minFade, wt.fade); return inp(); });
     check('D1. scomparsa con il muletto vicino: il camion resta visibile e solido', minFade > 0.95 && wt.solid && wt.state === 'leaving' && bad(st1) === 0, `visibilita' minima ${minFade.toFixed(2)}, solido ${wt.solid}, rinvii ${wt.leaveDelays}`);
     // D2. il muletto arriva mentre scompare: torna visibile, nessun urto con un camion quasi invisibile
     for (const fps of FPS) {
-      Object.assign(wt, { fade: 1, outSafe: false, checkT: 0 });
-      away();
+      away(); leave();
       sim(1 / fps, 3, () => (wt.fade < 0.6 ? null : inp()));
       const fade0 = wt.fade;
-      f.place(zb.minX - 22, -3.5, Math.PI / 2); f.v = vmax;
+      f.place(zb.minX - 22, wt.home.z, Math.PI / 2); f.v = vmax; // nel piazzale, verso il fianco del camion
       let back = false;
       const st2 = sim(1 / fps, 8, () => { back ||= wt.fade > 0.99; return hold(vmax)(); });
       check(`D2. muletto in arrivo durante la scomparsa, ${fps} FPS: torna visibile, nessun urto con camion quasi invisibile`, fade0 < 0.6 && fade0 > 0 && back && bad(st2) === 0, `visibilita' ${fade0.toFixed(2)} -> ${wt.fade.toFixed(2)}, ${say(st2)}`);
     }
     // D3. muletto lontano: scompare e solo a visibilita' 0 perde l'ingombro
-    away();
+    away(); leave();
     let solidWhileGone = false, gone = false;
     sim(DT, 5, () => { if (wt.state === 'leaving' && !wt.solid) solidWhileGone = true; if (wt.state === 'arriving') gone = true; return gone ? null : inp(); });
     check('D3. muletto lontano: il camion scompare e perde l\'ingombro solo quando e\' sparito', gone && !solidWhileGone && wt.fade === 0 && wt.cabCol.y1 < 0, `sparito ${gone}`);
@@ -509,7 +511,11 @@ async function workerTruckTests({ app, g, S, P, DT, inp, check, start }) {
   {
     const car = allCars[0];
     g.traffic.cars = [car];
-    const putCar = (x, dir) => { Object.assign(car, { x, dir, z: dir > 0 ? -3.5 : 3.5, v: car.vmax, blockT: 0, hornT: 0 }); };
+    const putCar = (x, dir) => {
+      Object.assign(car, { x, dir, z: dir > 0 ? -3.5 : 3.5, vmax: 9, v: 9, blockT: 0, hornT: 0 }); // velocita' fissa: prova ripetibile
+      // ingombro coerente con la posizione (nel gioco lo aggiorna il traffico insieme all'auto)
+      Object.assign(car.col, { minX: dir > 0 ? x + car.rear : x - car.front, maxX: dir > 0 ? x + car.front : x - car.rear, minZ: car.z - car.hw, maxZ: car.z + car.hw });
+    };
     // T1. camion che attraversa la strada (in arrivo): l'auto si ferma, poi riparte
     toRoad(wb); away();
     sim(DT, 3, () => (wt.solid ? null : inp()));
@@ -531,15 +537,52 @@ async function workerTruckTests({ app, g, S, P, DT, inp, check, start }) {
     g.traffic.cars = allCars;
   }
 
-  // W13. nessuna duplicazione o perdita di veicoli dopo tutte le prove
-  check('W13. nessun camion duplicato o perso, ingombri invariati', truckNodes() === nodes0 && truckCols() === cols0 && B.bots.size === 2, `camion ${truckNodes()}/${nodes0}, ingombri ${truckCols()}/${cols0}`);
+  // W12. ciclo con il vero lavoro dell'operaio: niente da spostare -> chooseMove fa ripartire il camion, che scompare
+  // al suo posto (mai sulla strada), poi ne arriva un altro con la comparsa sicura
+  {
+    const work0 = Object.getPrototypeOf(B).work;
+    B.work = work0;
+    atHome(wb); atHome(other); away();
+    const dst = wb.mode === 'load' ? wb.bed : wb.ground;
+    const caps = dst.map((q) => q.cap);
+    dst.forEach((q) => { q.cap = q.stack.length; }); // destinazione piena: nulla da spostare
+    const seq = [];
+    // arrivato al suo posto: 'parked', oppure gia' ripartito nello stesso fotogramma (ancora nulla da spostare)
+    const arrived = () => seq.includes('arriving:fadeIn') && (wt.state === 'parked' || (seq.includes('arriving:drive') && wt.state === 'leaving'));
+    const st = sim(DT, 40, () => { const k = `${wt.state}:${wt.phase}`; if (seq[seq.length - 1] !== k) seq.push(k); return arrived() ? null : inp(); });
+    dst.forEach((q, i) => { q.cap = caps[i]; });
+    B.work = () => {};
+    const ok = seq.includes('leaving:fadeOut') && seq.includes('arriving:hidden') && arrived() && bad(st) === 0;
+    check('W12. ciclo con il lavoro vero dell\'operaio: riparte, scompare al suo posto, ne arriva un altro', ok, `${seq.join(' > ')}; ${say(st)}`);
+  }
 
-  // W14. dopo un contratto: i camion degli operai restano solidi e bloccano il muletto
-  atHome(wb); atHome(other);
+  // M1. camion del contratto in viaggio: i camion degli operai aspettano che arrivi o se ne vada
+  {
+    toRoad(wb); away();
+    const mover = { minX: zb.minX - 60, maxX: zb.minX - 50, minZ: -4.7, maxZ: -2.3, y0: 0, y1: 4, tag: 'truck' };
+    const st1 = sim(DT, 3, () => inp(), { movers: [mover] });
+    const waited = !wt.solid && wt.fade === 0 && wt.spawnBlockedBy === 'camion contratto';
+    const st2 = sim(DT, 3, () => (wt.solid ? null : inp()));
+    check('M1. camion del contratto in viaggio: il camion dell\'operaio aspetta, poi compare', waited && wt.solid && bad(st1) + bad(st2) === 0, `aspettato ${waited}, comparso dopo ${wt.solid}`);
+  }
+
+  // W10. nessuna duplicazione o perdita di veicoli dopo tutte le prove
+  check('W10. nessun camion duplicato o perso, ingombri invariati', truckNodes() === nodes0 && truckCols() === cols0 && B.bots.size === 2, `camion ${truckNodes()}/${nodes0}, ingombri ${truckCols()}/${cols0}`);
+
+  // W11. dopo un contratto: operai ricreati, i camion parcheggiati sono solidi e bloccano il muletto
   app.exitMission();
   await start('d80');
-  const B2 = g.bots, solidOk = [...B2.bots.values()].every((b) => !b.truck || !b.truck.solid || g.env.colliders.includes(b.truck.cabCol));
-  check('W14. dopo un contratto: ingombri dei camion degli operai coerenti', solidOk);
+  const proto = Object.getPrototypeOf(B);
+  B.pick = proto.pick; B.work = proto.work;
+  B.setWorkers([0, 1].map((i) => ({ id: `t${i}`, name: 'x', avatar: 0, level: 3, warehouse: 0, vehicle: 'd18' })));
+  g.forklift.place(zx, 30, 0);
+  await B.prewarm(g.forklift);
+  for (let i = 0; i < 20; i++) { g.scene.onAfterRenderObservable.notifyObservers(g.scene); await new Promise((r) => setTimeout(r, 5)); }
+  const tb = [...B.bots.values()].filter((b) => b.truck);
+  tb.forEach(atHome);
+  const f2 = g.forklift, bed = tb[0]?.truck.bedCol;
+  const blocks = bed && g.env.colliders.includes(bed) && f2.collides(g.env, (bed.minX + bed.maxX) / 2, (bed.minZ + bed.maxZ) / 2, 0);
+  check('W11. dopo un contratto: operai ricreati, camion parcheggiati solidi', tb.length === 2 && blocks, `camion ${tb.length}, blocca il muletto ${!!blocks}`);
   app.exitMission();
 }
 }

@@ -87,10 +87,13 @@ export class WorkerBots {
   }
 
   // cars: auto del traffico (per la comparsa sicura dei camion)
-  update(dt, player, cars = []) {
+  // movers: camion del contratto in viaggio (visibile): finche' viaggia nessun camion degli operai compare
+  update(dt, player, cars = [], movers = []) {
     this.cars = cars;
+    this.movers = movers;
     // velocita' di rotazione del muletto del giocatore (previsione della traiettoria per i camion)
-    if (dt > 0 && this.lastYaw !== undefined) this.playerYawRate = wrapAngle(player.yaw - this.lastYaw) / dt;
+    // (limitata: dopo un riposizionamento del muletto il primo valore non ha senso)
+    if (dt > 0 && this.lastYaw !== undefined) this.playerYawRate = Math.max(-1.5, Math.min(1.5, wrapAngle(player.yaw - this.lastYaw) / dt));
     this.lastYaw = player.yaw;
     this.pickTimer -= dt;
     if (this.pickTimer <= 0) {
@@ -354,6 +357,8 @@ export class WorkerBots {
     const a = TRUCK_AREA.away;
     const b0 = this.truckBoxes(bot, a), b1 = this.truckBoxes(bot, a + 8);
     const tr = bot.truck;
+    // camion del contratto in viaggio: non si prevede il suo percorso, si aspetta che arrivi o se ne vada
+    if (this.movers?.length) { tr.spawnBlockedBy = 'camion contratto'; return false; }
     const own = [tr.bedCol, tr.cabCol, ...bot.slots.map((s) => s.collider)]; // il muletto dell'operaio conta come gli altri
     const res = zoneClear([unionBox([b0.bed, b0.cab, b1.bed, b1.cab])], {
       player, yawRate: this.playerYawRate || 0, fadeLeftS, cars: this.cars || [], env: this.env, ignore: own,
@@ -362,7 +367,7 @@ export class WorkerBots {
     return res.ok;
   }
 
-  // Uscita: il camion fermo fuori puo' scomparire? Solo se il giocatore non puo' arrivarci prima che sparisca
+  // Uscita: il camion fermo al suo posto puo' scomparire? Solo se il giocatore non puo' arrivarci prima che sparisca
   // (le auto si fermano davanti al camion finche' e' solido).
   truckLeaveClear(bot, player, fadeLeftS) {
     if (!player) return true;
@@ -385,7 +390,9 @@ export class WorkerBots {
     for (const bot of this.bots.values()) {
       const tr = bot.truck;
       if (!tr || !tr.solid) continue;
-      for (const c of [tr.bedCol, tr.cabCol]) if (c.minZ < WORLD.roadHalf && c.maxZ > -WORLD.roadHalf) out.push(c);
+      const onRoad = (c) => c.minZ < WORLD.roadHalf && c.maxZ > -WORLD.roadHalf;
+      if (onRoad(tr.bedCol)) out.push(tr.bedCol);
+      if (onRoad(tr.cabCol)) out.push(tr.cabCol);
     }
     return out;
   }
@@ -417,32 +424,34 @@ export class WorkerBots {
   // Arriva in retromarcia, aspetta il carico/scarico, riparte verso la strada.
   // Comparsa: fuori, da fermo e senza ingombro, solo con la zona libera (controllata ogni ZONE.checkS anche durante
   // la dissolvenza: se il giocatore o un mezzo si avvicina la comparsa si annulla). Solido solo a visibilita' piena,
-  // dopo l'ultimo controllo. Uscita: arriva fuori visibile e solido, scompare solo quando il giocatore non puo'
-  // raggiungerlo prima che sparisca; altrimenti resta visibile e solido.
+  // dopo l'ultimo controllo. Uscita: scompare al suo posto nel piazzale (fuori dalla carreggiata: non blocca auto
+  // ne' il camion del contratto), solo quando il giocatore non puo' raggiungerlo prima che sparisca; altrimenti
+  // resta visibile e solido.
   driveTruck(bot, dt, player) {
     const tr = bot.truck;
     if (tr.state !== 'arriving' && tr.state !== 'leaving') return;
     if (tr.wait > 0) { tr.wait -= dt; return; }
     if (tr.state === 'arriving' && tr.phase !== 'drive') { this.truckFadeIn(bot, dt, player); return; }
-    if (tr.state === 'leaving' && tr.phase === 'fadeOut') { this.truckFadeOut(bot, dt, player); return; }
-    if (tr.state === 'leaving' && tr.phase !== 'drive') Object.assign(tr, { phase: 'drive', fade: 1, solid: true });
-    const goal = tr.state === 'arriving' ? 0 : TRUCK_AREA.away;
+    if (tr.state === 'leaving') {
+      if (tr.phase !== 'fadeOut') Object.assign(tr, { phase: 'fadeOut', checkT: 0, outSafe: false });
+      this.truckFadeOut(bot, dt, player);
+      return;
+    }
+    const goal = 0;
     const dist = Math.abs(goal - tr.offset);
     const want = Math.max(0.15, Math.min(3.5, Math.sqrt(2 * TRUCK_ACC * dist)));
     tr.v = easeStep(tr.v || 0, want, TRUCK_ACC * dt);
     const next = easeStep(tr.offset, goal, tr.v * dt);
     const b = this.truckBoxes(bot, next);
-    // Non investe il giocatore ne' le auto (che si fermano davanti a lui)
+    // Non investe il giocatore. Le auto no: il camion si allontana dalla strada (entra nel piazzale) e sono loro
+    // a fermarsi davanti a lui; se aspettasse anche lui un'auto ferma accanto si bloccherebbero a vicenda
     const mine = [aabbRect(b.bed), aabbRect(b.cab)];
-    const blocked = (player && [player.bodyRect(), ...player.forkRects()].some((o) => mine.some((m) => rectsOverlap(m, o, 0.4))))
-      || (this.cars || []).some((c) => mine.some((m) => rectsOverlap(m, aabbRect(c.col), 0.4)));
-    if (blocked) { tr.v = 0; return; }
+    if (player && [player.bodyRect(), ...player.forkRects()].some((o) => mine.some((m) => rectsOverlap(m, o, 0.4)))) { tr.v = 0; return; }
     tr.offset = next;
     this.placeTruck(bot);
     if (Math.abs(tr.offset - goal) < 1e-3) {
       tr.v = 0;
-      if (tr.state === 'arriving') tr.state = 'parked';
-      else Object.assign(tr, { phase: 'fadeOut', checkT: 0, outSafe: false }); // fuori: scompare quando e' sicuro
+      tr.state = 'parked';
     }
   }
 
@@ -485,13 +494,14 @@ export class WorkerBots {
       if (!tr.outSafe) tr.leaveDelays++;
     }
     // non sicuro: resta (o torna subito) visibile, sempre solido
+    const f0 = tr.fade;
     tr.fade = tr.outSafe ? Math.max(0, tr.fade - dt / ZONE.fadeS) : Math.min(1, tr.fade + dt / ZONE.abortS);
     if (tr.fade === 0) {
-      // sparito: solo ora senza ingombro. Il prossimo camion fa il contratto opposto
+      // sparito: solo ora senza ingombro; torna fuori, nascosto. Il prossimo camion fa il contratto opposto
       bot.mode = bot.mode === 'load' ? 'unload' : 'load';
       this.truckToRoad(tr, 3);
     }
-    this.placeTruck(bot);
+    if (tr.fade !== f0) this.placeTruck(bot); // fermo e visibile in attesa: niente da aggiornare
   }
 
   // ---------- Operaio ----------
