@@ -1,13 +1,17 @@
 import { createTruckModel, TRUCK, PALLET } from './models.js';
 import { WAREHOUSES, CONTRACT_TYPES, bumpPct, BUMP_MAX } from '../data.js';
 import { PLOT, plotToWorld, zoneRect, rackSlots, rackRect } from './world.js';
-import { bezierPath, pointAt, toLocal } from './physics.js';
+import { bezierPath, pointAt, toLocal, rectsOverlap, aabbIntoRect } from './physics.js';
 import { spawnClear, unionBox, SPAWN } from './spawnsafety.js';
 
 const TRUCK_COLORS = ['#d63a2f', '#1f5fa8', '#f0f0f0', '#2c8c4a', '#e3a01b'];
 // Ingombro del camion lungo il suo asse (cabina verso +x): dal fondo del pianale al muso della motrice
 const TRUCK_REAR = -TRUCK.bedLength / 2 - 0.2, TRUCK_FRONT = TRUCK.bedLength / 2 + 5;
 const TRUCK_HALF_W = TRUCK.bedWidth / 2 + 0.05;
+// Precedenza ai camion degli operai che attraversano la strada: il camion del contratto guarda avanti lungo il suo
+// percorso (forma reale, girata) per lo spazio di frenata + margin e rallenta per fermarsi prima della zona occupata
+export const YIELD = { dec: 3.5, margin: 2, step: 1, extra: 6 };
+const Y_RECT = { x: 0, z: 0, hw: 0, hd: 0, yaw: 0 }, Z_RECT = { x: 0, z: 0, hw: 0, hd: 0, yaw: 0 };
 const ARRIVE_LANE = -3.5; // corsia (z) da cui arriva il camion: si guida a destra, verso +x su z = -3,5
 // distanza del centro del muletto da una scatola { minX, maxX, minZ, maxZ }
 const boxDist = (b, f) => Math.hypot(Math.max(b.minX - f.x, 0, f.x - b.maxX), Math.max(b.minZ - f.z, 0, f.z - b.maxZ));
@@ -155,14 +159,15 @@ export class Mission {
   }
 
   // Ritorna 'complete', 'failed' o null.
-  update(dt, forklift, cars, walkers) {
+  // zones: zone occupate dai camion degli operai (WorkerBots.truckZones), a cui il camion del contratto da' la precedenza
+  update(dt, forklift, cars, walkers, zones) {
     if (!this.contract || this.finished) {
-      this.driveTruck(dt, forklift, cars, walkers);
+      this.driveTruck(dt, forklift, cars, walkers, zones);
       return null;
     }
     if (this.contract.type === 'free') return null;
     if (this.drive) {
-      this.driveTruck(dt, forklift, cars, walkers);
+      this.driveTruck(dt, forklift, cars, walkers, zones);
       return null;
     }
     this.timeLeft -= dt;
@@ -206,7 +211,7 @@ export class Mission {
 
   // Camion in movimento lungo le sue tratte: rallenta alla fine di ognuna e si ferma se il muletto e' davanti
   // cars: macchine { x, z, v } da seguire sulle tratte di viaggio (in manovra sono loro ad aspettare il camion)
-  driveTruck(dt, forklift, cars = [], walkers = []) {
+  driveTruck(dt, forklift, cars = [], walkers = [], zones = []) {
     const d = this.drive;
     if (!d || !this.truck) return;
     if (d.spawned === false) {
@@ -219,6 +224,12 @@ export class Mission {
       const res = spawnClear([unionBox(boxes)], { player: forklift, env: this.env, ignore: [this.moveCol, ...(this.truckColliders || [])] });
       this.spawnBlockedBy = res.ok ? null : res.why;
       if (!res.ok) { d.spawnDelays += 1; return; }
+      // compare gia' in velocita': solo se puo' fermarsi prima di una zona occupata da un camion degli operai
+      if (zones.length && this.freeAhead(zones, d.v) < (d.v * d.v) / (2 * YIELD.dec) + YIELD.margin) {
+        this.spawnBlockedBy = 'camion operaio';
+        d.spawnDelays += 1;
+        return;
+      }
       d.spawned = true;
       this.truck.setEnabled(true);
       this.moveCol.y1 = 4;
@@ -238,6 +249,11 @@ export class Mission {
         if (Math.abs(lz) < 2 && gap > -2 && gap < 18) want = Math.min(want, gap < 6 ? 0 : c.v);
       }
     }
+    // camion degli operai che attraversano: si ferma (frenata progressiva) prima della zona occupata
+    if (zones.length) {
+      const free = this.freeAhead(zones, d.v);
+      if (free < Infinity) want = Math.min(want, Math.sqrt(2 * YIELD.dec * Math.max(0, free - YIELD.margin)));
+    }
     d.v += Math.max(-3.5 * dt, Math.min(2.4 * dt, want - d.v));
     d.s = Math.min(leg.path.len, d.s + Math.max(0, d.v) * dt);
     this.placeTruck();
@@ -250,6 +266,32 @@ export class Mission {
       if (d.mode === 'arrive') this.park();
       else this.truck.setEnabled(false);
     }
+  }
+
+  // Distanza libera lungo il percorso (tratta attuale e successive) prima di toccare una zona occupata, con la forma
+  // reale del camion girato (non moveCol, che in curva e' piu' grande e toccherebbe i camion parcheggiati).
+  // Si guarda fino allo spazio di frenata + margine + extra. Infinity: nessuna zona davanti.
+  freeAhead(zones, v) {
+    const d = this.drive, P = this.truckPose;
+    const look = (v * v) / (2 * YIELD.dec) + YIELD.margin + YIELD.extra;
+    // zone vicine soltanto (niente calcoli se sono lontane)
+    const reach = look + TRUCK_FRONT - TRUCK_REAR + 2;
+    let any = false;
+    for (const z of zones) if (z.maxX > P.x - reach && z.minX < P.x + reach && z.maxZ > P.z - reach && z.minZ < P.z + reach) { any = true; break; }
+    if (!any) return Infinity;
+    const hl = (TRUCK_FRONT - TRUCK_REAR) / 2, mid = (TRUCK_FRONT + TRUCK_REAR) / 2;
+    let i = d.i, s = d.s, dist = 0;
+    while (dist <= look && i < d.legs.length) {
+      const leg = d.legs[i], pt = pointAt(leg.path, s);
+      const hx = leg.reverse ? -pt.dx : pt.dx, hz = leg.reverse ? -pt.dz : pt.dz;
+      const yaw = Math.atan2(-hz, hx);
+      Object.assign(Y_RECT, { x: pt.x + Math.cos(yaw) * mid, z: pt.z - Math.sin(yaw) * mid, hw: hl, hd: TRUCK_HALF_W, yaw });
+      for (const z of zones) if (rectsOverlap(Y_RECT, aabbIntoRect(z, Z_RECT))) return dist;
+      s += YIELD.step;
+      dist += YIELD.step;
+      if (s > leg.path.len) { s -= leg.path.len; i += 1; }
+    }
+    return Infinity;
   }
 
   // Scatola occupata dal camion a una distanza s dall'inizio della prima tratta (stessa forma di moveCol)

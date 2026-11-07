@@ -420,7 +420,7 @@ export class Game {
         for (let i = 0; i < n && this.mode === 'play' && !this.paused; i++) this.step(frameDt / n);
         if (perf) perf.addStep(performance.now() - t0);
       }
-      else if (this.mode === 'play' && this.mission.finished) this.mission.driveTruck(dt, null, this.traffic.cars, this.people.list);
+      else if (this.mode === 'play' && this.mission.finished) this.mission.driveTruck(dt, null, this.traffic.cars, this.people.list, this.bots.truckZones());
       // traffico: sempre in movimento (anche nel menu); col gioco in pausa resta fermo
       if (!(this.mode === 'play' && this.paused)) {
         const playing = this.mode === 'play' ? this.forklift : null;
@@ -483,7 +483,7 @@ export class Game {
     }
     f.events.length = 0;
     this.mission.updateContact(f);
-    const outcome = this.mission.update(dt, f, this.traffic.cars, this.people.list);
+    const outcome = this.mission.update(dt, f, this.traffic.cars, this.people.list, this.bots.truckZones()); // precedenza ai camion degli operai
     if (this.mission.justParked) {
       this.mission.justParked = false;
       this.hud.toast(t('truckParked'), 'good');

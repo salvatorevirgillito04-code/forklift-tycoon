@@ -17,6 +17,7 @@ async function runTests() {
   const url = (n) => performance.getEntriesByType('resource').map((e) => e.name).find((u) => u.includes(n));
   const P = await import(url('/src/game/physics.js'));
   const S = await import(url('/src/game/spawnsafety.js'));
+  const M = await import(url('/src/game/mission.js'));
   const DT = 1 / 60;
   const out = [];
   const check = (nome, ok, info = '') => out.push({ nome, ok: !!ok, info });
@@ -254,15 +255,17 @@ async function runTests() {
   const stillThere = cols.every((c) => env.colliders.includes(c));
   check('16. fine contratto: i camion degli operai restano solidi', stillThere);
   app.exitMission();
-  await workerTruckTests({ app, g, S, P, DT, inp, check, start });
+  await workerTruckTests({ app, g, S, M, P, DT, inp, check, start });
   return out;
 
 // ---------- Fase 1.4: camion degli operai con il muletto che guida davvero (Colossus, 7,2 m/s) ----------
 // Funzioni reali del gioco: Forklift.step, WorkerBots.update (camion, comparsa, scomparsa), Traffic.update.
 // Il lavoro degli operai (spostare i pallet) e' fermo: i camion si comandano a mano per avere casi ripetibili.
-async function workerTruckTests({ app, g, S, P, DT, inp, check, start }) {
+async function workerTruckTests({ app, g, S, M, P, DT, inp, check, start }) {
   await start('d80');
+  const m = g.mission, arriveLegs = m.drive.legs, limit = m.timeLeft;
   const f = g.forklift, env = g.env, B = g.bots, Z = S.ZONE;
+  if (window.__weak) Object.assign(M.YIELD, { margin: -1000 }); // il camion del contratto non da' piu' precedenza
   if (window.__weak) Object.assign(Z, { reactS: 0, speedMarginS: 0, brakeDec: 1e9, fadeS: 3 });
   B.setWorkers([0, 1].map((i) => ({ id: `t${i}`, name: 'x', avatar: 0, level: 3, warehouse: 0, vehicle: 'd18' })));
   B.pick = () => [];
@@ -565,6 +568,181 @@ async function workerTruckTests({ app, g, S, P, DT, inp, check, start }) {
     const waited = !wt.solid && wt.fade === 0 && wt.spawnBlockedBy === 'camion contratto';
     const st2 = sim(DT, 3, () => (wt.solid ? null : inp()));
     check('M1. camion del contratto in viaggio: il camion dell\'operaio aspetta, poi compare', waited && wt.solid && bad(st1) + bad(st2) === 0, `aspettato ${waited}, comparso dopo ${wt.solid}`);
+  }
+
+  // ---------- C. camion del contratto e camion degli operai: precedenza, nessun attraversamento, nessun blocco ----------
+  {
+    const TF = 6 + 5, TR = -6 - 0.2, HW = 1.25 + 0.05; // come in mission.js (TRUCK 12 x 2,5)
+    const cRect = () => { const Q = m.truckPose, mid = (TF + TR) / 2; return { x: Q.x + Math.cos(Q.yaw) * mid, z: Q.z - Math.sin(Q.yaw) * mid, hw: (TF - TR) / 2, hd: HW, yaw: Q.yaw }; };
+    const ownCols = () => m.truckColliders || [];
+    const arrive = () => {
+      env.colliders = env.colliders.filter((c) => !ownCols().includes(c) && c !== m.moveCol);
+      env.colliders.push(m.moveCol);
+      m.finished = false; m.timeLeft = limit;
+      m.drive = { mode: 'arrive', i: 0, s: 0, v: 13, legs: arriveLegs, spawned: false, retry: 0, spawnDelays: 0 };
+      m.truck.setEnabled(false); m.moveCol.y1 = -1; m.placeTruck();
+    };
+    const leave = () => {
+      env.colliders = env.colliders.filter((c) => !ownCols().includes(c));
+      if (!env.colliders.includes(m.moveCol)) env.colliders.push(m.moveCol);
+      m.finished = true; m.truck.setEnabled(true); m.moveCol.y1 = 4;
+      m.drive = { mode: 'leave', i: 0, s: 0, v: 0, legs: m.leaveLegsFor() };
+      m.placeTruck();
+    };
+    const cross = (b, off) => { Object.assign(b.truck, { state: 'arriving', phase: 'drive', offset: off, fade: 1, solid: true, v: 0, wait: 0 }); B.placeTruck(b); };
+    const hidden = (b) => { B.truckToRoad(b.truck, 1e9); B.placeTruck(b); };
+    // passo comune: muletto, operai (con le auto e il camion del contratto), traffico vero se richiesto, contratto
+    const csim = (dt, secs, o = {}) => {
+      const r = { t: 0, overlap: 0, carHit: 0, minV: Infinity, switches: 0, maxDec: 0, done: false, parkT: null, timeAtPark: null, costSum: 0, costMax: 0, n: 0 };
+      let prevV = m.drive ? m.drive.v : 0, st = 0;
+      for (let t = 0; t < secs; t += dt) {
+        if (o.each) o.each(t, r);
+        f.step(dt, inp(), env);
+        const cars = o.cars || [];
+        B.update(dt, f, cars, m.trafficObstacles());
+        if (o.cars) realTraffic.call(g.traffic, dt, f, B.trafficObstacles(m.trafficObstacles()));
+        const zones = B.truckZones();
+        const t0 = performance.now();
+        const hadDrive = !!m.drive;
+        m.update(dt, f, cars, [], zones);
+        const ms = performance.now() - t0;
+        r.costSum += ms; r.costMax = Math.max(r.costMax, ms); r.n++;
+        r.t = t + dt;
+        if (hadDrive && !m.drive && r.parkT === null) { r.parkT = r.t; r.timeAtPark = m.timeLeft; }
+        const d = m.drive;
+        if (d && d.spawned !== false && m.moveCol.y1 > 0) {
+          const cr = cRect();
+          for (const b of bots) for (const c of [b.truck.bedCol, b.truck.cabCol]) if (c.y1 > 0 && P.rectsOverlap(cr, P.aabbToRect(c))) r.overlap++;
+          for (const car of cars) if (P.rectsOverlap(cr, P.aabbToRect(car.col))) r.carHit++;
+          const leg = d.legs[d.i];
+          if (leg && leg.path.len - d.s > 6 && !(d.mode === 'leave' && d.i === 0 && d.s < 3)) r.minV = Math.min(r.minV, d.v);
+          const acc = (d.v - prevV) / dt;
+          r.maxDec = Math.max(r.maxDec, -acc);
+          const ns = acc > 0.5 ? 1 : acc < -0.5 ? -1 : st;
+          if (ns !== st && st !== 0) r.switches++;
+          st = ns;
+          prevV = d.v;
+        }
+        for (const car of cars) for (const b of bots) for (const c of [b.truck.bedCol, b.truck.cabCol]) if (c.y1 > 0 && P.rectsOverlap(P.aabbToRect(c), P.aabbToRect(car.col))) r.carHit++;
+        if (o.until && o.until(r)) { r.done = true; break; }
+      }
+      r.cost = r.costSum / Math.max(1, r.n);
+      return r;
+    };
+    const allParked = () => bots.every((b) => b.truck.state === 'parked');
+    const info = (r) => `sovrapposizioni ${r.overlap}, v minima ${r.minV === Infinity ? '-' : r.minV.toFixed(2)}, frenata massima ${r.maxDec.toFixed(2)} m/s², cambi accelera/frena ${r.switches}, tempo ${r.t.toFixed(1)} s`;
+
+    // riferimento: arrivo e partenza senza camion degli operai sulla strada (parcheggiati al loro posto)
+    const base = {};
+    for (const fps of FPS) {
+      atHome(wb); atHome(other); away(); arrive();
+      const ra = csim(1 / fps, 60, { until: () => !m.drive });
+      leave();
+      const rl = csim(1 / fps, 60, { until: () => !m.drive });
+      hidden(wb); hidden(other); arrive();
+      const ra0 = csim(1 / fps, 60, { until: () => !m.drive });
+      leave();
+      const rl0 = csim(1 / fps, 60, { until: () => !m.drive });
+      base[fps] = ra;
+      check(`C4. camion degli operai parcheggiati, ${fps} FPS: nessun falso ostacolo (stessi tempi senza operai)`, ra.done && rl.done && ra.overlap + rl.overlap === 0 && Math.abs(ra.t - ra0.t) < 1.5 / fps && Math.abs(rl.t - rl0.t) < 1.5 / fps,
+        `arrivo ${ra.t.toFixed(2)} / ${ra0.t.toFixed(2)} s, partenza ${rl.t.toFixed(2)} / ${rl0.t.toFixed(2)} s`);
+    }
+
+    for (const fps of FPS) {
+      const dt = 1 / fps;
+      // C1. arrivo in rettilineo, camion dell'operaio a -20,1 m che attraversa la strada
+      atHome(wb); cross(other, -16); away(); arrive();
+      const r1 = csim(dt, 60, { until: () => !m.drive && allParked() });
+      check(`C1. arrivo con un camion dell'operaio che attraversa, ${fps} FPS: rallenta e si ferma (o procede a passo d'uomo dietro di lui) senza toccarlo, riparte, parcheggia; tempo del contratto intatto`,
+        r1.done && r1.overlap === 0 && r1.minV < 2 && r1.timeAtPark === limit && r1.maxDec <= 3.5 + 1e-6 && r1.switches <= base[fps].switches + 2,
+        `${info(r1)}, tempo al parcheggio ${r1.timeAtPark}/${limit}, cambi senza operai ${base[fps].switches}, costo medio ${r1.cost.toFixed(4)} ms, massimo ${r1.costMax.toFixed(3)} ms`);
+      // C2. cambio corsia e retromarcia, camion dell'operaio a +20,1 m che attraversa: gia' in strada quando il camion
+      // del contratto parte (nel gioco un camion degli operai non compare mentre il camion del contratto viaggia)
+      atHome(wb); atHome(other); away(); arrive();
+      cross(wb, -16);
+      const r2 = csim(dt, 60, { until: () => !m.drive && allParked() });
+      check(`C2. cambio corsia e retromarcia con un camion dell'operaio che entra, ${fps} FPS`, r2.done && r2.overlap === 0 && r2.minV < 2 && r2.maxDec <= 3.5 + 1e-6, info(r2));
+      // C3. partenza del camion del contratto con un camion dell'operaio che attraversa
+      atHome(wb); atHome(other); away(); arrive();
+      csim(dt, 60, { until: () => !m.drive });
+      cross(wb, -16); leave();
+      const r3 = csim(dt, 60, { until: () => !m.drive && allParked() });
+      check(`C3. partenza con un camion dell'operaio che attraversa, ${fps} FPS`, r3.done && r3.overlap === 0 && r3.minV < 0.5 && r3.maxDec <= 3.5 + 1e-6, info(r3));
+      // E1. la strada si libera mentre il camion del contratto frena: riparte senza fermarsi
+      // (camion dell'operaio a +20,1 m, oltre lo spazio di frenata dal punto di comparsa del camion del contratto)
+      atHome(wb); atHome(other); away(); arrive();
+      csim(dt, 30, { until: () => m.drive && m.drive.spawned !== false });
+      cross(wb, -16);
+      csim(dt, 30, { until: () => m.drive && m.drive.i === 0 && m.drive.v < 9 && m.drive.v > 4 });
+      const vBrake = m.drive ? m.drive.v : 0;
+      atHome(wb); // il camion dell'operaio e' arrivato: zona libera
+      let minAfter = Infinity;
+      const r4 = csim(dt, 60, { each: () => { if (m.drive && m.drive.i === 0) minAfter = Math.min(minAfter, m.drive.v); }, until: () => !m.drive });
+      check(`E1. la strada si libera mentre frena, ${fps} FPS: riparte senza fermarsi`, vBrake > 4 && minAfter > 2 && r4.done && r4.overlap === 0, `frenava a ${vBrake.toFixed(1)} m/s, minima dopo ${minAfter.toFixed(1)} m/s`);
+    }
+
+    // C5. camion dell'operaio fermato dal giocatore: il camion del contratto aspetta; il giocatore si sposta: tutti ripartono
+    {
+      atHome(wb); atHome(other); away(); arrive();
+      csim(DT, 60, { until: () => !m.drive });
+      cross(wb, -12);
+      const nb = B.truckBoxes(wb, -9).bed;
+      f.place((nb.minX + nb.maxX) / 2, wt.dir.z < 0 ? nb.maxZ + 0.6 : nb.minZ - 0.6, 0); f.v = 0; // davanti al camion, nel piazzale
+      leave();
+      const rA = csim(DT, 8);
+      const waitWorker = wt.state === 'arriving' && wt.offset < -8, waitContract = !!m.drive && m.drive.v < 0.5;
+      away();
+      const rB = csim(DT, 60, { until: () => !m.drive && allParked() });
+      check('C5. camion dell\'operaio fermato dal giocatore: il contratto aspetta, poi tutti ripartono', waitWorker && waitContract && rB.done && rA.overlap + rB.overlap === 0, `operaio fermo ${waitWorker}, contratto in attesa ${waitContract}; poi ${info(rB)}`);
+    }
+
+    // C6. auto in coda dietro al camion del contratto e auto davanti al camion dell'operaio: nessun attraversamento, tutti ripartono
+    {
+      const c1 = allCars[0], c2 = allCars[1], keep = [c1, c2].map((c) => ({ x: c.x, z: c.z, dir: c.dir, v: c.v, vmax: c.vmax }));
+      const put = (car, x, dir) => { Object.assign(car, { x, dir, z: dir > 0 ? -3.5 : 3.5, vmax: 9, v: 9, blockT: 0, hornT: 0 }); Object.assign(car.col, { minX: dir > 0 ? x + car.rear : x - car.front, maxX: dir > 0 ? x + car.front : x - car.rear, minZ: car.z - car.hw, maxZ: car.z + car.hw }); };
+      g.traffic.cars = [c1, c2];
+      atHome(wb); cross(other, -16); away(); arrive();
+      const sx = arriveLegs[0].path.pts ? 0 : 0;
+      put(c1, m.moveBoxAt(0).minX - 25, 1); // dietro al camion del contratto
+      put(c2, zx + 60, -1); // corsia opposta, verso i camion degli operai
+      const r6 = csim(DT, 60, { cars: [c1, c2], until: () => !m.drive && allParked() });
+      const moving = csim(DT, 4, { cars: [c1, c2] });
+      const ok = r6.done && r6.overlap === 0 && r6.carHit + moving.carHit === 0 && c1.v > 3 && c2.v > 3;
+      check('C6. auto in coda e camion degli operai: nessun attraversamento, tutti ripartono', ok, `${info(r6)}, urti auto ${r6.carHit + moving.carHit}, auto ${c1.v.toFixed(1)} / ${c2.v.toFixed(1)} m/s`);
+      [c1, c2].forEach((c, i) => Object.assign(c, keep[i]));
+      g.traffic.cars = allCars;
+    }
+
+    // C8. collegamento nel ciclo di gioco vero (game.step): mentre il camion del contratto viaggia nessun camion degli operai compare
+    {
+      atHome(other); toRoad(wb); away(); arrive();
+      // (un camion che stava gia' comparendo si annulla al controllo successivo, entro 0,1 s: mai solido)
+      let maxFade = 0, solidSeen = false, blockedSeen = false, travelled = false;
+      for (let t = 0; t < 4; t += DT) {
+        g.step(DT);
+        if (m.drive && m.moveCol.y1 > 0) { travelled = true; maxFade = Math.max(maxFade, wt.fade); solidSeen ||= wt.solid; blockedSeen ||= wt.spawnBlockedBy === 'camion contratto'; }
+      }
+      check('C8. nel ciclo di gioco vero: nessun camion degli operai compare mentre il camion del contratto viaggia', travelled && !solidSeen && maxFade < 0.2 && blockedSeen, `viaggiava ${travelled}, solido ${solidSeen}, visibilita' massima ${maxFade.toFixed(2)}, rinvio per il contratto ${blockedSeen}`);
+      csim(DT, 60, { until: () => !m.drive && allParked() });
+    }
+
+    // C9. combinazioni: due camion degli operai in zone vicine, in punti diversi, arrivo e partenza; nessun blocco tra IA
+    for (const fps of FPS) {
+      let n = 0, fails = [];
+      const offs = [-16, -10, -4, 0];
+      for (const mode of fps === 60 ? ['arrivo', 'partenza'] : ['arrivo']) for (const oa of offs) for (const ob of offs) {
+        atHome(wb); atHome(other); away();
+        if (mode === 'partenza') { arrive(); csim(1 / fps, 60, { until: () => !m.drive }); }
+        oa < 0 ? cross(wb, oa) : atHome(wb);
+        ob < 0 ? cross(other, ob) : atHome(other);
+        mode === 'arrivo' ? arrive() : leave();
+        const r = csim(1 / fps, 60, { until: () => !m.drive && allParked() });
+        n++;
+        if (!r.done || r.overlap) fails.push(`${mode} ${oa}/${ob}: finito ${r.done}, ${info(r)}`);
+      }
+      check(`C9. combinazioni (${n}), ${fps} FPS: tutti arrivano, nessun attraversamento, nessun blocco`, fails.length === 0, fails.slice(0, 3).join(' | '));
+    }
+    atHome(wb); atHome(other); arrive(); // come all'inizio: camion del contratto in attesa di comparire
   }
 
   // W10. nessuna duplicazione o perdita di veicoli dopo tutte le prove

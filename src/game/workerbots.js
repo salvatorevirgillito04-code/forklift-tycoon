@@ -382,6 +382,29 @@ export class WorkerBots {
     Object.assign(tr, { state: 'arriving', phase: 'hidden', offset: TRUCK_AREA.away, fade: 0, solid: false, v: 0, wait, checkT: 0 });
   }
 
+  // Sola lettura: zone occupate dai camion degli operai solidi, per la precedenza del camion del contratto.
+  // In arrivo (in viaggio): tutta la striscia che deve ancora percorrere fino al suo posto. Fermo: la sua forma.
+  truckZones() {
+    const out = (this.zonesOut ||= []);
+    out.length = 0;
+    for (const bot of this.bots.values()) {
+      const tr = bot.truck;
+      if (!tr || !tr.solid) continue;
+      tr.zone ||= { minX: 0, maxX: 0, minZ: 0, maxZ: 0 };
+      if (tr.state === 'arriving' && tr.phase === 'drive' && tr.offset < 0) {
+        const b = this.truckBoxes(bot, 0); // al suo posto
+        Object.assign(tr.zone, {
+          minX: Math.min(tr.bedCol.minX, tr.cabCol.minX, b.bed.minX, b.cab.minX), maxX: Math.max(tr.bedCol.maxX, tr.cabCol.maxX, b.bed.maxX, b.cab.maxX),
+          minZ: Math.min(tr.bedCol.minZ, tr.cabCol.minZ, b.bed.minZ, b.cab.minZ), maxZ: Math.max(tr.bedCol.maxZ, tr.cabCol.maxZ, b.bed.maxZ, b.cab.maxZ),
+        });
+        out.push(tr.zone);
+      } else {
+        out.push(tr.bedCol, tr.cabCol);
+      }
+    }
+    return out;
+  }
+
   // Camion degli operai solidi sulla strada: ostacoli per le auto. out: lista da riempire (riusata)
   trafficObstacles(base = []) {
     const out = (this.trafficOut ||= []);
