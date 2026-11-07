@@ -18,6 +18,11 @@ const SPIKE_MS = 50;
 const MAX_SPIKES = 40;
 // Registrazione (diagnostica): al massimo questi fotogrammi (circa 2 minuti a 120 FPS), poi si ferma da sola
 export const REC_MAX_FRAMES = 15000;
+const NOOP = () => {};
+// Istante del fotogramma secondo il browser (inizio del fotogramma, allineato al giro di schermo del callback):
+// NON e' l'istante in cui l'immagine compare sul display (la WebView non lo dice), ma e' piu' regolare di
+// performance.now() letto dentro il callback.
+const frameTime = () => (typeof document !== 'undefined' && document.timeline ? document.timeline.currentTime : null);
 
 export class PerfMonitor {
   constructor(scene, engine) {
@@ -44,6 +49,7 @@ export class PerfMonitor {
     // Registrazione: fotogrammi con l'etichetta della fase in corso (phase = null: non si registra)
     this.rec = null;
     this.phase = null;
+    this.skipped = 0; // giri di schermo saltati per il limite fotogrammi dall'ultimo fotogramma disegnato
   }
 
   // Modalita' leggera: solo i tempi dei fotogrammi, logica e disegno (niente cronometri su ombre/specchietto,
@@ -113,6 +119,28 @@ export class PerfMonitor {
     this.events.add(event);
   }
 
+  // limite fotogrammi: un giro di schermo saltato (nessun disegno)
+  skip() { this.skipped++; }
+
+  // passo di gioco usato in questo fotogramma (ms) e numero di sottopassi
+  setSim(frameDt, n, cap = 0) { if (this.cur) { this.cur.sim = frameDt * 1000; this.cur.n = n; this.cur.cap = cap || 0; } }
+
+  // cronometro dei singoli sistemi: lap('nome') somma il tempo dall'ultima chiamata (solo in modalita' completa)
+  lap() {
+    const c = this.cur;
+    if (!c || c.light) return NOOP;
+    let t = performance.now();
+    return (k) => { const n = performance.now(); c.sub[k] = (c.sub[k] || 0) + n - t; t = n; };
+  }
+
+  // posizione del muletto e della camera disegnati in questo fotogramma (continuita' del movimento)
+  pose(f, cam, carried) {
+    const c = this.cur;
+    if (!c || !f) return;
+    c.x = f.x; c.z = f.z; c.yaw = f.yaw; c.v = f.v; c.pallet = carried ? 1 : 0;
+    if (cam) { c.cx = cam.x; c.cz = cam.z; }
+  }
+
   // Eventi accumulati da un controllo all'altro (nuovi oggetti, shader compilati, memoria liberata, segnalazioni)
   collectCauses(into) {
     const heap = performance.memory?.usedJSHeapSize ?? null;
@@ -142,9 +170,11 @@ export class PerfMonitor {
     if (this.light) {
       // solo il tempo tra un fotogramma e l'altro, piu' logica e disegno (due letture dell'orologio)
       const prev = this.prevDetail;
-      if (prev && this.prevStart !== null) { prev.gap = now - this.lastEnd; this.push(now, now - this.prevStart, prev); }
+      if (prev && this.prevStart !== null) { prev.gap = now - this.lastEnd; for (const e of this.events) prev.causes.push(e); this.push(now, now - this.prevStart, prev); }
+      this.events.clear();
       this.prevDetail = null;
-      this.cur = { step: 0, render: 0, shadow: 0, mirror: 0, causes: [], light: true };
+      this.cur = { step: 0, render: 0, shadow: 0, mirror: 0, causes: [], light: true, vt: frameTime(), skip: this.skipped, scale: 1 / this.engine.getHardwareScalingLevel(), sub: {} };
+      this.skipped = 0;
       this.prevStart = now;
       return;
     }
@@ -155,7 +185,8 @@ export class PerfMonitor {
       this.push(now, now - this.prevStart, prev);
     } else this.collectCauses([]); // eventi del caricamento: non contano
     this.prevDetail = null;
-    this.cur = { step: 0, render: 0, shadow: 0, mirror: 0, causes: [] };
+    this.cur = { step: 0, render: 0, shadow: 0, mirror: 0, causes: [], vt: frameTime(), skip: this.skipped, scale: 1 / this.engine.getHardwareScalingLevel(), sub: {} };
+    this.skipped = 0;
     if (!this.hookT || now - this.hookT > 1000) { this.hookT = now; this.hookTargets(); }
     this.prevStart = now;
   }

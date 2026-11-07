@@ -739,7 +739,17 @@ async function openDiagnostics(app, inGame, closeSettings) {
     // si chiude tutto e si torna a giocare: la registrazione parte subito e dura 60 s
     close();
     closeSettings?.();
-    if (d.recordFor(60, (rep) => toast(`Registrazione finita: ${reportLine(rep)}`, 'good'))) toast('Registrazione: 3 s di stabilizzazione, poi 60 s di gioco', 'good');
+    // pulsante "Scatto!": il giocatore segna l'istante in cui vede uno scatto (finisce nel rapporto con i fotogrammi vicini)
+    const mark = document.createElement('button');
+    mark.className = 'pill-btn red small diag-mark';
+    mark.textContent = 'Scatto!';
+    mark.style.cssText = 'position:absolute;left:50%;top:calc(env(safe-area-inset-top, 0px) + 6px);transform:translateX(-50%);z-index:50;opacity:.85';
+    mark.addEventListener('pointerdown', (e) => { e.stopPropagation(); app.game.perf?.mark('SCATTO SEGNALATO'); mark.textContent = 'Segnato'; setTimeout(() => { mark.textContent = 'Scatto!'; }, 400); });
+    const done = (rep) => { mark.remove(); toast(`Registrazione finita: ${reportLine(rep)}`, 'good'); };
+    if (d.recordFor(60, done)) {
+      document.querySelector('#app').appendChild(mark);
+      toast('Registrazione: 3 s di stabilizzazione, poi 60 s di gioco. "Scatto!" quando vedi uno scatto', 'good');
+    }
   });
   const startAuto = async (profiles) => {
     if (d.running || d.recording) return;
