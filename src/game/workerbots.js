@@ -396,7 +396,8 @@ export class WorkerBots {
         const z = tr.zone;
         z.minX = Math.min(tr.bedCol.minX, tr.cabCol.minX, b.bed.minX, b.cab.minX); z.maxX = Math.max(tr.bedCol.maxX, tr.cabCol.maxX, b.bed.maxX, b.cab.maxX);
         z.minZ = Math.min(tr.bedCol.minZ, tr.cabCol.minZ, b.bed.minZ, b.cab.minZ); z.maxZ = Math.max(tr.bedCol.maxZ, tr.cabCol.maxZ, b.bed.maxZ, b.cab.maxZ);
-        out.push(tr.zone);
+        // anche il camion stesso: se la striscia fosse ignorata (gia' toccata), il suo corpo conta comunque
+        out.push(tr.zone, tr.bedCol, tr.cabCol);
       } else {
         out.push(tr.bedCol, tr.cabCol);
       }

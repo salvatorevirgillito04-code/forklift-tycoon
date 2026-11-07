@@ -291,7 +291,7 @@ export class Mission {
       for (let k = Y_NEAR.length - 1; k >= 0; k--) {
         if (!rectsOverlap(Y_RECT, aabbIntoRect(Y_NEAR[k], Z_RECT))) continue;
         // gia' dentro nella posa attuale (non dovrebbe succedere): non conta, deve poterne uscire
-        if (dist === 0) { Y_NEAR.splice(k, 1); continue; }
+        if (dist === 0) { Y_NEAR[k] = Y_NEAR[Y_NEAR.length - 1]; Y_NEAR.length -= 1; continue; }
         // il contatto vero e' tra il campione precedente e questo: margine pieno
         return dist - YIELD.step;
       }
