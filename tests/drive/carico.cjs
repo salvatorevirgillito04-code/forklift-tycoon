@@ -43,8 +43,9 @@ async function measureLoad({ vehId, weather }) {
     ['6. curva lenta, pallet basso', 0.3, 0.03, 0.8, 8, (t) => inp({ throttle: 0.3, steerAxis: t > 2 ? 1 : 0 }), 'resta'],
     ['7. curva veloce, pallet basso', 0.3, 0.03, 0.8, 8, (t) => inp({ throttle: 1, steerAxis: t > 4 ? 1 : 0 }), 'resta'],
     ['8. curva brusca, pallet alto', hi, 0.03, 0.8, 8, (t) => inp({ throttle: 1, steerAxis: t > 4 ? 1 : 0 }), 'cade'],
-    // sulla neve: caso aperto (vedi rapporto), si riporta l'esito senza giudicarlo
-    ['9. montante in avanti a 1,5 m, frenata', 1.5, -0.06, 0.8, 9, brakeAt(5), (w) => (w === 'snow' ? 'aperto' : 'cade')],
+    // sulla neve la frenata non basta a far cadere il pallet: cade solo per l'instabilita' in viaggio (montante in
+    // avanti, sopra 1,5 m/s per 5 s). Compact 18 e Worker 35D ci restano meno di 5 s e lo tengono (fase 1.5, approvato)
+    ['9. montante in avanti a 1,5 m, frenata', 1.5, -0.06, 0.8, 9, brakeAt(5), (w) => (w === 'snow' && ['e12', 'd18'].includes(vehId) ? 'resta' : 'cade')],
     ['10. montante all\'indietro, carico 100%, frenata d\'emergenza', 0.3, 0.17, 1.0, 10, brakeAt(6), 'resta'],
     ['11. carico 100%: accelerazione, correzione, frenata progressiva', 0.3, 0.03, 1.0, 12, (t) => (t < 6 ? corr(0.25)(t) : inp({ brake: 0.4 })), 'resta'],
     ['12. urto forte contro un muro', 0.3, 0.03, 0.8, 14, () => inp({ throttle: 1 }), 'cade', true],
@@ -131,8 +132,8 @@ async function measureLoad({ vehId, weather }) {
     await browser.close();
     await server.close();
   }
-  console.log(`\nCarico: ${passed} prove passate, ${failed} non passate, ${open.length} APERTE (non risolte, da decidere):`);
+  console.log(`\nCarico: ${passed} prove passate, ${failed} non passate${open.length ? `, ${open.length} APERTE (non risolte, da decidere):` : ', nessuna aperta'}`);
   for (const o of open) console.log(`  APERTO ${o}`);
-  console.log(failed ? `\n${failed} prove del carico NON passate` : '\nTutte le prove del carico passate (le APERTE restano da risolvere)');
+  console.log(failed ? `\n${failed} prove del carico NON passate` : `\nTutte le prove del carico passate${open.length ? ' (le APERTE restano da risolvere)' : ''}`);
   process.exit(failed ? 1 : 0);
 })();
