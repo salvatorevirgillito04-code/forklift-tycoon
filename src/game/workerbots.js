@@ -392,11 +392,10 @@ export class WorkerBots {
       if (!tr || !tr.solid) continue;
       tr.zone ||= { minX: 0, maxX: 0, minZ: 0, maxZ: 0 };
       if (tr.state === 'arriving' && tr.phase === 'drive' && tr.offset < 0) {
-        const b = this.truckBoxes(bot, 0); // al suo posto
-        Object.assign(tr.zone, {
-          minX: Math.min(tr.bedCol.minX, tr.cabCol.minX, b.bed.minX, b.cab.minX), maxX: Math.max(tr.bedCol.maxX, tr.cabCol.maxX, b.bed.maxX, b.cab.maxX),
-          minZ: Math.min(tr.bedCol.minZ, tr.cabCol.minZ, b.bed.minZ, b.cab.minZ), maxZ: Math.max(tr.bedCol.maxZ, tr.cabCol.maxZ, b.bed.maxZ, b.cab.maxZ),
-        });
+        const b = (tr.homeBoxes ||= this.truckBoxes(bot, 0)); // al suo posto (calcolato una volta)
+        const z = tr.zone;
+        z.minX = Math.min(tr.bedCol.minX, tr.cabCol.minX, b.bed.minX, b.cab.minX); z.maxX = Math.max(tr.bedCol.maxX, tr.cabCol.maxX, b.bed.maxX, b.cab.maxX);
+        z.minZ = Math.min(tr.bedCol.minZ, tr.cabCol.minZ, b.bed.minZ, b.cab.minZ); z.maxZ = Math.max(tr.bedCol.maxZ, tr.cabCol.maxZ, b.bed.maxZ, b.cab.maxZ);
         out.push(tr.zone);
       } else {
         out.push(tr.bedCol, tr.cabCol);

@@ -12,6 +12,7 @@ const TRUCK_HALF_W = TRUCK.bedWidth / 2 + 0.05;
 // percorso (forma reale, girata) per lo spazio di frenata + margin e rallenta per fermarsi prima della zona occupata
 export const YIELD = { dec: 3.5, margin: 2, step: 1, extra: 6 };
 const Y_RECT = { x: 0, z: 0, hw: 0, hd: 0, yaw: 0 }, Z_RECT = { x: 0, z: 0, hw: 0, hd: 0, yaw: 0 };
+const Y_NEAR = []; // zone vicine (riusata: niente memoria nuova a ogni fotogramma)
 const ARRIVE_LANE = -3.5; // corsia (z) da cui arriva il camion: si guida a destra, verso +x su z = -3,5
 // distanza del centro del muletto da una scatola { minX, maxX, minZ, maxZ }
 const boxDist = (b, f) => Math.hypot(Math.max(b.minX - f.x, 0, f.x - b.maxX), Math.max(b.minZ - f.z, 0, f.z - b.maxZ));
@@ -276,17 +277,24 @@ export class Mission {
     const look = (v * v) / (2 * YIELD.dec) + YIELD.margin + YIELD.extra;
     // zone vicine soltanto (niente calcoli se sono lontane)
     const reach = look + TRUCK_FRONT - TRUCK_REAR + 2;
-    let any = false;
-    for (const z of zones) if (z.maxX > P.x - reach && z.minX < P.x + reach && z.maxZ > P.z - reach && z.minZ < P.z + reach) { any = true; break; }
-    if (!any) return Infinity;
+    Y_NEAR.length = 0;
+    for (const z of zones) if (z.maxX > P.x - reach && z.minX < P.x + reach && z.maxZ > P.z - reach && z.minZ < P.z + reach) Y_NEAR.push(z);
+    if (!Y_NEAR.length) return Infinity;
     const hl = (TRUCK_FRONT - TRUCK_REAR) / 2, mid = (TRUCK_FRONT + TRUCK_REAR) / 2;
     let i = d.i, s = d.s, dist = 0;
     while (dist <= look && i < d.legs.length) {
       const leg = d.legs[i], pt = pointAt(leg.path, s);
       const hx = leg.reverse ? -pt.dx : pt.dx, hz = leg.reverse ? -pt.dz : pt.dz;
       const yaw = Math.atan2(-hz, hx);
-      Object.assign(Y_RECT, { x: pt.x + Math.cos(yaw) * mid, z: pt.z - Math.sin(yaw) * mid, hw: hl, hd: TRUCK_HALF_W, yaw });
-      for (const z of zones) if (rectsOverlap(Y_RECT, aabbIntoRect(z, Z_RECT))) return dist;
+      Y_RECT.x = pt.x + Math.cos(yaw) * mid; Y_RECT.z = pt.z - Math.sin(yaw) * mid;
+      Y_RECT.hw = hl; Y_RECT.hd = TRUCK_HALF_W; Y_RECT.yaw = yaw;
+      for (let k = Y_NEAR.length - 1; k >= 0; k--) {
+        if (!rectsOverlap(Y_RECT, aabbIntoRect(Y_NEAR[k], Z_RECT))) continue;
+        // gia' dentro nella posa attuale (non dovrebbe succedere): non conta, deve poterne uscire
+        if (dist === 0) { Y_NEAR.splice(k, 1); continue; }
+        // il contatto vero e' tra il campione precedente e questo: margine pieno
+        return dist - YIELD.step;
+      }
       s += YIELD.step;
       dist += YIELD.step;
       if (s > leg.path.len) { s -= leg.path.len; i += 1; }

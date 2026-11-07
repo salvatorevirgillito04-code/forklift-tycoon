@@ -612,7 +612,7 @@ async function workerTruckTests({ app, g, S, M, P, DT, inp, check, start }) {
         const d = m.drive;
         if (d && d.spawned !== false && m.moveCol.y1 > 0) {
           const cr = cRect();
-          for (const b of bots) for (const c of [b.truck.bedCol, b.truck.cabCol]) if (c.y1 > 0 && P.rectsOverlap(cr, P.aabbToRect(c))) r.overlap++;
+          for (const b of bots) for (const c of [b.truck.bedCol, b.truck.cabCol]) if (c.y1 > 0 && P.rectsOverlap(cr, P.aabbToRect(c), o.gap ?? 1)) r.overlap++; // a meno di 1 m
           for (const car of cars) if (P.rectsOverlap(cr, P.aabbToRect(car.col))) r.carHit++;
           const leg = d.legs[d.i];
           if (leg && leg.path.len - d.s > 6 && !(d.mode === 'leave' && d.i === 0 && d.s < 3)) r.minV = Math.min(r.minV, d.v);
@@ -630,7 +630,7 @@ async function workerTruckTests({ app, g, S, M, P, DT, inp, check, start }) {
       return r;
     };
     const allParked = () => bots.every((b) => b.truck.state === 'parked');
-    const info = (r) => `sovrapposizioni ${r.overlap}, v minima ${r.minV === Infinity ? '-' : r.minV.toFixed(2)}, frenata massima ${r.maxDec.toFixed(2)} m/s², cambi accelera/frena ${r.switches}, tempo ${r.t.toFixed(1)} s`;
+    const info = (r) => `sotto 1 m ${r.overlap}, v minima ${r.minV === Infinity ? '-' : r.minV.toFixed(2)}, frenata massima ${r.maxDec.toFixed(2)} m/s², cambi accelera/frena ${r.switches}, tempo ${r.t.toFixed(1)} s`;
 
     // riferimento: arrivo e partenza senza camion degli operai sulla strada (parcheggiati al loro posto)
     const base = {};
@@ -681,6 +681,23 @@ async function workerTruckTests({ app, g, S, M, P, DT, inp, check, start }) {
       check(`E1. la strada si libera mentre frena, ${fps} FPS: riparte senza fermarsi`, vBrake > 4 && minAfter > 2 && r4.done && r4.overlap === 0, `frenava a ${vBrake.toFixed(1)} m/s, minima dopo ${minAfter.toFixed(1)} m/s`);
     }
 
+    // C10. partenza a fine contratto con il gioco in pausa (schermata del risultato: operai e auto fermi): il camion del
+    // contratto aspetta davanti al camion dell'operaio fermo, senza attraversarlo; alla ripresa tutti ripartono
+    {
+      atHome(wb); atHome(other); away(); arrive();
+      csim(DT, 60, { until: () => !m.drive });
+      cross(wb, -12); leave();
+      let near = 0;
+      for (let t = 0; t < 30; t += DT) {
+        m.driveTruck(DT, null, g.traffic.cars, [], B.truckZones()); // come game.js in pausa: solo il camion del contratto
+        const Q = m.truckPose, mid = (TF + TR) / 2, cr = { x: Q.x + Math.cos(Q.yaw) * mid, z: Q.z - Math.sin(Q.yaw) * mid, hw: (TF - TR) / 2, hd: HW, yaw: Q.yaw };
+        if ([wt.bedCol, wt.cabCol].some((c) => P.rectsOverlap(cr, P.aabbToRect(c), 1))) near++;
+      }
+      const waiting = !!m.drive && m.drive.v < 0.1;
+      const rB = csim(DT, 60, { until: () => !m.drive && allParked() });
+      check('C10. partenza col gioco in pausa: aspetta il camion dell\'operaio fermo, alla ripresa tutti ripartono', waiting && near === 0 && rB.done && rB.overlap === 0, `in attesa ${waiting}, sotto 1 m ${near}; poi ${info(rB)}`);
+    }
+
     // C5. camion dell'operaio fermato dal giocatore: il camion del contratto aspetta; il giocatore si sposta: tutti ripartono
     {
       atHome(wb); atHome(other); away(); arrive();
@@ -702,7 +719,6 @@ async function workerTruckTests({ app, g, S, M, P, DT, inp, check, start }) {
       const put = (car, x, dir) => { Object.assign(car, { x, dir, z: dir > 0 ? -3.5 : 3.5, vmax: 9, v: 9, blockT: 0, hornT: 0 }); Object.assign(car.col, { minX: dir > 0 ? x + car.rear : x - car.front, maxX: dir > 0 ? x + car.front : x - car.rear, minZ: car.z - car.hw, maxZ: car.z + car.hw }); };
       g.traffic.cars = [c1, c2];
       atHome(wb); cross(other, -16); away(); arrive();
-      const sx = arriveLegs[0].path.pts ? 0 : 0;
       put(c1, m.moveBoxAt(0).minX - 25, 1); // dietro al camion del contratto
       put(c2, zx + 60, -1); // corsia opposta, verso i camion degli operai
       const r6 = csim(DT, 60, { cars: [c1, c2], until: () => !m.drive && allParked() });
