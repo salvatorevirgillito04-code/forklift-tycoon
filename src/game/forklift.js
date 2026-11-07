@@ -487,7 +487,7 @@ export class Forklift {
     }
 
     // l'urto ha la sua regola (sopra): la sua decelerazione non entra nel filtro del carico
-    this.updateCarried(dt, env, { yawRate, decel: hit ? 0 : (Math.abs(prevV) - Math.abs(this.v)) / dt, loadRatio, input });
+    this.updateCarried(dt, env, { yawRate, decel: hit || !(dt > 0) ? 0 : (Math.abs(prevV) - Math.abs(this.v)) / dt, loadRatio, input });
     this.checkPickup(env, input);
     this.wheelSpin += this.v * dt / 0.33;
     this.sync(delta);
@@ -593,7 +593,7 @@ export class Forklift {
       // Forche infilate e inclinate: il pallet segue l'inclinazione (resta appoggiato finche' non lo alzi)
       if (input.tilt && ins.depth > 0.3) {
         this.carried = {
-          p, lx: ins.lx, lz: ins.lz, relYaw: ins.dy, shallow: ins.depth < 0.55, time: 0,
+          p, lx: ins.lx, lz: ins.lz, relYaw: ins.dy, shallow: ins.depth < 0.55, time: 0, fLong: 0, fLat: 0, moving: 0,
           off: p.bottom - this.forkY, byTilt: true, attachTilt: this.tilt,
         };
         p.state = 'carried';
@@ -603,7 +603,7 @@ export class Forklift {
       // Le forche toccano il piano superiore della tasca: il pallet si solleva.
       if (this.forkY + FORK.thickness >= p.bottom + PALLET.pocketHigh + 0.01) {
         this.carried = {
-          p, lx: ins.lx, lz: ins.lz, relYaw: ins.dy, shallow: ins.depth < 0.55, time: 0,
+          p, lx: ins.lx, lz: ins.lz, relYaw: ins.dy, shallow: ins.depth < 0.55, time: 0, fLong: 0, fLat: 0, moving: 0,
           off: FORK.thickness - PALLET.pocketHigh,
         };
         p.state = 'carried';
@@ -675,13 +675,12 @@ export class Forklift {
     const h = this.forkY;
     const speed = Math.abs(this.v);
     const fork = (side) => side * this.spread / 2 - c.lx;
-    // Soglie ammorbidite (~60% di cadute in meno in curva e con forche inclinate/strette)
     const outside = Math.abs(fork(-1)) > 0.62 || Math.abs(fork(1)) > 0.62;
     const spreadBonus = (this.spread - 0.5) * 1.2;
     // Attrito tra pallet e forche: non dipende dal meteo (pioggia e neve riducono gia' l'aderenza del muletto sulla
     // strada, quindi frenate e curve meno forti; il pallet sente solo le accelerazioni effettive)
     // Sollecitazioni filtrate (vedi LOAD): frenata (decelerazione > 0) e laterale
-    if (dt !== this.kfDt) { this.kfDt = dt; this.kf = 1 - Math.exp(-dt / LOAD.filterS); } // il passo e' quasi sempre lo stesso
+    if (dt !== this.kfDt) { this.kfDt = dt; this.kf = 1 - Math.exp(-dt / LOAD.filterS); } // si ricalcola solo se il passo cambia
     const kf = this.kf;
     c.fLong = (c.fLong || 0) + (Math.max(0, decel) - (c.fLong || 0)) * kf;
     c.fLat = (c.fLat || 0) + (Math.abs(this.v * yawRate) - (c.fLat || 0)) * kf;

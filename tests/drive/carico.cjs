@@ -49,7 +49,7 @@ async function measureLoad({ vehId, weather }) {
     emergenzaIndietro: [10, 0.17, brakeAt(6), ONE],
   };
   // una prova: prende il pallet (spostato di lat m di lato), lo alza a h, imposta l'inclinazione e guida
-  const runCase = async ({ h, ratio, secs, tilt, drive, fps, lat = 0, wall = null, setup = null }) => {
+  const runCase = async ({ h, ratio, secs, tilt, drive, fps, lat = 0, wall = null, setup = null, raw = false }) => {
     const DT = 1 / fps;
     f.place(-60, 0, Math.PI / 2);
     Object.assign(f, { yawRateNow: 0, gear: 1, brakeLevel: 0, v: 0, forkY: 0.06, tilt: 0.03, steer: 0, unstable: 0, lastDropCause: null, loadStress: 0 });
@@ -64,16 +64,17 @@ async function measureLoad({ vehId, weather }) {
     f.rates.lift = 0; f.tilt = tilt; f.rates.tilt = 0; f.unstable = 0; f.events.length = 0; f.lastDropCause = null;
     const picked = !!f.carried;
     const lx = picked ? f.carried.lx : null;
-    if (picked) { f.carried.fLong = 0; f.carried.fLat = 0; setup?.(f.carried); }
+    const filterStart = picked ? (f.carried.fLong || 0) + (f.carried.fLat || 0) : 0; // presa da fermi: deve partire da zero
+    if (picked) setup?.(f.carried);
     const w = wall ? { minX: f.x + wall, maxX: f.x + wall + 0.4, minZ: -50, maxZ: 50, y0: 0, y1: 3, tag: 'testWall' } : null;
     if (w) env.colliders.push(w);
     let maxS = 0, maxLat = 0, maxLong = 0;
     for (let t = 0; t < secs && f.carried; t += DT) {
-      f.step(DT, drive(t), env);
+      raw ? f.update(DT, drive(t), env) : f.step(DT, drive(t), env);
       if (f.carried) { maxS = Math.max(maxS, f.loadStress || 0); maxLat = Math.max(maxLat, f.carried.fLat); maxLong = Math.max(maxLong, f.carried.fLong); }
     }
     if (w) env.colliders.splice(env.colliders.indexOf(w), 1);
-    const res = { out: picked ? (f.carried ? 'resta' : 'cade') : 'non preso', cause: f.carried ? null : f.lastDropCause, maxS: +maxS.toFixed(4), maxLat: +maxLat.toFixed(2), maxLong: +maxLong.toFixed(2), lx };
+    const res = { out: picked ? (f.carried ? 'resta' : 'cade') : 'non preso', cause: f.carried ? null : f.lastDropCause, maxS: +maxS.toFixed(4), maxLat: +maxLat.toFixed(2), maxLong: +maxLong.toFixed(2), lx, filterStart };
     f.carried = null;
     g.pallets.list.splice(g.pallets.list.indexOf(pl), 1);
     pl.node.dispose();
@@ -102,6 +103,13 @@ async function measureLoad({ vehId, weather }) {
   await extra('urto forte contro un muro', { h: 0.3, ratio: 0.8, secs: 14, tilt: 0.03, drive: () => inp({ throttle: 1 }), wall: 30 });
   await extra('urto lento contro un muro', { h: 0.3, ratio: 0.8, secs: 10, tilt: 0.03, drive: () => inp({ throttle: 0.2 }), wall: 6 });
   await extra('pallet infilato poco, sollevato', { h: 0.3, ratio: 0.8, secs: 3, tilt: 0.03, drive: () => inp(), setup: (c) => { c.shallow = true; c.time = 0; } });
+  // passi reali dell'aggiornamento fisico (nel gioco 1/60 s o meno: es. 50 FPS = 2 passi da 1/100 s): il filtro deve dare
+  // le stesse sollecitazioni, non solo lo stesso esito
+  for (const [name, o] of [['passi: curva brusca a 2 m', { h: 2.0, ratio: 0.8, secs: 8, tilt: 0.03, drive: brusca }], ['passi: frenata d\'emergenza a ~3 m', { h: hi, ratio: 0.8, secs: 10, tilt: 0.03, drive: brakeAt(6) }], ['passi: correzione a 2 m', { h: 2.0, ratio: 0.8, secs: 8, tilt: 0.03, drive: corr(0.25) }]]) {
+    const byFps = {};
+    for (const fps of [60, 90, 120]) byFps[fps] = await runCase({ ...o, fps, raw: true });
+    res.push({ kind: 'passi', name, byFps });
+  }
   await extra('montante in avanti a 1,5 m, frenata (fase 1.5)', { h: 1.5, ratio: 0.8, secs: 9, tilt: -0.06, drive: brakeAt(5) });
   app.exitMission();
   return { vehicle: veh.name, id: vehId, res };
@@ -149,7 +157,7 @@ async function measureLoad({ vehId, weather }) {
         // 2. guida normale: il pallet resta a ogni altezza e carico
         for (const name of ['rettilineo', 'correzione25', 'correzione40', 'lenta', 'normale', 'progressiva', 'emergenzaIndietro']) {
           // manovra a S a tutta velocita' (0,40) col pallet a ~3 m: segnalata a parte (DIVERSO DALLE ATTESE), non nascosta
-          const bad = grid.filter((x) => x.name === name && outs(x).some((o) => o !== 'resta') && !(name === 'correzione40' && x.h === 'alto'));
+          const bad = grid.filter((x) => x.name === name && outs(x).some((o) => o !== 'resta' && !(o === 'cade' && name === 'correzione40' && x.h === 'alto')));
           for (const x of grid.filter((y) => y.name === name && name === 'correzione40' && y.h === 'alto' && outs(y).includes('cade'))) deviations.push(`${W[weather]}, ${V}: correzione 0,40 a tutta velocita' col pallet a ~3 m (${x.ratio * 100}%): ${desc(x)}`);
           check(bad.length === 0, `${name}: RESTA a 0,3/1/2/~3 m, 80% e 100% ${V}${bad.length ? ': ' + bad.map((x) => `${x.h} m ${x.ratio * 100}% ${desc(x)}`).join(' | ') : ''}`);
         }
@@ -171,13 +179,24 @@ async function measureLoad({ vehId, weather }) {
           const first = seq.indexOf('cade');
           check(first < 0 || seq.slice(first).every((o) => o === 'cade'), `${name} (${ratio * 100}%): rischio crescente con l'altezza ${V} (${seq.join(' / ')})`);
         }
+        // 7b. il filtro parte da zero alla presa (inizializzazione vera, non azzerata dalla prova)
+        const nz = grid.flatMap((x) => Object.values(x.byFps)).filter((y) => y.filterStart !== 0);
+        check(nz.length === 0, `il filtro del carico parte da zero alla presa ${V}`);
+        // 7c. passi diversi dell'aggiornamento fisico (1/60, 1/90, 1/120 s): stesso esito e sollecitazioni entro il 5%
+        for (const x of r.res.filter((y) => y.kind === 'passi')) {
+          const v = Object.values(x.byFps);
+          const ref = x.byFps[60];
+          const close = (a, b) => Math.abs(a - b) <= 0.05 * Math.max(Math.abs(b), 0.05);
+          const ok = v.every((y) => y.out === ref.out && (ref.out === 'cade' || (close(y.maxLat, ref.maxLat) && close(y.maxLong, ref.maxLong))));
+          check(ok, `${x.name}: stesso esito e sollecitazioni a passi di 1/60, 1/90, 1/120 s ${V} (${Object.entries(x.byFps).map(([k, y]) => `${k}: ${y.out} lat ${y.maxLat} long ${y.maxLong}`).join(', ')})`);
+        }
         // 7. cause registrate per ogni caduta
         const senza = [...grid, ...r.res.filter((x) => x.kind === 'extra')].flatMap((x) => Object.values(x.byFps)).filter((y) => y.out === 'cade' && !y.cause);
         check(senza.length === 0, `ogni caduta ha la sua causa ${V}`);
         // 8. pallet decentrato: misura reale del decentramento, stabilita' laterale peggiore, mai meglio del centrato
         for (const [c, d] of [['centrato, curva brusca a 1 m', 'decentrato 10 cm, curva brusca a 1 m'], ['centrato, curva normale a 2 m', 'decentrato 10 cm, curva normale a 2 m']]) {
           const C = ex[c][60], Dd = ex[d][60];
-          const ok = Math.abs(Math.abs(Dd.lx) - 0.1) < 0.02 && (Dd.out === 'cade' || Dd.maxS >= C.maxS) && !(C.out === 'cade' && Dd.out === 'resta');
+          const ok = Math.abs(Math.abs(Dd.lx) - 0.1) < 0.02 && (Dd.out === 'cade' ? /laterale|combinata/.test(Dd.cause || '') : Dd.maxS >= C.maxS) && !(C.out === 'cade' && Dd.out === 'resta');
           check(ok, `${d}: decentramento misurato ${Dd.lx?.toFixed(3)} m, piu' instabile del centrato ${V} (centrato ${C.out} sforzo ${C.maxS}, decentrato ${Dd.out} sforzo ${Dd.maxS})`);
         }
         // 9. urti e posizionamento pericoloso: regole dedicate
@@ -195,7 +214,12 @@ async function measureLoad({ vehId, weather }) {
         if (weather !== 'snow') {
           check(n('brusca', 'alto', 0.8) === ids.length, `${W[weather]}: curva brusca col pallet a ~3 m, CADE con tutti i muletti (${n('brusca', 'alto', 0.8)}/${ids.length})`);
           check(n('brusca', 2, 0.8) >= 3, `${W[weather]}: curva brusca col pallet a 2 m, cade con la maggior parte dei muletti (${n('brusca', 2, 0.8)}/${ids.length})`);
-        } else check(n('brusca', 'alto', 0.8) >= ids.length - 2, `neve: curva brusca col pallet a ~3 m, cade con quasi tutti (${n('brusca', 'alto', 0.8)}/${ids.length})`);
+        } else {
+          // fase 1.5.1, da approvare: sulla neve il Compact 18 carico (3,2 m/s) non arriva a sollecitazioni pericolose
+          const keep = ids.filter((id) => all[`snow|${id}`].res.find((x) => x.name === 'brusca' && x.h === 'alto' && x.ratio === 0.8).byFps[60].out === 'resta');
+          check(keep.every((id) => id === 'e12'), `neve: curva brusca col pallet a ~3 m, cade con tutti tranne il Compact 18 (restano: ${keep.join(', ') || 'nessuno'})`);
+          if (keep.includes('e12')) deviations.push('neve, Compact 18: curva brusca col pallet a ~3 m, il pallet resta (troppo lento: da approvare)');
+        }
         check(n('brusca', 1, 0.8) < ids.length, `${W[weather]}: curva brusca col pallet a 1 m, la caduta non e' obbligatoria per tutti (${n('brusca', 1, 0.8)}/${ids.length})`);
       }
     }
