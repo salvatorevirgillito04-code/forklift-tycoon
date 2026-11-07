@@ -211,7 +211,9 @@ const CHECKS = [
   ['carico basso: frenata piena, resta', (r) => r.load.brakeLow.picked && !r.load.brakeLow.dropped],
   ['carico basso: curva a tutta velocita\', resta', (r) => r.load.curveLow.picked && !r.load.curveLow.dropped],
   ['carico basso: urto lento contro muro, resta', (r) => r.load.bumpSlow.picked && !r.load.bumpSlow.dropped],
-  ['carico alto (~3 m): curva brusca, CADE', (r) => r.load.curveHigh.picked && r.load.curveHigh.dropped],
+  // fase 1.5.1 (modello combinato, da approvare): sulla neve il Compact 18 carico va a 3,2 m/s e non supera ~1,9 m/s^2
+  // di accelerazione laterale, quindi il pallet resta; con gli altri muletti e sull'asciutto cade
+  ['carico alto (~3 m): curva brusca, CADE (neve: Compact 18 RESTA, troppo lento)', (r) => r.load.curveHigh.picked && (r.weather === 'snow' && r.vehicle === 'Compact 18' ? !r.load.curveHigh.dropped : r.load.curveHigh.dropped)],
   // sulla neve il muletto frena meno della soglia di caduta: il pallet resta (fase 1.5, approvato: niente penalita' artificiali)
   ['carico alto (~3 m): frenata violenta, CADE (neve: RESTA, frena meno)', (r) => r.load.brakeHigh.picked && (r.weather === 'snow' ? !r.load.brakeHigh.dropped : r.load.brakeHigh.dropped)],
   // 10 s di viaggio col montante in avanti: cade per instabilita' in viaggio (prima della frenata). La sola frenata

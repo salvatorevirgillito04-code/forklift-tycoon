@@ -23,6 +23,22 @@ const SLIDE_MAX_COS = 0.6; // urto di striscio (scivola) se il moto e' quasi par
 const SLIDE_MAX_VN = 1.4; // m/s: oltre questa velocita' contro il muro e' un urto, non uno strisciamento
 const SCRAPE_DECEL = 1.5; // m/s^2 di attrito strisciando contro il muro
 const SPREAD = [0.25, 1.0];
+// Stabilita' del carico (fase 1.5.1): modello combinato delle sollecitazioni sul pallet.
+// Il pallet sente le accelerazioni effettive del muletto (frenata e laterale), filtrate su LOAD.filterS secondi
+// (stesso risultato a 20, 30 e 60 FPS): un picco brevissimo non lo fa cadere, una frenata o una curva vera si'.
+// Cade se (frenata / soglia di frenata)^2 + (laterale / soglia laterale)^2 > 1.
+// Soglia laterale ~ K / (h + H0): come il ribaltamento laterale, dipende dall'altezza del baricentro.
+export const LOAD = {
+  // 0,4 s (taratura): con 0,15 s le piccole correzioni facevano cadere il pallet a 2-3 m, perche' il rallentamento
+  // automatico in curva (3 m/s^2) dura 0,3-0,6 s; una frenata d'emergenza o una curva brusca vera durano di piu'
+  filterS: 0.4,
+  latK: 11.13, // con latH0: circa 5,2 m/s^2 a 0,3 m, 3,9 a 1 m, 3,3 a 1,5 m, 2,9 a 2 m, 2,3 a 3 m (carico 80%)
+  latH0: 1.84,
+  latLoad: 0.1, // fattore (1,08 - 0,1 x carico/portata): -2% a pieno carico rispetto all'80%
+  offTol: 0.05, // m di decentramento laterale tollerati
+  offK: 3.0, // oltre la tolleranza: -30% di stabilita' laterale ogni 10 cm (con le tasche si arriva a circa 11 cm)
+  exp: 3, // esponente del controllo combinato: frenata e curva insieme si sommano senza contarle due volte
+};
 const TILT = [-0.09, 0.17]; // negativo = in avanti
 const QUARTER = Math.PI / 2;
 const WHEEL_TURNS = Math.PI * 1.5; // rotazione del volante a fine corsa
@@ -459,7 +475,7 @@ export class Forklift {
       hit = true;
     }
     if (hit) {
-      if (Math.abs(this.v) > 1.6 && this.carried) this.dropCarried(env);
+      if (Math.abs(this.v) > 1.6 && this.carried) { this.lastDropCause = 'urto'; this.dropCarried(env); }
       // Urto frontale: il mezzo si ferma (senza rimbalzi); i pallet non spinti lo fermano allo stesso modo
       this.v = 0;
       this.brakeLevel = 0;
@@ -470,7 +486,8 @@ export class Forklift {
       }
     }
 
-    this.updateCarried(dt, env, { yawRate, decel: (Math.abs(prevV) - Math.abs(this.v)) / dt, loadRatio, input });
+    // l'urto ha la sua regola (sopra): la sua decelerazione non entra nel filtro del carico
+    this.updateCarried(dt, env, { yawRate, decel: hit ? 0 : (Math.abs(prevV) - Math.abs(this.v)) / dt, loadRatio, input });
     this.checkPickup(env, input);
     this.wheelSpin += this.v * dt / 0.33;
     this.sync(delta);
@@ -663,19 +680,35 @@ export class Forklift {
     const spreadBonus = (this.spread - 0.5) * 1.2;
     // Attrito tra pallet e forche: non dipende dal meteo (pioggia e neve riducono gia' l'aderenza del muletto sulla
     // strada, quindi frenate e curve meno forti; il pallet sente solo le accelerazioni effettive)
-    const latLimit = 7.5 - 0.3 * h - 0.8 * loadRatio + spreadBonus;
-    const brakeLimit = 4.6 - 0.45 * h + this.tilt * 14 - loadRatio;
-    let reason = null;
-    if (outside) reason = 'widen';
-    else if (c.shallow && lifted > 0.08 && c.time > 0.4) reason = 'insertDeeper';
-    else if (Math.abs(this.v * yawRate) > latLimit) reason = 'dropped';
-    else if (decel > brakeLimit && speed > 0.5) reason = 'dropped';
-    else if (this.tilt < -0.05 && speed > 1.5 && h > 0.8) this.unstable += dt * 0.5;
+    // Sollecitazioni filtrate (vedi LOAD): frenata (decelerazione > 0) e laterale
+    if (dt !== this.kfDt) { this.kfDt = dt; this.kf = 1 - Math.exp(-dt / LOAD.filterS); } // il passo e' quasi sempre lo stesso
+    const kf = this.kf;
+    c.fLong = (c.fLong || 0) + (Math.max(0, decel) - (c.fLong || 0)) * kf;
+    c.fLat = (c.fLat || 0) + (Math.abs(this.v * yawRate) - (c.fLat || 0)) * kf;
+    // pallet decentrato sulle forche: oltre la tolleranza la stabilita' laterale peggiora gradualmente
+    const offCenter = Math.max(0, Math.abs(c.lx) - LOAD.offTol);
+    const latLimit = Math.max(0.5, (LOAD.latK / (h + LOAD.latH0) * (1.08 - LOAD.latLoad * loadRatio) + spreadBonus) * Math.max(0.3, 1 - LOAD.offK * offCenter));
+    const brakeLimit = Math.max(0.3, 4.6 - 0.45 * h + this.tilt * 14 - loadRatio);
+    const sLong = c.fLong / brakeLimit, sLat = c.fLat / latLimit;
+    const pl = LOAD.exp === 3 ? sLong * sLong * sLong : sLong ** LOAD.exp, pt = LOAD.exp === 3 ? sLat * sLat * sLat : sLat ** LOAD.exp;
+    const demand = pl + pt;
+    this.loadStress = demand; // per i test e la diagnostica
+    // la sollecitazione filtrata arriva con un piccolo ritardo: conta anche nel mezzo secondo dopo che il muletto e'
+    // sceso sotto 0,5 m/s (una frenata appena finita puo' ancora far cadere il carico); da fermi no
+    c.moving = speed > 0.5 ? 0.5 : Math.max(0, (c.moving || 0) - dt);
+    let reason = null, cause = null;
+    if (outside) { reason = 'widen'; cause = 'forche fuori dalle tasche'; }
+    else if (c.shallow && lifted > 0.08 && c.time > 0.4) { reason = 'insertDeeper'; cause = 'infilato poco'; }
+    else if (demand > 1 && c.moving > 0) {
+      reason = 'dropped';
+      cause = pt >= 0.7 * demand ? 'laterale' : pl >= 0.7 * demand ? 'longitudinale' : 'combinata';
+    } else if (this.tilt < -0.05 && speed > 1.5 && h > 0.8) this.unstable += dt * 0.5;
     else if (this.spread < 0.32 && loadRatio > 0.7 && speed > 1.0) {
       this.unstable += dt * 0.5;
-      if (this.unstable > 2.0) reason = 'widen';
+      if (this.unstable > 2.0) { reason = 'widen'; cause = 'forche strette'; }
     } else this.unstable = Math.max(0, this.unstable - dt);
-    if (this.unstable > 2.5 && !reason) reason = 'dropped';
+    if (this.unstable > 2.5 && !reason) { reason = 'dropped'; cause = 'montante in avanti in viaggio'; }
+    if (cause) this.lastDropCause = cause;
 
     if (reason) {
       this.emit(reason);
