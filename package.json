@@ -7,7 +7,7 @@
     "dev": "vite --host",
     "build": "vite build",
     "preview": "vite preview --host",
-    "test:drive": "node tests/drive/run.cjs && node tests/drive/carico.cjs",
+    "test:drive": "node tests/drive/carico.cjs && node tests/drive/run.cjs",
     "test:carico": "node tests/drive/carico.cjs",
     "test:camion": "node tests/drive/camion.cjs"
   },

@@ -214,7 +214,9 @@ const CHECKS = [
   ['carico alto (~3 m): curva brusca, CADE', (r) => r.load.curveHigh.picked && r.load.curveHigh.dropped],
   // sulla neve il muletto frena meno della soglia di caduta: il pallet resta (fase 1.5, approvato: niente penalita' artificiali)
   ['carico alto (~3 m): frenata violenta, CADE (neve: RESTA, frena meno)', (r) => r.load.brakeHigh.picked && (r.weather === 'snow' ? !r.load.brakeHigh.dropped : r.load.brakeHigh.dropped)],
-  ['forche inclinate avanti a 1,5 m: frenata, CADE', (r) => r.load.brakeTiltFwd.picked && r.load.brakeTiltFwd.dropped],
+  // 10 s di viaggio col montante in avanti: cade per instabilita' in viaggio (prima della frenata). La sola frenata
+  // sulla neve col montante in avanti e' un caso APERTO (tests/drive/carico.cjs, prova 9)
+  ['forche inclinate avanti a 1,5 m: viaggio e frenata, CADE (instabilita\' in viaggio)', (r) => r.load.brakeTiltFwd.picked && r.load.brakeTiltFwd.dropped],
   ['urto forte frontale col carico, CADE', (r) => r.load.bumpFast.picked && r.load.bumpFast.dropped],
   ['muro di striscio (20°): scivola senza entrarci', (r) => r.wallGraze.advancedX > 6 && !r.wallGraze.penetrated],
   ['muro di fronte (80°): si ferma senza entrarci', (r) => Math.abs(r.wallFront.vEnd) < 0.01 && r.wallFront.advancedX < 1 && !r.wallFront.penetrated],

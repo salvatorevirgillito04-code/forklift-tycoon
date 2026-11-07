@@ -54,6 +54,9 @@ async function measureLoad({ vehId, weather }) {
     ['14d. correzione di sterzo accelerando (0,40), carico 100%, montante dritto', 0.3, 0, 1.0, 7, corr(0.4), 'resta'],
   ];
   const res = [];
+  // la strada della prova deve essere davvero bagnata/innevata (aderenza ridotta) con pioggia e neve
+  const gripBrake = (env.grip?.(-60, 0) || { brake: 1 }).brake;
+  res.push({ name: '0. aderenza della strada coerente col meteo', expect: 'ok', byFps: { 60: (weather === 'clear' ? gripBrake === 1 : gripBrake < 1) ? 'ok' : `aderenza ${gripBrake}` } });
   for (const [name, h, tilt, ratio, secs, drive, expect, wall] of SC) {
     const byFps = {};
     for (const fps of [20, 30, 60]) {
@@ -102,7 +105,8 @@ async function measureLoad({ vehId, weather }) {
     await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'load' });
     await page.waitForFunction(() => window.__app?.game?.mode, null, { timeout: 60000 });
     await page.waitForTimeout(3000);
-    const ids = await page.evaluate(async () => (await import(performance.getEntriesByType('resource').map((e) => e.name).find((x) => x.includes('/src/data.js')))).VEHICLES.map((v) => v.id));
+    const ids = (await page.evaluate(async () => (await import(performance.getEntriesByType('resource').map((e) => e.name).find((x) => x.includes('/src/data.js')))).VEHICLES.map((v) => v.id)))
+      .filter((x) => !process.env.VEH || x === process.env.VEH); // VEH=d18: un solo muletto
     for (const weather of ['clear', 'rain', 'snow']) {
       console.log(`\n=== Carico, meteo: ${{ clear: 'sereno', rain: 'pioggia', snow: 'neve' }[weather]} ===`);
       for (const id of ids) {
