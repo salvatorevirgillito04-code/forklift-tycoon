@@ -416,21 +416,21 @@ export class Game {
     try {
       if (this.mode === 'play' && !this.paused) {
         const n = Math.max(1, Math.ceil(frameDt / (1 / 30) - 1e-6));
-        perf?.setSim(frameDt, n, cap);
+        perf?.setSim(realDt, n, cap); // tempo reale (con la velocita' del tempo accelerata il passo di gioco e' piu' lungo)
         const t0 = perf ? performance.now() : 0;
         for (let i = 0; i < n && this.mode === 'play' && !this.paused; i++) this.step(frameDt / n);
         if (perf) perf.addStep(performance.now() - t0);
       }
       else if (this.mode === 'play' && this.mission.finished) this.mission.driveTruck(dt, null, this.traffic.cars, this.people.list, this.bots.truckZones());
-      const lap = perf ? perf.lap() : null; // diagnostica: tempi dei singoli sistemi (nessun effetto sul gioco)
+      perf?.lapStart(); // diagnostica: tempi dei singoli sistemi (nessun effetto sul gioco)
       // traffico: sempre in movimento (anche nel menu); col gioco in pausa resta fermo
       if (!(this.mode === 'play' && this.paused)) {
         const playing = this.mode === 'play' ? this.forklift : null;
         this.traffic.update(dt, playing, this.bots.trafficObstacles(this.mission.trafficObstacles())); // anche i camion degli operai solidi
       }
-      lap?.('traffico');
+      perf?.lap('traffico');
       this.updateCamera(dt);
-      lap?.('camera');
+      perf?.lap('camera');
       if (perf && this.mode === 'play') perf.pose(this.forklift, this.camera.position, this.forklift?.carried);
       this.fogCull = (this.fogCull || 0) - realDt;
       if (this.fogCull <= 0) {
@@ -452,7 +452,7 @@ export class Game {
         this.hud.rainDrops.frame(realDt, this.mode === 'play' && !this.paused && this.settings.view === 'first'
           && this.envFx.weather === 'rain' && this.envFx.isWetAt(f.x, f.z) > 0.5);
       }
-      lap?.('meteo, audio, nebbia');
+      perf?.lap('meteo, audio, nebbia');
       const r0 = perf ? performance.now() : 0;
       this.scene.render();
       if (perf) { perf.addRender(performance.now() - r0); perf.frameEnd(); }
@@ -464,24 +464,25 @@ export class Game {
   }
 
   step(dt) {
-    const lap = this.perf ? this.perf.lap() : null; // diagnostica: tempi dei singoli sistemi (nessun effetto sul gioco)
+    const perf = this.perf;
+    perf?.lapStart(); // diagnostica: tempi dei singoli sistemi (nessun effetto sul gioco)
     const input = this.controls.update(dt);
     const f = this.forklift;
-    lap?.('comandi');
+    perf?.lap('comandi');
     f.step(dt, input, this.env);
-    lap?.('muletto e pallet');
+    perf?.lap('muletto e pallet');
     this.shadowCull = (this.shadowCull || 0) - dt;
     if (this.shadowCull <= 0) {
       this.shadowCull = 0.5;
       this.shadowGen.cull(f.x, f.z, 20);
     }
-    lap?.('ombre (scelta oggetti)');
+    perf?.lap('ombre (scelta oggetti)');
     this.bots.update(dt, f, this.traffic.cars, this.mission.trafficObstacles());
-    lap?.('operai IA');
+    perf?.lap('operai IA');
     this.people.update(dt, f, [f, ...[...this.bots.bots.values()].map((b) => b.f)]);
-    lap?.('pedoni');
+    perf?.lap('pedoni');
     this.pallets.update(dt);
-    lap?.('pallet a terra');
+    perf?.lap('pallet a terra');
     for (const ev of f.events) {
       this.audio.event(ev);
       if (ev === 'dropped') {
@@ -496,15 +497,15 @@ export class Game {
     }
     f.events.length = 0;
     this.mission.updateContact(f);
-    lap?.('eventi');
+    perf?.lap('eventi');
     const outcome = this.mission.update(dt, f, this.traffic.cars, this.people.list, this.bots.truckZones()); // precedenza ai camion degli operai
-    lap?.('contratto e camion');
+    perf?.lap('contratto e camion');
     if (this.mission.justParked) {
       this.mission.justParked = false;
       this.hud.toast(t('truckParked'), 'good');
     }
     this.hud.update({ forklift: f, mission: this.mission, pallets: this.pallets });
-    lap?.('interfaccia');
+    perf?.lap('interfaccia');
     if (outcome) {
       this.paused = true;
       const result = outcome === 'complete' ? this.mission.result() : null;

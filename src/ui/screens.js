@@ -744,8 +744,10 @@ async function openDiagnostics(app, inGame, closeSettings) {
     mark.className = 'pill-btn red small diag-mark';
     mark.textContent = 'Scatto!';
     mark.style.cssText = 'position:absolute;left:50%;top:calc(env(safe-area-inset-top, 0px) + 6px);transform:translateX(-50%);z-index:50;opacity:.85';
-    mark.addEventListener('pointerdown', (e) => { e.stopPropagation(); app.game.perf?.mark('SCATTO SEGNALATO'); mark.textContent = 'Segnato'; setTimeout(() => { mark.textContent = 'Scatto!'; }, 400); });
-    const done = (rep) => { mark.remove(); toast(`Registrazione finita: ${reportLine(rep)}`, 'good'); };
+    mark.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); app.game.perf?.mark('SCATTO SEGNALATO'); mark.textContent = 'Segnato'; setTimeout(() => { mark.textContent = 'Scatto!'; }, 400); });
+    // visibile solo mentre si gioca (in pausa o nei risultati la registrazione e' sospesa)
+    const vis = setInterval(() => { mark.style.display = d.live() ? '' : 'none'; }, 250);
+    const done = (rep) => { clearInterval(vis); mark.remove(); toast(`Registrazione finita: ${reportLine(rep)}`, 'good'); };
     if (d.recordFor(60, done)) {
       document.querySelector('#app').appendChild(mark);
       toast('Registrazione: 3 s di stabilizzazione, poi 60 s di gioco. "Scatto!" quando vedi uno scatto', 'good');

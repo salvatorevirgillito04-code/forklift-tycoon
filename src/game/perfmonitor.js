@@ -18,7 +18,6 @@ const SPIKE_MS = 50;
 const MAX_SPIKES = 40;
 // Registrazione (diagnostica): al massimo questi fotogrammi (circa 2 minuti a 120 FPS), poi si ferma da sola
 export const REC_MAX_FRAMES = 15000;
-const NOOP = () => {};
 // Istante del fotogramma secondo il browser (inizio del fotogramma, allineato al giro di schermo del callback):
 // NON e' l'istante in cui l'immagine compare sul display (la WebView non lo dice), ma e' piu' regolare di
 // performance.now() letto dentro il callback.
@@ -126,11 +125,14 @@ export class PerfMonitor {
   setSim(frameDt, n, cap = 0) { if (this.cur) { this.cur.sim = frameDt * 1000; this.cur.n = n; this.cur.cap = cap || 0; } }
 
   // cronometro dei singoli sistemi: lap('nome') somma il tempo dall'ultima chiamata (solo in modalita' completa)
-  lap() {
-    const c = this.cur;
-    if (!c || c.light) return NOOP;
-    let t = performance.now();
-    return (k) => { const n = performance.now(); c.sub[k] = (c.sub[k] || 0) + n - t; t = n; };
+  // lapStart() all'inizio del blocco, lap('nome') dopo ogni sistema (niente chiusure: nessuna memoria in piu')
+  lapStart() { this.lapT = this.cur && !this.cur.light ? performance.now() : null; }
+
+  lap(k) {
+    if (this.lapT == null || !this.cur) return;
+    const n = performance.now();
+    this.cur.sub[k] = (this.cur.sub[k] || 0) + n - this.lapT;
+    this.lapT = n;
   }
 
   // posizione del muletto e della camera disegnati in questo fotogramma (continuita' del movimento)
@@ -163,6 +165,7 @@ export class PerfMonitor {
     const now = performance.now();
     if (!playing || document.hidden) {
       this.prevStart = null; // fuori dal gioco: non si misura e la prossima misura riparte pulita
+      this.skipped = 0;
       this.prevDetail = null;
       this.cur = null;
       return;
@@ -173,7 +176,7 @@ export class PerfMonitor {
       if (prev && this.prevStart !== null) { prev.gap = now - this.lastEnd; for (const e of this.events) prev.causes.push(e); this.push(now, now - this.prevStart, prev); }
       this.events.clear();
       this.prevDetail = null;
-      this.cur = { step: 0, render: 0, shadow: 0, mirror: 0, causes: [], light: true, vt: frameTime(), skip: this.skipped, scale: 1 / this.engine.getHardwareScalingLevel(), sub: {} };
+      this.cur = { step: 0, render: 0, shadow: 0, mirror: 0, causes: [], light: true, vt: frameTime(), skip: this.skipped, scale: 1 / this.engine.getHardwareScalingLevel(), sub: null };
       this.skipped = 0;
       this.prevStart = now;
       return;

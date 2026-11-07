@@ -502,7 +502,7 @@ function phaseStats(fr, vsyncMs) {
     },
     drawCall: fr[0].light ? null : Math.round(avg('draws')), // nella modalita' leggera non si contano
     eventi: { gc: count(/^GC/), oggettiNuovi: count(/^nuovi/), shader: count(/^shader/), risoluzione: count(/^risoluzione/) },
-    leggero: !!fr[0].light,
+    leggero: !!fr[0].light, // in modalita' leggera niente tempi dei sistemi; gli eventi (es. Scatto!) ci sono
     ...pacingStats(fr, vsyncMs),
   };
 }
@@ -515,9 +515,12 @@ function pacingStats(fr, vsyncMs) {
   const q = (arr, p) => { if (!arr.length) return null; const a = [...arr].sort((x, y) => x - y); return r1(a[Math.min(a.length - 1, Math.floor(a.length * p))]); };
   const cap = fr.find((f) => f.cap)?.cap || null;
   const target = cap ? 1000 / cap : vsyncMs; // durata attesa di un fotogramma
-  const late = target ? fr.filter((f) => f.dt > target * 1.5).length : null;
+  // riferimento: il limite FPS se c'e', altrimenti la mediana (senza limite lo schermo da solo non dice il ritmo voluto)
+  const medDt = [...fr.map((f) => f.dt)].sort((x, y) => x - y)[Math.floor(n / 2)];
+  const ref = cap ? 1000 / cap : medDt;
+  const late = fr.filter((f) => f.dt > ref * 1.5).length;
   const vtd = [], mismatch = [];
-  let jerkF = 0, jerkC = 0, moving = 0;
+  let jerkF = 0, jerkC = 0, moving = 0, prevF = null, prevC = null;
   for (let i = 1; i < n; i++) {
     const a = fr[i - 1], b = fr[i];
     if (a.vt == null || b.vt == null || b.t - a.t > 200) continue; // pausa o cambio di fase
@@ -525,13 +528,14 @@ function pacingStats(fr, vsyncMs) {
     if (dv <= 0) continue;
     vtd.push(dv);
     if (b.sim != null) mismatch.push(Math.abs(b.sim - dv));
-    // movimento: velocita' vista sullo schermo (spostamento / intervallo del browser) rispetto alla velocita' del muletto
+    // movimento: velocita' sullo schermo (spostamento / intervallo del browser) confrontata con quella del fotogramma
+    // precedente: in un movimento regolare cambia di poco da un fotogramma all'altro, uno strappo la fa saltare
     if (a.x != null && b.x != null && Math.abs(b.v) > 1) {
-      moving++;
       const vs = Math.hypot(b.x - a.x, b.z - a.z) / (dv / 1000);
-      if (Math.abs(vs / Math.abs(b.v) - 1) > 0.25) jerkF++;
-      if (a.cx != null) { const vc = Math.hypot(b.cx - a.cx, b.cz - a.cz) / (dv / 1000); if (Math.abs(vc / Math.abs(b.v) - 1) > 0.25) jerkC++; }
-    }
+      const vc = a.cx != null ? Math.hypot(b.cx - a.cx, b.cz - a.cz) / (dv / 1000) : null;
+      if (prevF) { moving++; if (Math.abs(vs / prevF - 1) > 0.25) jerkF++; if (vc != null && prevC && Math.abs(vc / prevC - 1) > 0.25) jerkC++; }
+      prevF = vs > 0.1 ? vs : null; prevC = vc > 0.1 ? vc : null;
+    } else { prevF = null; prevC = null; }
   }
   const vtGiri = {};
   if (vsyncMs) for (const x of vtd) { const k = Math.round(x / vsyncMs); const key = k >= 5 ? '5+' : String(Math.max(1, k)); vtGiri[key] = (vtGiri[key] || 0) + 1; }
@@ -554,17 +558,19 @@ function pacingStats(fr, vsyncMs) {
   for (const f of fr) if (f.scale != null && (!scales.length || Math.abs(scales[scales.length - 1].nitidezza - f.scale) > 0.01)) scales.push({ t: Math.round(f.t - fr[0].t), nitidezza: r1(f.scale) });
   return {
     ritmo: {
-      limiteFps: cap, attesoMs: target ? r1(target) : null,
-      fotogrammiInRitardoPercento: late !== null ? r1(100 * late / n) : null, // oltre 1,5 volte la durata attesa
+      nota: "vt e intervalliBrowser = inizio del fotogramma secondo il browser (giro di schermo del callback), NON l'istante in cui l'immagine compare sul display; passo di gioco = tempo reale del fotogramma",
+      limiteFps: cap, attesoMs: target ? r1(target) : null, riferimentoRitardoMs: r1(ref),
+      fotogrammiInRitardoPercento: r1(100 * late / n), // oltre 1,5 volte il limite (o la mediana senza limite)
       giriSaltatiPerLimite: fr.reduce((s, f) => s + (f.skip || 0), 0),
       intervalliBrowserMs: { p50: q(vtd, 0.5), p95: q(vtd, 0.95), p99: q(vtd, 0.99), giriDiSchermo: vsyncMs ? vtGiri : undefined },
       passoDiGiocoControBrowserMs: { p50: q(mismatch, 0.5), p95: q(mismatch, 0.95), max: mismatch.length ? r1(Math.max(...mismatch)) : null, oltre4ms: mismatch.filter((x) => x > 4).length },
-      movimentoIrregolarePercento: moving ? { muletto: r1(100 * jerkF / moving), camera: r1(100 * jerkC / moving), fotogrammiInMovimento: moving } : null,
+      // fotogrammi in cui la velocita' a schermo cambia di oltre il 25% rispetto al precedente (muletto oltre 1 m/s)
+      velocitaSchermoIrregolarePercento: moving ? { muletto: r1(100 * jerkF / moving), camera: r1(100 * jerkC / moving), fotogrammiInMovimento: moving } : null,
     },
     sistemiMs: keys.length ? sistemi : undefined,
     pallet: { con: split((f) => f.pallet === 1), senza: split((f) => f.pallet === 0) },
     scattiSegnalati: marks.length ? marks : undefined,
-    nitidezza: scales.length > 1 ? scales : scales[0]?.nitidezza,
+    nitidezza: scales, // cambi di nitidezza (sempre un elenco)
   };
 }
 
@@ -625,7 +631,7 @@ export function buildReport(frames, g, meta = {}) {
     ...frames.map((f) => [f.phase, Math.round(f.t - t0), r1(f.dt), r1(f.step), r1(f.render), r1(f.shadow || 0), r1(f.mirror || 0), r1(f.gap || 0), f.draws ?? '',
       f.vt != null ? r1(f.vt - (frames[0].vt || 0)) : '', f.sim != null ? r1(f.sim) : '', f.n ?? '', f.skip ?? '', f.scale != null ? r2(f.scale) : '',
       r2(f.x), r2(f.z), f.yaw != null ? Math.round(f.yaw * 1000) / 1000 : '', r2(f.v), f.pallet ?? '', r2(f.cx), r2(f.cz),
-      `"${Object.entries(f.sub || {}).map(([k, v]) => `${k}:${Math.round(v * 100) / 100}`).join(' ')}"`, `"${(f.causes || []).join('; ')}"`].join(','))].join('\n');
+      `"${Object.entries(f.sub || {}).map(([k, v]) => `${k}=${Math.round(v * 100) / 100}`).join(' | ')}"`, `"${(f.causes || []).join('; ')}"`].join(','))].join('\n');
   return {
     tipo: 'forklift-diagnostica', versione: APP_VERSION, build: BUILD_DATE, data: new Date().toISOString().slice(0, 16),
     ...meta,
