@@ -661,8 +661,10 @@ export class Forklift {
     // Soglie ammorbidite (~60% di cadute in meno in curva e con forche inclinate/strette)
     const outside = Math.abs(fork(-1)) > 0.62 || Math.abs(fork(1)) > 0.62;
     const spreadBonus = (this.spread - 0.5) * 1.2;
-    const latLimit = (7.5 - 0.3 * h - 0.8 * loadRatio + spreadBonus) * (this.grip?.stability ?? 1);
-    const brakeLimit = (4.6 - 0.45 * h + this.tilt * 14 - loadRatio) * (this.grip?.stability ?? 1);
+    // Attrito tra pallet e forche: non dipende dal meteo (pioggia e neve riducono gia' l'aderenza del muletto sulla
+    // strada, quindi frenate e curve meno forti; il pallet sente solo le accelerazioni effettive)
+    const latLimit = 7.5 - 0.3 * h - 0.8 * loadRatio + spreadBonus;
+    const brakeLimit = 4.6 - 0.45 * h + this.tilt * 14 - loadRatio;
     let reason = null;
     if (outside) reason = 'widen';
     else if (c.shallow && lifted > 0.08 && c.time > 0.4) reason = 'insertDeeper';
