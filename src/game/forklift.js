@@ -26,7 +26,7 @@ const SPREAD = [0.25, 1.0];
 // Stabilita' del carico (fase 1.5.1): modello combinato delle sollecitazioni sul pallet.
 // Il pallet sente le accelerazioni effettive del muletto (frenata e laterale), filtrate su LOAD.filterS secondi
 // (stesso risultato a 20, 30 e 60 FPS): un picco brevissimo non lo fa cadere, una frenata o una curva vera si'.
-// Cade se (frenata / soglia di frenata)^2 + (laterale / soglia laterale)^2 > 1.
+// Cade se (frenata / soglia di frenata)^3 + (laterale / soglia laterale)^3 > 1 (esponente in LOAD.exp).
 // Soglia laterale ~ K / (h + H0): come il ribaltamento laterale, dipende dall'altezza del baricentro.
 export const LOAD = {
   // 0,4 s (taratura): con 0,15 s le piccole correzioni facevano cadere il pallet a 2-3 m, perche' il rallentamento
